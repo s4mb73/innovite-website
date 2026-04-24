@@ -158,27 +158,34 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
   .sec{padding:56px 0}
 }
 
-/* ── Client Showcase ─────────────────────────────────── */
-.showcase-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden}
-.showcase-card{background:var(--s1);padding:28px;transition:background .25s var(--ease)}
+/* ── Client Showcase Carousel ────────────────────────── */
+.sc-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;gap:16px}
+.sc-nav{display:flex;gap:8px;flex-shrink:0}
+.sc-btn{width:36px;height:36px;border-radius:50%;background:var(--s2);border:1px solid var(--border);cursor:pointer;color:var(--t2);font-size:15px;display:flex;align-items:center;justify-content:center;transition:all .2s var(--ease);padding:0;font-family:inherit;line-height:1}
+.sc-btn:hover:not(:disabled){background:var(--accent);color:#fff;border-color:transparent}
+.sc-btn:disabled{opacity:.28;cursor:default}
+.showcase-grid{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.showcase-grid::-webkit-scrollbar{display:none}
+.showcase-card{flex:0 0 calc(50% - 8px);scroll-snap-align:start;background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;transition:background .25s var(--ease)}
 .showcase-card:hover{background:var(--s2)}
-.showcase-video{position:relative;width:100%;height:280px;background:var(--s2);overflow:hidden;border-radius:8px;margin-bottom:16px}
+.showcase-video{width:100%;height:260px;background:var(--s2);overflow:hidden}
 .showcase-video wistia-player{display:block;width:100%}
-.showcase-card-wide .showcase-video{height:360px}
-.showcase-client{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
-.showcase-name{font-size:16px;font-weight:600;line-height:1.2}
-.showcase-desc{font-size:11.5px;color:var(--t3);font-weight:300;margin-top:2px}
-.showcase-filming{font-size:10px;color:var(--t3);background:var(--s3);padding:3px 8px;border-radius:100px;white-space:nowrap;flex-shrink:0;margin-top:2px}
-.showcase-services{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px}
-.showcase-svc{font-size:10.5px;font-weight:500;padding:3px 9px;border-radius:100px;background:var(--accent-bg);color:var(--accent);border:1px solid rgba(61,124,245,.15)}
-.showcase-outcome-text{font-size:13px;color:var(--t2);line-height:1.6;font-weight:300}
-.showcase-stats{display:flex;gap:0;border-top:1px solid var(--border);padding-top:14px;margin-top:14px}
+.showcase-card-body{padding:20px 22px 22px}
+.showcase-client{margin-bottom:10px}
+.showcase-name{font-size:15px;font-weight:600;line-height:1.2}
+.showcase-desc{font-size:11px;color:var(--t3);font-weight:300;margin-top:2px}
+.showcase-services{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.showcase-svc{font-size:10px;font-weight:500;padding:3px 8px;border-radius:100px;background:var(--accent-bg);color:var(--accent);border:1px solid rgba(61,124,245,.15)}
+.showcase-outcome-text{font-size:12.5px;color:var(--t2);line-height:1.65;font-weight:300}
+.showcase-stats{display:flex;border-top:1px solid var(--border);padding-top:12px;margin-top:12px}
 .showcase-stat{flex:1;display:flex;flex-direction:column;gap:2px}
-.showcase-stat+.showcase-stat{border-left:1px solid var(--border);padding-left:14px}
-.showcase-stat-n{font-family:'Newsreader',serif;font-size:20px;color:var(--accent);line-height:1}
+.showcase-stat+.showcase-stat{border-left:1px solid var(--border);padding-left:12px}
+.showcase-stat-n{font-family:'Newsreader',serif;font-size:18px;color:var(--accent);line-height:1}
 .showcase-stat-l{font-size:10px;color:var(--t3);margin-top:2px}
-@media(max-width:768px){.showcase-grid{grid-template-columns:1fr}}
-.showcase-card-wide{grid-column:1/-1}.showcase-card-wide .showcase-video{aspect-ratio:21/9}
+.sc-dots{display:flex;gap:6px;justify-content:center;margin-top:16px}
+.sc-dot{width:6px;height:6px;border-radius:50%;background:var(--s3);cursor:pointer;border:none;padding:0;transition:background .2s var(--ease),transform .2s var(--ease)}
+.sc-dot.on{background:var(--accent);transform:scale(1.4)}
+@media(max-width:640px){.showcase-card{flex:0 0 85%}.sc-header{flex-direction:column;align-items:flex-start}.sc-nav{align-self:flex-end}}
 
 /* ── Testimonials ────────────────────────────────────── */
 .rg{display:grid;grid-template-columns:1fr;gap:0}
@@ -442,102 +449,111 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 <!-- CLIENT SHOWCASE -->
 <section class="sec" id="work"><div class="w">
   <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Our work</span></div>
-  <h2 class="sh rv">Four clients. Four different problems. One system.</h2>
-  <p class="ss rv">Here's what we built and what moved.</p>
-  <div class="showcase-grid">
+  <div class="sc-header rv">
+    <div>
+      <h2 class="sh" style="margin-bottom:6px">Five clients. Five different problems. One system.</h2>
+      <p class="ss">Here's what we built and what moved.</p>
+    </div>
+    <div class="sc-nav">
+      <button class="sc-btn" id="scPrev" onclick="scNav(-1)" aria-label="Previous">&#8592;</button>
+      <button class="sc-btn" id="scNext" onclick="scNav(1)" aria-label="Next">&#8594;</button>
+    </div>
+  </div>
+  <div class="showcase-grid" id="scGrid">
 
-    <div class="showcase-card rv">
+    <div class="showcase-card">
       <div class="showcase-video">
         <wistia-player media-id="r3nqe371nk" aspect="0.5625"></wistia-player>
       </div>
-      <div class="showcase-client">
-        <div>
+      <div class="showcase-card-body">
+        <div class="showcase-client">
           <div class="showcase-name">Advantedge</div>
           <div class="showcase-desc">Professional services — London</div>
         </div>
+        <div class="showcase-services">
+          <span class="showcase-svc">Outbound</span>
+          <span class="showcase-svc">Content</span>
+          <span class="showcase-svc">Paid ads</span>
+        </div>
+        <p class="showcase-outcome-text">Outbound system built and live. First qualified conversations in week two. Content production underway.</p>
       </div>
-      <div class="showcase-services">
-        <span class="showcase-svc">Outbound</span>
-        <span class="showcase-svc">Content</span>
-        <span class="showcase-svc">Paid ads</span>
-      </div>
-      <p class="showcase-outcome-text">Outbound system built and live. First qualified conversations in week two. Content production underway.</p>
     </div>
 
-    <div class="showcase-card rv d1">
+    <div class="showcase-card">
       <div class="showcase-video">
         <wistia-player media-id="e5d9fo3nuq" aspect="0.5625"></wistia-player>
       </div>
-      <div class="showcase-client">
-        <div>
+      <div class="showcase-card-body">
+        <div class="showcase-client">
           <div class="showcase-name">CIC Event</div>
           <div class="showcase-desc">Corporate events — London</div>
         </div>
+        <div class="showcase-services">
+          <span class="showcase-svc">Content</span>
+          <span class="showcase-svc">Outbound</span>
+        </div>
+        <p class="showcase-outcome-text">Brand content produced and deployed. Lead generation system running. Results being compiled.</p>
       </div>
-      <div class="showcase-services">
-        <span class="showcase-svc">Content</span>
-        <span class="showcase-svc">Outbound</span>
-      </div>
-      <p class="showcase-outcome-text">Brand content produced and deployed. Lead generation system running. Results being compiled.</p>
     </div>
 
-    <div class="showcase-card rv d2">
+    <div class="showcase-card">
       <div class="showcase-video">
         <wistia-player media-id="j5e27g9bhc" aspect="0.5625"></wistia-player>
       </div>
-      <div class="showcase-client">
-        <div>
+      <div class="showcase-card-body">
+        <div class="showcase-client">
           <div class="showcase-name">Evinco</div>
           <div class="showcase-desc">Strategy consulting</div>
         </div>
+        <div class="showcase-services">
+          <span class="showcase-svc">Outbound</span>
+          <span class="showcase-svc">Lead scoring</span>
+        </div>
+        <p class="showcase-outcome-text">Personalised outbound live from day one. Booked meetings in the calendar by end of week two.</p>
       </div>
-      <div class="showcase-services">
-        <span class="showcase-svc">Outbound</span>
-        <span class="showcase-svc">Lead scoring</span>
-      </div>
-      <p class="showcase-outcome-text">Personalised outbound live from day one. Booked meetings in the calendar by end of week two.</p>
     </div>
 
-    <div class="showcase-card rv d3">
-      <div class="showcase-client">
-        <div>
+    <div class="showcase-card">
+      <div class="showcase-card-body" style="padding-top:28px">
+        <div class="showcase-client">
           <div class="showcase-name">ROCA Accountants</div>
           <div class="showcase-desc">Accountancy — Manchester</div>
         </div>
-      </div>
-      <div class="showcase-services">
-        <span class="showcase-svc">Outbound</span>
-        <span class="showcase-svc">Content</span>
-        <span class="showcase-svc">Paid ads</span>
-      </div>
-      <p class="showcase-outcome-text">Pipeline tripled. Conversations shifted from fee justification to strategy. Prospecting time dropped to zero.</p>
-      <div class="showcase-stats">
-        <div class="showcase-stat"><div class="showcase-stat-n">3x</div><div class="showcase-stat-l">Pipeline growth</div></div>
-        <div class="showcase-stat"><div class="showcase-stat-n">60 days</div><div class="showcase-stat-l">To positive ROI</div></div>
-        <div class="showcase-stat"><div class="showcase-stat-n">0 hrs</div><div class="showcase-stat-l">Prospecting</div></div>
+        <div class="showcase-services">
+          <span class="showcase-svc">Outbound</span>
+          <span class="showcase-svc">Content</span>
+          <span class="showcase-svc">Paid ads</span>
+        </div>
+        <p class="showcase-outcome-text">Pipeline tripled. Conversations shifted from fee justification to strategy. Prospecting time dropped to zero.</p>
+        <div class="showcase-stats">
+          <div class="showcase-stat"><div class="showcase-stat-n">3x</div><div class="showcase-stat-l">Pipeline growth</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">60 days</div><div class="showcase-stat-l">To positive ROI</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">0 hrs</div><div class="showcase-stat-l">Prospecting</div></div>
+        </div>
       </div>
     </div>
 
-    <div class="showcase-card showcase-card-wide rv d4">
+    <div class="showcase-card">
       <div class="showcase-video">
         <wistia-player media-id="bfnl22makg" aspect="0.5625"></wistia-player>
       </div>
-      <div class="showcase-client">
-        <div>
+      <div class="showcase-card-body">
+        <div class="showcase-client">
           <div class="showcase-name">More Than A Match</div>
           <div class="showcase-desc">Sports podcast</div>
         </div>
+        <div class="showcase-services">
+          <span class="showcase-svc">Content strategy</span>
+          <span class="showcase-svc">Clip production</span>
+          <span class="showcase-svc">Long-form content</span>
+          <span class="showcase-svc">Social media</span>
+        </div>
+        <p class="showcase-outcome-text">Full content operation built from scratch — strategy, production, and distribution. Short-form clips, long-form episodes, and social channels managed end to end.</p>
       </div>
-      <div class="showcase-services">
-        <span class="showcase-svc">Content strategy</span>
-        <span class="showcase-svc">Clip production</span>
-        <span class="showcase-svc">Long-form content</span>
-        <span class="showcase-svc">Social media</span>
-      </div>
-      <p class="showcase-outcome-text">Full content operation built from scratch — strategy, production, and distribution. Short-form clips, long-form episodes, and social channels managed end to end.</p>
     </div>
 
   </div>
+  <div class="sc-dots" id="scDots"></div>
 </div></section>
 
 <!-- TESTIMONIALS -->
@@ -957,6 +973,43 @@ function qShowResult(){
   why.innerHTML='<div class="qr-why-label">What we looked at</div>'+flags.map(f=>`<div class="qr-why-item${f.bad?' bad':''}">${f.t}</div>`).join('');
   document.getElementById('qr-cta').innerHTML=cta;
 }
+
+// ── Showcase carousel ────────────────────────────────
+(function(){
+  const grid=document.getElementById('scGrid');
+  const dotsWrap=document.getElementById('scDots');
+  if(!grid)return;
+  const cards=grid.querySelectorAll('.showcase-card');
+  let idx=0;
+  function vis(){return window.innerWidth>640?2:1;}
+  function pages(){return Math.ceil(cards.length/vis());}
+  function buildDots(){
+    dotsWrap.innerHTML='';
+    for(let i=0;i<pages();i++){
+      const b=document.createElement('button');
+      b.className='sc-dot'+(i===0?' on':'');
+      b.setAttribute('aria-label','Slide '+(i+1));
+      b.onclick=()=>goTo(i);
+      dotsWrap.appendChild(b);
+    }
+  }
+  function goTo(i){
+    idx=Math.max(0,Math.min(pages()-1,i));
+    const cw=cards[0].offsetWidth+16;
+    grid.scrollTo({left:idx*vis()*cw,behavior:'smooth'});
+    document.getElementById('scPrev').disabled=idx===0;
+    document.getElementById('scNext').disabled=idx>=pages()-1;
+    dotsWrap.querySelectorAll('.sc-dot').forEach((d,j)=>d.classList.toggle('on',j===idx));
+  }
+  window.scNav=function(dir){goTo(idx+dir);};
+  buildDots();goTo(0);
+  window.addEventListener('resize',()=>{buildDots();goTo(0);});
+  grid.addEventListener('scroll',()=>{
+    const cw=cards[0].offsetWidth+16;
+    const ni=Math.round(grid.scrollLeft/(vis()*cw));
+    if(ni!==idx){idx=ni;goTo(idx);}
+  },{passive:true});
+})();
 
 // ── Reveal on scroll
 const ob=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting)x.target.classList.add('in')})},{threshold:.06});
