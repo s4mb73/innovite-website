@@ -195,6 +195,71 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
   .stg,.wg{grid-template-columns:1fr}
 }
 
+/* ── Founder ─────────────────────────────────────────── */
+.fc{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:start;background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);padding:28px}
+.fc-av{width:48px;height:48px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:#fff;flex-shrink:0}
+.fc-n{font-size:15px;font-weight:600;margin-bottom:2px}
+.fc-t{font-size:11.5px;color:var(--t3);margin-bottom:10px}
+.fc-b{font-size:13.5px;color:var(--t2);line-height:1.7;font-weight:300}
+
+/* ── CTA ─────────────────────────────────────────────── */
+.cta-w{padding:0 0 80px}
+.cta{background:var(--accent);border-radius:var(--rxl);padding:64px 48px;text-align:center;position:relative;overflow:hidden}
+.cta::before{content:'';position:absolute;top:-80px;right:-60px;width:300px;height:300px;background:radial-gradient(circle,rgba(255,255,255,.08),transparent 60%);pointer-events:none}
+.cta-i{position:relative}
+.cta h2{font-family:'Newsreader',serif;font-size:clamp(28px,4vw,42px);font-weight:400;color:#fff;line-height:1.12;margin-bottom:12px}
+.cta p{font-size:14.5px;color:rgba(255,255,255,.65);max-width:400px;margin:0 auto 24px;line-height:1.65;font-weight:300}
+.cta-s{font-size:11.5px;color:rgba(255,255,255,.35);margin-top:10px}
+
+/* ── Footer ──────────────────────────────────────────── */
+footer{border-top:1px solid var(--border);padding:24px 0}
+.fr{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.fl{display:flex;align-items:center;gap:16px}
+.fl img{height:16px}
+.fc2{font-size:11.5px;color:var(--t3)}
+.fr2 a{font-size:11.5px;color:var(--t3);text-decoration:none;transition:color .2s var(--ease)}
+.fr2 a:hover{color:var(--accent)}
+
+/* ── Form modal ──────────────────────────────────────── */
+.fo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(10px);z-index:200;align-items:center;justify-content:center;padding:20px}
+.fo.on{display:flex}
+.fcard{background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);max-width:460px;width:100%;max-height:90vh;overflow-y:auto;position:relative}
+.fx{position:absolute;top:12px;right:12px;width:26px;height:26px;border-radius:50%;border:none;background:var(--s3);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:var(--t3);z-index:10;transition:color .2s var(--ease)}
+.fx:hover{color:var(--t1)}
+.fh{padding:24px 24px 0}
+.fsl{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--accent);margin-bottom:4px}
+.ftl{font-family:'Newsreader',serif;font-size:20px;margin-bottom:3px}
+.fsb{font-size:12px;color:var(--t3);margin-bottom:16px}
+.fbd{padding:0 24px 20px}
+.fos{display:flex;flex-direction:column;gap:5px}
+.fop{display:flex;align-items:center;gap:9px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:border-color .2s var(--ease),background .2s var(--ease),color .2s var(--ease);font-size:13px;color:var(--t2);font-weight:400}
+.fop:hover{border-color:var(--accent);background:var(--accent-bg2)}
+.fop.sel{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
+.foi{font-size:12px;width:14px;text-align:center;color:var(--t3)}
+.fop.sel .foi{color:var(--accent)}
+.fnv{display:flex;justify-content:space-between;align-items:center;padding:12px 24px;border-top:1px solid var(--border)}
+.fds{display:flex;gap:4px}
+.fd{width:7px;height:7px;border-radius:50%;background:var(--s3)}
+.fd.ac{background:var(--accent)}
+.fd.dn{background:var(--t3)}
+.fbk{font-size:12px;color:var(--t3);cursor:pointer;border:none;background:none;font-family:inherit;transition:color .2s var(--ease)}
+.fbk:hover{color:var(--t1)}
+.fnx{background:var(--accent);color:#fff;padding:8px 18px;border-radius:8px;font-size:12.5px;font-weight:500;cursor:pointer;border:none;font-family:inherit;transition:background .2s var(--ease)}
+.fnx:hover{background:var(--accent-h)}
+.fnx:disabled{opacity:.3;cursor:default}
+.fin{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;color:var(--t1);background:var(--s2);outline:none;margin-bottom:6px;transition:border-color .2s var(--ease)}
+.fin:focus{border-color:var(--accent)}
+.fin::placeholder{color:var(--t3)}
+.fsc{text-align:center;padding:40px 24px}
+.fsc-i{width:44px;height:44px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+.fsc-h{font-family:'Newsreader',serif;font-size:18px;margin-bottom:6px}
+.fsc-p{font-size:12.5px;color:var(--t2);line-height:1.6}
+
+@media(max-width:768px){
+  .fc{grid-template-columns:1fr}
+  .cta{padding:44px 20px}
+}
+
 /* == SECTION STYLES == */
 </style>
 </head>
@@ -448,7 +513,168 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
   </div>
 </div></section>
 
-<!-- == SECTION CONTENT == -->
+<!-- FOUNDER -->
+<section class="sec"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">About</span></div>
+  <h2 class="sh rv">We built this because we needed it ourselves.</h2>
+  <div class="fc rv" style="margin-top:28px">
+    <div class="fc-av">SB</div>
+    <div>
+      <div class="fc-n">Sammy Bimpson</div>
+      <div class="fc-t">Founder, Innovite</div>
+      <p class="fc-b">I run a content production company that films KSI, Premier League footballers and some of the most-followed creators in the UK. The work was never the bottleneck — finding the right business clients was. So I built a system to do it in the background. It worked well enough that other founders started asking if they could use it. That's Innovite.</p>
+    </div>
+  </div>
+</div></section>
 
+<!-- CTA -->
+<div class="w cta-w"><div class="cta rv"><div class="cta-i">
+  <h2>Ready to stop chasing?</h2>
+  <p>Book a 20-minute strategy call. We'll walk through your current pipeline, find the gaps, and tell you exactly what we'd do differently.</p>
+  <a href="#" onclick="oF();return false" class="btn btn-w">Book your call</a>
+  <p class="cta-s">No setup fees. No lock-in. Straight answers.</p>
+</div></div></div>
+
+<footer><div class="w"><div class="fr">
+  <div class="fl">
+    <img src="innovite-logo-dark.png" alt="Innovite" style="height:16px" onerror="this.outerHTML='<span style=font-size:13px;font-weight:600;color:var(--t2)>innovite</span>'">
+    <span class="fc2">© 2026 Innovite</span>
+  </div>
+  <div class="fr2"><a href="mailto:sammy@innoviteai.com">sammy@innoviteai.com</a></div>
+</div></div></footer>
+
+<!-- FORM MODAL -->
+<div class="fo" id="fo" onclick="if(event.target===this)cF()">
+  <div class="fcard">
+    <button class="fx" onclick="cF()">&#x2715;</button>
+    <div id="f1">
+      <div class="fh"><div class="fsl">Step 1 of 5</div><div class="ftl">What industry are you in?</div><div class="fsb">So we can tailor the approach.</div></div>
+      <div class="fbd"><div class="fos" data-s="1">
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Professional services</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Recruitment</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Agency or consultancy</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Healthcare or aesthetics</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Property or construction</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Other B2B service</div>
+      </div></div>
+    </div>
+    <div id="f2" style="display:none">
+      <div class="fh"><div class="fsl">Step 2 of 5</div><div class="ftl">What's a typical deal worth?</div><div class="fsb">Helps us work out if the numbers make sense for you.</div></div>
+      <div class="fbd"><div class="fos" data-s="2">
+        <div class="fop" onclick="sO(this)"><span class="foi">£</span>Under £2k</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">£</span>£2k — £5k</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">£</span>£5k — £15k</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">£</span>£15k — £50k</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">£</span>£50k+</div>
+      </div></div>
+    </div>
+    <div id="f3" style="display:none">
+      <div class="fh"><div class="fsl">Step 3 of 5</div><div class="ftl">How are you finding clients right now?</div><div class="fsb">No wrong answer — just helps us understand the starting point.</div></div>
+      <div class="fbd"><div class="fos" data-s="3">
+        <div class="fop" onclick="sO(this)"><span class="foi">&#8635;</span>Referrals and word of mouth</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#8635;</span>LinkedIn and networking</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#8635;</span>Paid ads</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#8635;</span>Cold outreach</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#8635;</span>Honestly — not enough</div>
+      </div></div>
+    </div>
+    <div id="f4" style="display:none">
+      <div class="fh"><div class="fsl">Step 4 of 5</div><div class="ftl">How many new clients do you want each month?</div><div class="fsb">So we can match the volume to your capacity.</div></div>
+      <div class="fbd"><div class="fos" data-s="4">
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9654;</span>2 — 5</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9654;</span>5 — 10</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9654;</span>10 — 20</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9654;</span>20+</div>
+      </div></div>
+    </div>
+    <div id="f5" style="display:none">
+      <div class="fh"><div class="fsl">Step 5 of 5</div><div class="ftl">Where should we send your strategy plan?</div><div class="fsb">We'll get back to you within 24 hours.</div></div>
+      <div class="fbd">
+        <input class="fin" type="text" id="fN" placeholder="Your name">
+        <input class="fin" type="text" id="fC" placeholder="Company name">
+        <input class="fin" type="email" id="fE" placeholder="Work email">
+        <input class="fin" type="tel" id="fP" placeholder="Phone number">
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">We never share your information.</div>
+      </div>
+    </div>
+    <div id="f6" style="display:none">
+      <div class="fsc">
+        <div class="fsc-i"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="fsc-h">We've got your details.</div>
+        <div class="fsc-p">Someone from our team will review your answers and get back within 24 hours with a personalised recommendation.</div>
+      </div>
+    </div>
+    <div class="fnv" id="fnv">
+      <div class="fds"><div class="fd ac" id="dd1"></div><div class="fd" id="dd2"></div><div class="fd" id="dd3"></div><div class="fd" id="dd4"></div><div class="fd" id="dd5"></div></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="fbk" id="fbk" onclick="pv()" style="display:none">Back</button>
+        <button class="fnx" id="fnx" onclick="nx()" disabled>Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Reveal on scroll
+const ob=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting)x.target.classList.add('in')})},{threshold:.06});
+document.querySelectorAll('.rv').forEach(e=>ob.observe(e));
+
+// FAQ accordion
+document.querySelectorAll('.fq').forEach(b=>{
+  b.addEventListener('click',()=>{
+    const i=b.parentElement;
+    const o=i.classList.contains('open');
+    document.querySelectorAll('.fi.open').forEach(x=>x.classList.remove('open'));
+    if(!o)i.classList.add('open');
+  });
+});
+
+// Form modal
+let c=1;const d={};
+function oF(){document.getElementById('fo').classList.add('on');document.body.style.overflow='hidden'}
+function cF(){document.getElementById('fo').classList.remove('on');document.body.style.overflow=''}
+function sO(e){
+  e.parentElement.querySelectorAll('.fop').forEach(o=>o.classList.remove('sel'));
+  e.classList.add('sel');
+  d['s'+c]=e.textContent.trim();
+  document.getElementById('fnx').disabled=false;
+}
+function sh(n){
+  for(let i=1;i<=5;i++)document.getElementById('f'+i).style.display=i===n?'block':'none';
+  document.getElementById('f6').style.display='none';
+  document.getElementById('fbk').style.display=n>1?'inline-block':'none';
+  document.getElementById('fnx').textContent=n===5?'Submit':'Next';
+  document.getElementById('fnx').disabled=n<5?!d['s'+n]:false;
+  for(let i=1;i<=5;i++){
+    const dd=document.getElementById('dd'+i);
+    dd.className='fd'+(i===n?' ac':i<n?' dn':'');
+  }
+  c=n;
+}
+function nx(){if(c===5){sb();return}sh(c+1)}
+function pv(){if(c>1)sh(c-1)}
+function sb(){
+  d.name=document.getElementById('fN').value;
+  d.company=document.getElementById('fC').value;
+  d.email=document.getElementById('fE').value;
+  d.phone=document.getElementById('fP').value;
+  if(!d.name||!d.email){
+    document.getElementById('fN').style.borderColor=d.name?'':'#f87171';
+    document.getElementById('fE').style.borderColor=d.email?'':'#f87171';
+    return;
+  }
+  for(let i=1;i<=5;i++)document.getElementById('f'+i).style.display='none';
+  document.getElementById('f6').style.display='block';
+  document.getElementById('fnv').style.display='none';
+  const s='New Innovite lead: '+(d.company||d.name);
+  const b=Object.entries(d).map(([k,v])=>k+': '+v).join('\n');
+  const a=document.createElement('a');
+  a.href='mailto:sammy@innoviteai.com?subject='+encodeURIComponent(s)+'&body='+encodeURIComponent(b);
+  a.style.display='none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+</script>
 </body>
 </html>
