@@ -166,9 +166,9 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
 .sc-btn:disabled{opacity:.28;cursor:default}
 .showcase-grid{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .showcase-grid::-webkit-scrollbar{display:none}
-.showcase-card{flex:0 0 calc(50% - 8px);scroll-snap-align:start;background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;transition:background .25s var(--ease)}
+.showcase-card{flex:0 0 calc(46% - 8px);scroll-snap-align:start;background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;transition:background .25s var(--ease)}
 .showcase-card:hover{background:var(--s2)}
-.showcase-video{width:100%;aspect-ratio:9/16;background:var(--s2);overflow:hidden}
+.showcase-video{width:100%;aspect-ratio:9/16;max-height:320px;background:var(--s2);overflow:hidden}
 .showcase-video wistia-player{display:block;width:100%}
 .showcase-card-body{padding:20px 22px 22px}
 .showcase-client{margin-bottom:10px}
@@ -1003,10 +1003,10 @@ function scGoTo(i){
 
 function scNav(dir){scGoTo(scIdx+dir);}
 
-document.addEventListener('DOMContentLoaded',function(){
-  scGrid=document.getElementById('scGrid');
-  scDots=document.getElementById('scDots');
-  if(!scGrid)return;
+// Script is at end of body — DOM is already available, init directly
+scGrid=document.getElementById('scGrid');
+scDots=document.getElementById('scDots');
+if(scGrid){
   scCards=scGrid.querySelectorAll('.showcase-card');
   scBuildDots();
   scGoTo(0);
@@ -1015,7 +1015,7 @@ document.addEventListener('DOMContentLoaded',function(){
     var ni=Math.round(scGrid.scrollLeft/scGrid.clientWidth);
     if(ni!==scIdx){scIdx=ni;scGoTo(scIdx);}
   },{passive:true});
-});
+}
 
 // ── Reveal on scroll
 const ob=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting)x.target.classList.add('in')})},{threshold:.06});
