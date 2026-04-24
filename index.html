@@ -127,6 +127,45 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
   .sec{padding:56px 0}
 }
 
+/* ── Client Showcase ─────────────────────────────────── */
+.showcase-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.showcase-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;transition:border-color .25s var(--ease)}
+.showcase-card:hover{border-color:var(--b2)}
+.showcase-video{position:relative;width:100%;aspect-ratio:16/9;background:var(--s2);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.showcase-video video,.showcase-video iframe{width:100%;height:100%;object-fit:cover;border:none}
+.showcase-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px}
+.showcase-play{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:16px}
+.showcase-label{font-size:11px;color:var(--t3);letter-spacing:.5px}
+.showcase-body{padding:20px}
+.showcase-name{font-size:15px;font-weight:600;margin-bottom:3px}
+.showcase-desc{font-size:12.5px;color:var(--t3);margin-bottom:14px;font-weight:300}
+/* Flat metrics — no cards inside the card */
+.showcase-stats{display:flex;gap:0;border-top:1px solid var(--border);padding-top:14px}
+.showcase-stat{flex:1;display:flex;flex-direction:column;gap:2px}
+.showcase-stat+.showcase-stat{border-left:1px solid var(--border);padding-left:14px}
+.showcase-stat-n{font-family:'Newsreader',serif;font-size:19px;color:var(--accent)}
+.showcase-stat-l{font-size:10px;color:var(--t3)}
+
+/* ── Testimonials ────────────────────────────────────── */
+.rg{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rc{background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);padding:28px}
+.rc-h{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.rc-av{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#fff;flex-shrink:0}
+.rc-name{font-size:14px;font-weight:600}
+.rc-co{font-size:11.5px;color:var(--t3)}
+.rc-stars{font-size:13px;color:var(--orange);margin-bottom:8px;letter-spacing:1px}
+.rc-q{font-size:13px;color:var(--t2);line-height:1.65;font-style:italic;margin-bottom:18px;padding-left:12px;border-left:2px solid var(--accent);font-weight:300}
+/* Flat metrics row — not a card-in-card */
+.rc-m{display:flex;gap:0;border-top:1px solid var(--border);padding-top:14px}
+.rc-mi{flex:1;display:flex;flex-direction:column;gap:2px}
+.rc-mi+.rc-mi{border-left:1px solid var(--border);padding-left:14px}
+.rc-mn{font-family:'Newsreader',serif;font-size:20px;color:var(--accent)}
+.rc-ml{font-size:10px;color:var(--t3)}
+
+@media(max-width:768px){
+  .showcase-grid,.rg{grid-template-columns:1fr}
+}
+
 /* == SECTION STYLES == */
 </style>
 </head>
@@ -203,6 +242,127 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
       <h3>Paid Advertising</h3>
       <p>Meta and Google built for revenue, not impressions. We write the ads, build the landing pages, run the targeting — and follow up with every lead inside five minutes of them clicking.</p>
       <div class="svc-tags"><span class="svc-tag">Meta</span><span class="svc-tag">Google</span><span class="svc-tag">Instant follow-up</span></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- CLIENT SHOWCASE -->
+<section class="sec" id="work"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Our work</span></div>
+  <h2 class="sh rv">Businesses we've helped grow.</h2>
+  <p class="ss rv">Content, outbound, strategy — here's what it looks like out in the wild.</p>
+  <div class="showcase-grid">
+
+    <div class="showcase-card rv">
+      <div class="showcase-video">
+        <div class="showcase-placeholder">
+          <!-- Replace with: <video src="advantedge.mp4" autoplay muted loop playsinline></video> -->
+          <div class="showcase-play">&#9654;</div>
+          <span class="showcase-label">Advantedge — case study</span>
+        </div>
+      </div>
+      <div class="showcase-body">
+        <div class="showcase-name">Advantedge</div>
+        <div class="showcase-desc">Professional services — London</div>
+        <div class="showcase-stats">
+          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Views</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Engagement</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Leads</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="showcase-card rv d1">
+      <div class="showcase-video">
+        <div class="showcase-placeholder">
+          <!-- Replace with: <video src="cic-event.mp4" autoplay muted loop playsinline></video> -->
+          <div class="showcase-play">&#9654;</div>
+          <span class="showcase-label">CIC Event — case study</span>
+        </div>
+      </div>
+      <div class="showcase-body">
+        <div class="showcase-name">CIC Event</div>
+        <div class="showcase-desc">Corporate events — London</div>
+        <div class="showcase-stats">
+          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Views</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Engagement</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Leads</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="showcase-card rv d2">
+      <div class="showcase-video">
+        <div class="showcase-placeholder">
+          <!-- Replace with: <video src="evinco.mp4" autoplay muted loop playsinline></video> -->
+          <div class="showcase-play">&#9654;</div>
+          <span class="showcase-label">Evinco — case study</span>
+        </div>
+      </div>
+      <div class="showcase-body">
+        <div class="showcase-name">Evinco</div>
+        <div class="showcase-desc">Strategy consulting</div>
+        <div class="showcase-stats">
+          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Views</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Engagement</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Leads</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="showcase-card rv d3">
+      <div class="showcase-video">
+        <div class="showcase-placeholder">
+          <!-- Replace with: <video src="roca.mp4" autoplay muted loop playsinline></video> -->
+          <div class="showcase-play">&#9654;</div>
+          <span class="showcase-label">ROCA — case study</span>
+        </div>
+      </div>
+      <div class="showcase-body">
+        <div class="showcase-name">ROCA</div>
+        <div class="showcase-desc">Accountancy — Manchester</div>
+        <div class="showcase-stats">
+          <div class="showcase-stat"><div class="showcase-stat-n">3x</div><div class="showcase-stat-l">Pipeline growth</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">60d</div><div class="showcase-stat-l">To ROI</div></div>
+          <div class="showcase-stat"><div class="showcase-stat-n">0h</div><div class="showcase-stat-l">Prospecting</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div></section>
+
+<!-- TESTIMONIALS -->
+<section class="sec" id="results"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">What clients say</span></div>
+  <h2 class="sh rv">In their words, not ours.</h2>
+  <p class="ss rv">The quick version — straight from the people on the system.</p>
+  <div class="rg">
+    <div class="rc rv">
+      <div class="rc-h">
+        <div class="rc-av" style="background:var(--accent)">AO</div>
+        <div><div class="rc-name">Aidan Oliver</div><div class="rc-co">ROCA Accountants — Manchester</div></div>
+      </div>
+      <div class="rc-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+      <p class="rc-q">"We stopped chasing and started choosing. The quality of conversations changed completely — we went from justifying fees to discussing strategy."</p>
+      <div class="rc-m">
+        <div class="rc-mi"><div class="rc-mn">3x</div><div class="rc-ml">Pipeline</div></div>
+        <div class="rc-mi"><div class="rc-mn">Higher</div><div class="rc-ml">Client value</div></div>
+        <div class="rc-mi"><div class="rc-mn">60d</div><div class="rc-ml">To ROI</div></div>
+      </div>
+    </div>
+    <div class="rc rv d1">
+      <div class="rc-h">
+        <div class="rc-av" style="background:var(--s3);color:var(--t2)">VM</div>
+        <div><div class="rc-name">Vidora Media</div><div class="rc-co">Content production — Manchester</div></div>
+      </div>
+      <div class="rc-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+      <p class="rc-q">"We film KSI and Premier League footballers. Innovite built us a pipeline of business clients that finally matches the level of work we produce."</p>
+      <div class="rc-m">
+        <div class="rc-mi"><div class="rc-mn">20+</div><div class="rc-ml">Leads daily</div></div>
+        <div class="rc-mi"><div class="rc-mn">Higher</div><div class="rc-ml">Deal value</div></div>
+        <div class="rc-mi"><div class="rc-mn">0h</div><div class="rc-ml">Prospecting</div></div>
+      </div>
     </div>
   </div>
 </div></section>
