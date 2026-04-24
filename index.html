@@ -166,6 +166,35 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
   .showcase-grid,.rg{grid-template-columns:1fr}
 }
 
+/* ── Process steps ───────────────────────────────────── */
+.stg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.stc{background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);padding:28px;position:relative}
+.stc-n{font-family:'Newsreader',serif;font-size:56px;color:var(--accent);opacity:.1;position:absolute;top:-4px;right:14px;line-height:1}
+.stc h3{font-size:14px;font-weight:600;margin-bottom:6px;position:relative}
+.stc p{font-size:13px;color:var(--t2);line-height:1.6;font-weight:300;position:relative}
+
+/* ── Who we work with ────────────────────────────────── */
+.wg{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;margin-bottom:12px}
+.wc{background:var(--s1);padding:24px;transition:background .25s var(--ease)}
+.wc:hover{background:var(--s2)}
+.wc h3{font-size:14px;font-weight:600;margin-bottom:5px}
+.wc p{font-size:12.5px;color:var(--t2);line-height:1.55;font-weight:300}
+.wn{background:var(--orange-bg);border:1px solid rgba(232,164,58,.1);border-radius:var(--r);padding:14px 18px;font-size:12.5px;color:var(--t2);line-height:1.6;font-weight:300}
+.wn strong{color:var(--orange);font-weight:600}
+
+/* ── FAQ ─────────────────────────────────────────────── */
+.fi{border-bottom:1px solid var(--border)}
+.fq{width:100%;display:flex;justify-content:space-between;align-items:center;padding:18px 0;font-size:14.5px;font-weight:500;color:var(--t1);cursor:pointer;background:none;border:none;text-align:left;gap:14px;font-family:inherit;transition:color .2s var(--ease)}
+.fq:hover{color:var(--accent)}
+.fic{width:22px;height:22px;flex-shrink:0;border-radius:50%;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--accent);transition:all .2s var(--ease)}
+.fi.open .fic{background:var(--accent);color:#fff;transform:rotate(45deg)}
+.fa{font-size:13.5px;color:var(--t2);line-height:1.7;font-weight:300;max-height:0;overflow:hidden;transition:max-height .3s var(--ease),padding .3s var(--ease)}
+.fi.open .fa{max-height:280px;padding-bottom:18px}
+
+@media(max-width:768px){
+  .stg,.wg{grid-template-columns:1fr}
+}
+
 /* == SECTION STYLES == */
 </style>
 </head>
@@ -364,6 +393,58 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
         <div class="rc-mi"><div class="rc-mn">0h</div><div class="rc-ml">Prospecting</div></div>
       </div>
     </div>
+  </div>
+</div></section>
+
+<!-- PROCESS -->
+<section class="sec" id="how"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Process</span></div>
+  <h2 class="sh rv">We move fast. You see results faster.</h2>
+  <p class="ss rv">No drawn-out onboarding. No committee meetings. We get to work.</p>
+  <div class="stg">
+    <div class="stc rv">
+      <div class="stc-n">01</div>
+      <h3>Strategy call</h3>
+      <p>We look at your current pipeline, who you're trying to reach, and where the gaps are. You leave the call with a clear picture either way — whether you work with us or not.</p>
+    </div>
+    <div class="stc rv d1">
+      <div class="stc-n">02</div>
+      <h3>Build week</h3>
+      <p>We set up the outbound, film the first round of content, and build the ad campaigns. Everything's live within two weeks of our first conversation.</p>
+    </div>
+    <div class="stc rv d2">
+      <div class="stc-n">03</div>
+      <h3>Pipeline running</h3>
+      <p>New meetings in your calendar every week. We handle the optimising, the reporting, the follow-ups. You handle the conversations that close.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- WHO -->
+<section class="sec" id="who"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Who we work with</span></div>
+  <h2 class="sh rv">B2B service businesses with something worth selling.</h2>
+  <p class="ss rv">If your average client's worth £5,000+ and you're tired of a pipeline that runs on luck, we should probably talk.</p>
+  <div class="wg rv">
+    <div class="wc"><h3>Professional services</h3><p>Accountants, solicitors, advisors. One client can be worth years of retainer — so finding the right ones matters.</p></div>
+    <div class="wc"><h3>Consultants</h3><p>If every engagement starts with "someone recommended me", that's the ceiling we lift.</p></div>
+    <div class="wc"><h3>Agencies</h3><p>Marketing, PR, media, tech. The clients with real budgets are getting pitched constantly. We make sure you're in the room first.</p></div>
+    <div class="wc"><h3>Specialist providers</h3><p>Recruitment, IT, training, commercial property. High-value service, other businesses as clients — we built this for you.</p></div>
+  </div>
+  <div class="wn rv"><strong>Not for everyone.</strong> We don't work with B2C businesses, deal values under £5,000, or firms that can't take on more work right now. Better to be straight about it than waste a call.</div>
+</div></section>
+
+<!-- FAQ -->
+<section class="sec" id="faq"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">FAQ</span></div>
+  <h2 class="sh rv">Things people ask before they start.</h2>
+  <div class="rv" style="margin-top:28px">
+    <div class="fi"><button class="fq">How long before I see results?<span class="fic">+</span></button><div class="fa">Most clients get their first booked meeting inside 14 days of going live. Outbound starts producing conversations in week one or two. Paid ads usually deliver leads inside a fortnight.</div></div>
+    <div class="fi"><button class="fq">Am I locked into a contract?<span class="fic">+</span></button><div class="fa">No. Month to month, no setup fees, no cancellation penalty. We keep clients because the work pays for itself, not because they're stuck in a contract.</div></div>
+    <div class="fi"><button class="fq">What makes you different from other agencies?<span class="fic">+</span></button><div class="fa">Most agencies pick one lane — ads, content, or outbound. We run all three, and they feed each other. The outbound uses real research, not templates. The content's produced by a team that films KSI and Premier League footballers, not a freelancer with a stock library.</div></div>
+    <div class="fi"><button class="fq">What do I actually have to do?<span class="fic">+</span></button><div class="fa">Show up to the calls we book. That's about it. Research, outreach, content, ads, follow-ups — we handle the lot. Most clients spend under 30 minutes a week on anything Innovite-related.</div></div>
+    <div class="fi"><button class="fq">What kind of businesses do you work with?<span class="fic">+</span></button><div class="fa">B2B service businesses with a deal value above £5,000. Strongest results have come from professional services firms, agencies, consultants and specialist providers. If you sell directly to consumers, we're not the right fit.</div></div>
+    <div class="fi"><button class="fq">How much does it cost?<span class="fic">+</span></button><div class="fa">Depends on which services you need and the volume we're running. We'll cover pricing on the strategy call once we understand your setup. No setup fees, no minimum commitment.</div></div>
   </div>
 </div></section>
 
