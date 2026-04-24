@@ -164,11 +164,11 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
 .sc-btn{width:36px;height:36px;border-radius:50%;background:var(--s2);border:1px solid var(--border);cursor:pointer;color:var(--t2);font-size:15px;display:flex;align-items:center;justify-content:center;transition:all .2s var(--ease);padding:0;font-family:inherit;line-height:1}
 .sc-btn:hover:not(:disabled){background:var(--accent);color:#fff;border-color:transparent}
 .sc-btn:disabled{opacity:.28;cursor:default}
-.showcase-grid{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-.showcase-grid::-webkit-scrollbar{display:none}
-.showcase-card{flex:0 0 calc(46% - 8px);scroll-snap-align:start;background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;transition:background .25s var(--ease)}
+.showcase-grid{overflow:hidden;border-radius:var(--rlg)}
+.sc-track{display:flex;gap:16px;transition:transform .42s cubic-bezier(.2,.6,.2,1);will-change:transform}
+.showcase-card{flex:0 0 calc(46% - 8px);background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;transition:background .25s var(--ease)}
 .showcase-card:hover{background:var(--s2)}
-.showcase-video{width:100%;aspect-ratio:9/16;max-height:320px;background:var(--s2);overflow:hidden;display:flex;align-items:center}
+.showcase-video{width:100%;aspect-ratio:9/16;background:var(--s2);overflow:hidden}
 .showcase-video wistia-player{display:block;width:100%}
 .showcase-card-body{padding:20px 22px 22px}
 .showcase-client{margin-bottom:10px}
@@ -460,6 +460,7 @@ footer{border-top:1px solid var(--border);padding:24px 0}
     </div>
   </div>
   <div class="showcase-grid" id="scGrid">
+  <div class="sc-track" id="scTrack">
 
     <div class="showcase-card">
       <div class="showcase-video">
@@ -552,7 +553,8 @@ footer{border-top:1px solid var(--border);padding:24px 0}
       </div>
     </div>
 
-  </div>
+  </div><!-- /sc-track -->
+  </div><!-- /showcase-grid -->
   <div class="sc-dots" id="scDots"></div>
 </div></section>
 
@@ -974,12 +976,12 @@ function qShowResult(){
   document.getElementById('qr-cta').innerHTML=cta;
 }
 
-// ── Showcase carousel ────────────────────────────────
-var scIdx=0;
-var scGrid,scDots,scCards;
+// ── Showcase carousel (transform-based, no scroll API) ───
+var scIdx=0,scGrid,scTrack,scDots,scCards,scTouchX=0;
 
 function scVis(){return window.innerWidth>640?2:1;}
 function scPages(){return Math.ceil(scCards.length/scVis());}
+function scCardW(){return scCards[0].offsetWidth+16;}
 
 function scBuildDots(){
   scDots.innerHTML='';
@@ -992,14 +994,10 @@ function scBuildDots(){
   }
 }
 
-function scCardW(){
-  return scCards&&scCards.length?scCards[0].offsetWidth+16:0;
-}
-
 function scGoTo(i){
   scIdx=Math.max(0,Math.min(scPages()-1,i));
-  var cw=scCardW();
-  if(cw>0) scGrid.scrollTo({left:scIdx*scVis()*cw,behavior:'smooth'});
+  var tx=scIdx*scVis()*scCardW();
+  scTrack.style.transform='translateX(-'+tx+'px)';
   document.getElementById('scPrev').disabled=scIdx===0;
   document.getElementById('scNext').disabled=scIdx>=scPages()-1;
   var dots=scDots.querySelectorAll('.sc-dot');
@@ -1008,19 +1006,18 @@ function scGoTo(i){
 
 function scNav(dir){scGoTo(scIdx+dir);}
 
-// Script is at end of body — DOM is already available, init directly
 scGrid=document.getElementById('scGrid');
+scTrack=document.getElementById('scTrack');
 scDots=document.getElementById('scDots');
-if(scGrid){
-  scCards=scGrid.querySelectorAll('.showcase-card');
-  scBuildDots();
-  scGoTo(0);
+if(scGrid&&scTrack){
+  scCards=scTrack.querySelectorAll('.showcase-card');
+  scBuildDots();scGoTo(0);
   window.addEventListener('resize',function(){scBuildDots();scGoTo(0);});
-  scGrid.addEventListener('scroll',function(){
-    var cw=scCardW();
-    if(!cw)return;
-    var ni=Math.round(scGrid.scrollLeft/(scVis()*cw));
-    if(ni!==scIdx){scIdx=ni;scGoTo(scIdx);}
+  // Touch swipe
+  scGrid.addEventListener('touchstart',function(e){scTouchX=e.touches[0].clientX;},{passive:true});
+  scGrid.addEventListener('touchend',function(e){
+    var dx=scTouchX-e.changedTouches[0].clientX;
+    if(Math.abs(dx)>40)scNav(dx>0?1:-1);
   },{passive:true});
 }
 
