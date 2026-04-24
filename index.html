@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18,11 +18,28 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
-<script src="https://fast.wistia.com/player.js" async></script>
-<script src="https://fast.wistia.com/embed/r3nqe371nk.js" async type="module"></script>
-<script src="https://fast.wistia.com/embed/e5d9fo3nuq.js" async type="module"></script>
-<script src="https://fast.wistia.com/embed/j5e27g9bhc.js" async type="module"></script>
-<script src="https://fast.wistia.com/embed/bfnl22makg.js" async type="module"></script>
+<!-- Wistia player + embeds are lazy-loaded when the showcase section enters viewport. See app.js. -->
+
+<!-- Plausible analytics — replace data-domain with your production domain once configured -->
+<script defer data-domain="innoviteai.com" src="https://plausible.io/js/script.js"></script>
+<script>window.plausible=window.plausible||function(){(window.plausible.q=window.plausible.q||[]).push(arguments)}</script>
+
+<!-- Noindex on Vercel preview deployments so they don't compete with the canonical domain -->
+<script>if(location.hostname.endsWith('.vercel.app')){var m=document.createElement('meta');m.name='robots';m.content='noindex';document.head.appendChild(m);}</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Innovite",
+  "alternateName": "Innovite AI",
+  "description": "AI lead generation agency for B2B service firms. Outbound, content, and paid ads run as one system.",
+  "url": "https://innoviteai.com",
+  "email": "sammy@innoviteai.com",
+  "founder": {"@type":"Person","name":"Sammy Bimpson"},
+  "areaServed": "GB"
+}
+</script>
 <style>
 /* ── Tokens ──────────────────────────────────────────────
    Neutrals are clearly blue-tinted (not pure grey).
@@ -357,6 +374,19 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 
 @media(max-width:480px){.qbtn{bottom:16px;right:16px;font-size:12px;padding:9px 14px 9px 10px}}
 
+/* Screen-reader only (visually hidden but accessible to AT) */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Respect the user's motion preference */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;scroll-behavior:auto !important}
+  html{scroll-behavior:auto}
+  .rv{opacity:1 !important;transform:none !important}
+  .mq-t{animation:none}
+  .hb-dot,.qbtn-dot,.qanalyse-spinner{animation:none}
+  .qanalyse-dots::after{animation:none;content:'...'}
+}
+
 /* == SECTION STYLES == */
 </style>
 </head>
@@ -376,9 +406,9 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 <!-- HERO -->
 <section class="hero"><div class="w"><div class="hg">
   <div>
-    <div class="hb rv"><span class="hb-dot"></span>Lead gen for B2B service firms</div>
+    <div class="hb rv"><span class="hb-dot"></span>AI lead gen for B2B service firms</div>
     <h1 class="rv d1">Clients find you.<br><em>Not the other way around.</em></h1>
-    <p class="hsub rv d2">Outbound, content, and paid ads — all pulling in the same direction. You spend your time on the calls that close, not the ones that lead nowhere.</p>
+    <p class="hsub rv d2">AI-driven outbound, content, and paid ads — all pulling in the same direction. You spend your time on the calls that close, not the ones that lead nowhere.</p>
     <div class="hbtns rv d3">
       <a href="#" onclick="oF();return false" class="btn btn-a btn-al">Book a strategy call</a>
       <a href="#work" class="btn btn-g">See our work</a>
@@ -413,8 +443,8 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 
 <!-- STATS -->
 <section class="stats"><div class="w"><div class="sr">
-  <div class="si rv"><div class="sn">12%</div><div class="sl">Average reply rate<br>(industry avg: 2%)</div></div>
-  <div class="si rv d1"><div class="sn">14</div><div class="sl">Days from kickoff<br>to first booked meeting</div></div>
+  <div class="si rv"><div class="sn">12.4%</div><div class="sl">Average reply rate<br>(industry avg: 2%)</div></div>
+  <div class="si rv d1"><div class="sn">14</div><div class="sl">Days from going live<br>to first booked meeting</div></div>
   <div class="si rv d2"><div class="sn">3x</div><div class="sl">Average pipeline growth<br>within 60 days</div></div>
   <div class="si rv d3"><div class="sn">0</div><div class="sl">Hours of your time<br>spent prospecting</div></div>
 </div></div></section>
@@ -422,24 +452,24 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 <!-- SERVICES -->
 <section class="sec" id="services"><div class="w">
   <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Services</span></div>
-  <h2 class="sh rv">Outbound. Content. Ads.<br>All pointed at the same target.</h2>
+  <h2 class="sh rv">Outbound. Content. Paid ads.<br>All pointed at the same target.</h2>
   <p class="ss rv">Most agencies run one channel. We run three — because that's what actually keeps a calendar full.</p>
   <div class="svg rv">
     <div class="svc">
       <div class="svc-i">&#8631;</div>
-      <h3>Intelligent Outbound</h3>
-      <p>We research your ideal clients, look at where they're underperforming, and reach out with something so specific it doesn't read like outreach. It reads like someone who actually paid attention.</p>
-      <div class="svc-tags"><span class="svc-tag">Research</span><span class="svc-tag">Lead scoring</span><span class="svc-tag">Personalised outreach</span></div>
+      <h3>AI Outbound</h3>
+      <p>AI-assisted research at scale. We scan your ideal clients for buying signals, find where they're underperforming, and reach out with something so specific it doesn't read like outreach — because every message is human-written, not template-blasted.</p>
+      <div class="svc-tags"><span class="svc-tag">AI research</span><span class="svc-tag">Lead scoring</span><span class="svc-tag">Personalised outreach</span></div>
     </div>
     <div class="svc">
       <div class="svc-i">&#9655;</div>
-      <h3>Content Production</h3>
+      <h3>Content</h3>
       <p>Our production team films KSI and Premier League footballers. Same team, same craft — turned on your business. Short-form video, stills, and a plan that makes people stop scrolling.</p>
       <div class="svc-tags"><span class="svc-tag">Video</span><span class="svc-tag">Photography</span><span class="svc-tag">Strategy</span></div>
     </div>
     <div class="svc">
       <div class="svc-i">&#9670;</div>
-      <h3>Paid Advertising</h3>
+      <h3>Paid ads</h3>
       <p>Meta and Google built for revenue, not impressions. We write the ads, build the landing pages, run the targeting — and follow up with every lead inside five minutes of them clicking.</p>
       <div class="svc-tags"><span class="svc-tag">Meta</span><span class="svc-tag">Google</span><span class="svc-tag">Instant follow-up</span></div>
     </div>
@@ -611,14 +641,14 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 <section class="sec" id="who"><div class="w">
   <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Who we work with</span></div>
   <h2 class="sh rv">B2B service businesses with something worth selling.</h2>
-  <p class="ss rv">If your average client's worth £5,000+ and you're tired of a pipeline that runs on luck, we should probably talk.</p>
+  <p class="ss rv">If your average client's worth £2k+ and you're tired of a pipeline that runs on luck, we should probably talk.</p>
   <div class="wg rv">
     <div class="wc"><h3>Professional services</h3><p>Accountants, solicitors, advisors. One client can be worth years of retainer — so finding the right ones matters.</p></div>
     <div class="wc"><h3>Consultants</h3><p>If every engagement starts with "someone recommended me", that's the ceiling we lift.</p></div>
     <div class="wc"><h3>Agencies</h3><p>Marketing, PR, media, tech. The clients with real budgets are getting pitched constantly. We make sure you're in the room first.</p></div>
     <div class="wc"><h3>Specialist providers</h3><p>Recruitment, IT, training, commercial property. High-value service, other businesses as clients — we built this for you.</p></div>
   </div>
-  <div class="wn rv"><strong>Not for everyone.</strong> We don't work with B2C businesses, deal values under £5,000, or firms that can't take on more work right now. Better to be straight about it than waste a call.</div>
+  <div class="wn rv"><strong>Not for everyone.</strong> We don't work with B2C businesses, deal values under £2k, or firms that can't take on more work right now. Better to be straight about it than waste a call.</div>
 </div></section>
 
 <!-- FAQ -->
@@ -630,7 +660,7 @@ footer{border-top:1px solid var(--border);padding:24px 0}
     <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa2">Am I locked into a contract?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa2" role="region">No. Month to month, no setup fees, no cancellation penalty. We keep clients because the work pays for itself, not because they're stuck in a contract.</div></div>
     <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa3">What makes you different from other agencies?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa3" role="region">Most agencies pick one lane — ads, content, or outbound. We run all three, and they feed each other. The outbound uses real research, not templates. The content's produced by a team that films KSI and Premier League footballers, not a freelancer with a stock library.</div></div>
     <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa4">What do I actually have to do?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa4" role="region">Show up to the calls we book. That's about it. Research, outreach, content, ads, follow-ups — we handle the lot. Most clients spend under 30 minutes a week on anything Innovite-related.</div></div>
-    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa5">What kind of businesses do you work with?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa5" role="region">B2B service businesses with a deal value above £5,000. Strongest results have come from professional services firms, agencies, consultants and specialist providers. If you sell directly to consumers, we're not the right fit.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa5">What kind of businesses do you work with?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa5" role="region">B2B service businesses with a deal value above £2k. Strongest results have come from professional services firms, agencies, consultants and specialist providers. If you sell directly to consumers, we're not the right fit.</div></div>
     <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa6">How much does it cost?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa6" role="region">Depends on which services you need and the volume we're running. We'll cover pricing on the strategy call once we understand your setup. No setup fees, no minimum commitment.</div></div>
   </div>
 </div></section>
@@ -675,8 +705,8 @@ footer{border-top:1px solid var(--border);padding:24px 0}
         <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Professional services</div>
         <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Recruitment</div>
         <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Agency or consultancy</div>
-        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Healthcare or aesthetics</div>
-        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Property or construction</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Healthcare (B2B)</div>
+        <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Commercial property or construction</div>
         <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Other B2B service</div>
       </div></div>
     </div>
@@ -712,11 +742,16 @@ footer{border-top:1px solid var(--border);padding:24px 0}
     <div id="f5" style="display:none">
       <div class="fh"><div class="fsl">Step 5 of 5</div><div class="ftl">Where should we send your strategy plan?</div><div class="fsb">We'll get back to you within 24 hours.</div></div>
       <div class="fbd">
-        <input class="fin" type="text" id="fN" placeholder="Your name">
-        <input class="fin" type="text" id="fC" placeholder="Company name">
-        <input class="fin" type="email" id="fE" placeholder="Work email">
-        <input class="fin" type="tel" id="fP" placeholder="Phone number">
-        <div style="font-size:10px;color:var(--t3);margin-top:2px">We never share your information.</div>
+        <label for="fN" class="sr-only">Your name</label>
+        <input class="fin" type="text" id="fN" name="name" placeholder="Your name" required autocomplete="name">
+        <label for="fC" class="sr-only">Company name</label>
+        <input class="fin" type="text" id="fC" name="company" placeholder="Company name" autocomplete="organization">
+        <label for="fE" class="sr-only">Work email</label>
+        <input class="fin" type="email" id="fE" name="email" placeholder="Work email" required autocomplete="email">
+        <label for="fP" class="sr-only">Phone number</label>
+        <input class="fin" type="tel" id="fP" name="phone" placeholder="Phone number" autocomplete="tel">
+        <div id="fErr" role="alert" style="font-size:11.5px;color:#f87171;margin-top:6px;display:none"></div>
+        <div style="font-size:10px;color:var(--t3);margin-top:6px">We never share your information.</div>
       </div>
     </div>
     <div id="f6" style="display:none">
@@ -768,10 +803,10 @@ footer{border-top:1px solid var(--border);padding:24px 0}
         <div class="qstep" id="qq2">
           <div style="font-size:13px;color:var(--t3);margin-bottom:12px;font-weight:500">What's your average deal value?</div>
           <div class="qopts">
-            <div class="qopt" onclick="qSel(this,'q2','sub2k')"><div class="qopt-icon">£</div>Under £2,000</div>
-            <div class="qopt" onclick="qSel(this,'q2','2to5k')"><div class="qopt-icon">£</div>£2,000 — £5,000</div>
-            <div class="qopt" onclick="qSel(this,'q2','5to15k')"><div class="qopt-icon">£</div>£5,000 — £15,000</div>
-            <div class="qopt" onclick="qSel(this,'q2','15kplus')"><div class="qopt-icon">£</div>£15,000+</div>
+            <div class="qopt" onclick="qSel(this,'q2','sub2k')"><div class="qopt-icon">£</div>Under £2k</div>
+            <div class="qopt" onclick="qSel(this,'q2','2to5k')"><div class="qopt-icon">£</div>£2k — £5k</div>
+            <div class="qopt" onclick="qSel(this,'q2','5to15k')"><div class="qopt-icon">£</div>£5k — £15k</div>
+            <div class="qopt" onclick="qSel(this,'q2','15kplus')"><div class="qopt-icon">£</div>£15k+</div>
           </div>
         </div>
 
@@ -829,6 +864,7 @@ function oQ(){
   document.getElementById('qo').classList.add('on');
   document.body.style.overflow='hidden';
   setTimeout(()=>document.querySelector('#qo .qx').focus(),50);
+  if(window.plausible) plausible('Qualifier Open');
 }
 function cQ(){
   document.getElementById('qo').classList.remove('on');
@@ -944,29 +980,34 @@ function qShowResult(){
   const r=document.getElementById('qresult');
   r.style.display='block';
   const{score,flags,hardNo}=qScore();
-  let icon,heading,body,cta;
+  let icon,heading,body,cta,resultBucket;
 
   if(hardNo){
+    resultBucket='hard-no';
     icon='<div class="qr-icon nope">&#10005;</div>';
     heading='We\'re not the right fit — and we\'d rather tell you now.';
     body='We only take on clients where we\'re confident the numbers work. Based on your answers, that\'s not the case here. Better to be honest than waste each other\'s time.';
     cta='<p style="font-size:12.5px;color:var(--t3);margin-top:4px">If things change — deal size grows, you shift to B2B — we\'d love to talk. <a href="mailto:sammy@innoviteai.com" style="color:var(--accent)">Drop us a line.</a></p>';
   } else if(score>=70){
+    resultBucket='strong-fit';
     icon='<div class="qr-icon fit">&#10003;</div>';
     heading='You look like a strong fit.';
     body='Based on what you\'ve told us, we\'d be confident working together. The strategy call is free — we\'ll walk you through exactly what we\'d build and what you\'d expect to get back.';
     cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a free strategy call →</a>';
   } else if(score>=45){
+    resultBucket='maybe';
     icon='<div class="qr-icon maybe">&#8764;</div>';
     heading='There\'s probably something here.';
     body='It\'s not a clear-cut yes, but the fundamentals are there. A 20-minute call is the right next step — we can dig into whether the numbers make sense for your specific situation.';
     cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a call — no obligation</a>';
   } else {
+    resultBucket='not-yet';
     icon='<div class="qr-icon maybe">&#8764;</div>';
     heading='The timing might not be right yet.';
     body='The fundamentals look okay, but a few things suggest now isn\'t the moment. Come back when you\'re ready to move — the first conversation is always free.';
     cta='<p style="font-size:12.5px;color:var(--t3);margin-top:4px">No rush. <a href="mailto:sammy@innoviteai.com" style="color:var(--accent)">Email us when the time is right.</a></p>';
   }
+  if(window.plausible) plausible('Qualifier Result',{props:{result:resultBucket,score:score}});
 
   document.getElementById('qr-icon').outerHTML=icon;
   document.getElementById('qr-h').textContent=heading;
@@ -1021,6 +1062,39 @@ if(scGrid&&scTrack){
   },{passive:true});
 }
 
+// ── Wistia lazy-load ────────────────────────────────
+// Defer the Wistia player + per-video embed scripts until a card enters the viewport.
+// Saves ~600KB of JS on initial load for visitors who never scroll to the work section.
+(function(){
+  let playerLoaded=false;
+  const loadedEmbeds=new Set();
+  function loadScript(src,asModule){
+    const s=document.createElement('script');
+    s.src=src;s.async=true;
+    if(asModule) s.type='module';
+    document.head.appendChild(s);
+  }
+  function ensurePlayer(){
+    if(playerLoaded) return;
+    playerLoaded=true;
+    loadScript('https://fast.wistia.com/player.js',false);
+  }
+  function ensureEmbed(mediaId){
+    if(loadedEmbeds.has(mediaId)||!mediaId) return;
+    loadedEmbeds.add(mediaId);
+    loadScript('https://fast.wistia.com/embed/'+mediaId+'.js',true);
+  }
+  const wistiaObs=new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if(!en.isIntersecting) return;
+      const p=en.target.querySelector('wistia-player');
+      if(p){ensurePlayer();ensureEmbed(p.getAttribute('media-id'));}
+      wistiaObs.unobserve(en.target);
+    });
+  },{rootMargin:'200px'});
+  document.querySelectorAll('.showcase-video').forEach(function(el){wistiaObs.observe(el);});
+})();
+
 // ── Reveal on scroll
 const ob=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting)x.target.classList.add('in')})},{threshold:.06});
 document.querySelectorAll('.rv').forEach(e=>ob.observe(e));
@@ -1046,6 +1120,7 @@ function oF(){
   document.body.style.overflow='hidden';
   // Move focus to close button
   setTimeout(()=>m.querySelector('.fx').focus(),50);
+  if(window.plausible) plausible('Form Open');
 }
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){cF();}
@@ -1076,30 +1151,51 @@ function sh(n){
     dd.className='fd'+(i===n?' ac':i<n?' dn':'');
   }
   c=n;
+  if(window.plausible) plausible('Form Step',{props:{step:n}});
 }
 function nx(){if(c===5){sb();return}sh(c+1)}
 function pv(){if(c>1)sh(c-1)}
-function sb(){
-  d.name=document.getElementById('fN').value;
-  d.company=document.getElementById('fC').value;
-  d.email=document.getElementById('fE').value;
-  d.phone=document.getElementById('fP').value;
-  if(!d.name||!d.email){
+// TODO: replace YOUR_FORM_ID with the Formspree form ID from https://formspree.io
+const FORMSPREE_ENDPOINT='https://formspree.io/f/YOUR_FORM_ID';
+
+async function sb(){
+  d.name=document.getElementById('fN').value.trim();
+  d.company=document.getElementById('fC').value.trim();
+  d.email=document.getElementById('fE').value.trim();
+  d.phone=document.getElementById('fP').value.trim();
+
+  const emailOk=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email);
+  const err=document.getElementById('fErr');
+  if(!d.name||!emailOk){
     document.getElementById('fN').style.borderColor=d.name?'':'#f87171';
-    document.getElementById('fE').style.borderColor=d.email?'':'#f87171';
+    document.getElementById('fE').style.borderColor=emailOk?'':'#f87171';
+    err.textContent=!d.name?'Please enter your name.':'Please enter a valid email address.';
+    err.style.display='block';
     return;
   }
-  for(let i=1;i<=5;i++)document.getElementById('f'+i).style.display='none';
-  document.getElementById('f6').style.display='block';
-  document.getElementById('fnv').style.display='none';
-  const s='New Innovite lead: '+(d.company||d.name);
-  const b=Object.entries(d).map(([k,v])=>k+': '+v).join('\n');
-  const a=document.createElement('a');
-  a.href='mailto:sammy@innoviteai.com?subject='+encodeURIComponent(s)+'&body='+encodeURIComponent(b);
-  a.style.display='none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  err.style.display='none';
+
+  const btn=document.getElementById('fnx');
+  btn.disabled=true;
+  btn.textContent='Sending…';
+
+  try{
+    const res=await fetch(FORMSPREE_ENDPOINT,{
+      method:'POST',
+      headers:{'Accept':'application/json','Content-Type':'application/json'},
+      body:JSON.stringify(d)
+    });
+    if(!res.ok) throw new Error('Submit failed: '+res.status);
+    for(let i=1;i<=5;i++)document.getElementById('f'+i).style.display='none';
+    document.getElementById('f6').style.display='block';
+    document.getElementById('fnv').style.display='none';
+    if(window.plausible) plausible('Form Submit');
+  }catch(e){
+    btn.disabled=false;
+    btn.textContent='Submit';
+    err.innerHTML='Something went wrong. Please email <a href="mailto:sammy@innoviteai.com" style="color:var(--accent)">sammy@innoviteai.com</a> directly.';
+    err.style.display='block';
+  }
 }
 </script>
 </body>
