@@ -157,9 +157,10 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
 .showcase-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden}
 .showcase-card{background:var(--s1);padding:28px;transition:background .25s var(--ease)}
 .showcase-card:hover{background:var(--s2)}
-.showcase-video{position:relative;width:100%;aspect-ratio:16/9;background:var(--s2);overflow:hidden;display:flex;align-items:center;justify-content:center;border-radius:8px;margin-bottom:16px}
-.showcase-video video,.showcase-video iframe{width:100%;height:100%;object-fit:cover;border:none}
-.showcase-play{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:16px}
+.showcase-video{position:relative;width:100%;aspect-ratio:16/9;background:var(--s2);overflow:hidden;border-radius:8px;margin-bottom:16px}
+.showcase-video video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border:none;display:block}
+.showcase-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;background:rgba(0,0,0,.55);border:2px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:19px;transition:background .2s var(--ease),transform .2s var(--ease);z-index:2;padding:0;font-family:inherit;line-height:1}
+.showcase-play:hover{background:rgba(61,124,245,.85);border-color:transparent;transform:translate(-50%,-50%) scale(1.1)}
 .showcase-client{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
 .showcase-name{font-size:16px;font-weight:600;line-height:1.2}
 .showcase-desc{font-size:11.5px;color:var(--t3);font-weight:300;margin-top:2px}
@@ -437,60 +438,69 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 <section class="sec" id="work"><div class="w">
   <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Our work</span></div>
   <h2 class="sh rv">Four clients. Four different problems. One system.</h2>
-  <p class="ss rv">Video case studies are being filmed now. Here's what was built and what moved.</p>
+  <p class="ss rv">Here's what we built and what moved.</p>
   <div class="showcase-grid">
 
     <div class="showcase-card rv">
-      <!-- Add video: <video src="advantedge.mp4" autoplay muted loop playsinline style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;margin-bottom:16px"></video> -->
+      <div class="showcase-video">
+        <video src="advantedge.mp4" preload="none" playsinline></video>
+        <button class="showcase-play" onclick="svPlay(this)" aria-label="Play Advantedge case study">&#9654;</button>
+      </div>
       <div class="showcase-client">
         <div>
           <div class="showcase-name">Advantedge</div>
           <div class="showcase-desc">Professional services — London</div>
         </div>
-        <span class="showcase-filming">Case study filming</span>
       </div>
       <div class="showcase-services">
         <span class="showcase-svc">Outbound</span>
         <span class="showcase-svc">Content</span>
         <span class="showcase-svc">Paid ads</span>
       </div>
-      <p class="showcase-outcome-text">Outbound system built and live. First qualified conversations in week two. Content production underway — case study published when complete.</p>
+      <p class="showcase-outcome-text">Outbound system built and live. First qualified conversations in week two. Content production underway.</p>
     </div>
 
     <div class="showcase-card rv d1">
-      <!-- Add video: <video src="cic-event.mp4" autoplay muted loop playsinline style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;margin-bottom:16px"></video> -->
+      <div class="showcase-video">
+        <video src="cic-event.mp4" preload="none" playsinline></video>
+        <button class="showcase-play" onclick="svPlay(this)" aria-label="Play CIC Event case study">&#9654;</button>
+      </div>
       <div class="showcase-client">
         <div>
           <div class="showcase-name">CIC Event</div>
           <div class="showcase-desc">Corporate events — London</div>
         </div>
-        <span class="showcase-filming">Case study filming</span>
       </div>
       <div class="showcase-services">
         <span class="showcase-svc">Content</span>
         <span class="showcase-svc">Outbound</span>
       </div>
-      <p class="showcase-outcome-text">Brand content produced and deployed. Lead generation system configured and running. Results being compiled for full publication.</p>
+      <p class="showcase-outcome-text">Brand content produced and deployed. Lead generation system running. Results being compiled.</p>
     </div>
 
     <div class="showcase-card rv d2">
-      <!-- Add video: <video src="evinco.mp4" autoplay muted loop playsinline style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;margin-bottom:16px"></video> -->
+      <div class="showcase-video">
+        <video src="evinco.mp4" preload="none" playsinline></video>
+        <button class="showcase-play" onclick="svPlay(this)" aria-label="Play Evinco case study">&#9654;</button>
+      </div>
       <div class="showcase-client">
         <div>
           <div class="showcase-name">Evinco</div>
           <div class="showcase-desc">Strategy consulting</div>
         </div>
-        <span class="showcase-filming">Case study filming</span>
       </div>
       <div class="showcase-services">
         <span class="showcase-svc">Outbound</span>
         <span class="showcase-svc">Lead scoring</span>
       </div>
-      <p class="showcase-outcome-text">Personalised outbound live from day one. Booked meetings appearing in calendar by end of week two. Full numbers to follow.</p>
+      <p class="showcase-outcome-text">Personalised outbound live from day one. Booked meetings in the calendar by end of week two.</p>
     </div>
 
     <div class="showcase-card rv d3">
-      <!-- Add video: <video src="roca.mp4" autoplay muted loop playsinline style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;margin-bottom:16px"></video> -->
+      <div class="showcase-video">
+        <video src="roca.mp4" preload="none" playsinline></video>
+        <button class="showcase-play" onclick="svPlay(this)" aria-label="Play ROCA case study">&#9654;</button>
+      </div>
       <div class="showcase-client">
         <div>
           <div class="showcase-name">ROCA Accountants</div>
@@ -929,6 +939,22 @@ function qShowResult(){
   const why=document.getElementById('qr-why');
   why.innerHTML='<div class="qr-why-label">What we looked at</div>'+flags.map(f=>`<div class="qr-why-item${f.bad?' bad':''}">${f.t}</div>`).join('');
   document.getElementById('qr-cta').innerHTML=cta;
+}
+
+// ── Showcase video player ─────────────────────────────
+function svPlay(btn){
+  const wrap=btn.closest('.showcase-video');
+  const v=wrap.querySelector('video');
+  // Pause all other showcase videos
+  document.querySelectorAll('.showcase-video').forEach(w=>{
+    if(w===wrap)return;
+    const ov=w.querySelector('video');
+    if(!ov.paused){ov.pause();ov.controls=false;w.querySelector('.showcase-play').style.display='flex';}
+  });
+  v.controls=true;
+  v.play();
+  btn.style.display='none';
+  v.onended=()=>{v.controls=false;btn.style.display='flex';};
 }
 
 // ── Reveal on scroll
