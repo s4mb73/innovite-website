@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Innovite — AI Lead Generation Agency</title>
 <meta name="description" content="Innovite finds, qualifies, and books meetings with your ideal clients. Outbound, content, and paid ads run as one system.">
+<meta property="og:title" content="Innovite — AI Lead Generation Agency">
+<meta property="og:description" content="Outbound, content, and paid ads run as one system. Your pipeline stays full. You stop being the one chasing.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://innoviteai.com">
+<meta property="og:image" content="https://innoviteai.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Innovite — AI Lead Generation Agency">
+<meta name="twitter:description" content="Outbound, content, and paid ads run as one system. Your pipeline stays full.">
+<link rel="canonical" href="https://innoviteai.com">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233d7cf5'/><text y='24' x='5' font-size='22' font-family='serif' fill='white'>i</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
@@ -71,6 +81,11 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
 .hc-v{font-weight:600}
 /* caption, not a card-in-card */
 .hc-cap{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:11.5px;color:var(--t3);text-align:center;font-style:italic;font-family:'Newsreader',serif}
+/* Showcase outcome tag for clients without published metrics yet */
+.showcase-coming{display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);font-size:11px;color:var(--t3);width:100%}
+.showcase-coming::before{content:'';display:block;width:4px;height:4px;border-radius:50%;background:var(--t3);flex-shrink:0}
+.showcase-outcome{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+.showcase-tag{font-size:10.5px;color:var(--t2);background:var(--s2);padding:3px 9px;border-radius:100px;border:1px solid var(--border)}
 
 /* ── Reveal (quiet easing, no bounce) ────────────────── */
 .rv{opacity:0;transform:translateY(14px);transition:opacity .5s var(--ease),transform .5s var(--ease)}
@@ -82,10 +97,18 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
   .w{padding:0 20px}
   .hero{padding:48px 0 40px}
   .hg{grid-template-columns:1fr}
-  .hc{display:none}
+  /* Hero card stacks below on mobile instead of hiding */
+  .hc{margin-top:28px;font-size:12px}
   .nl .na{display:none}
   .hbtns{flex-direction:column;align-items:flex-start}
 }
+
+/* ── Logo strip ──────────────────────────────────────── */
+.logos{padding:20px 0;border-bottom:1px solid var(--border)}
+.logos-row{display:flex;align-items:center;justify-content:center;gap:40px;flex-wrap:wrap}
+.logo-item{font-size:13px;font-weight:600;color:var(--t3);letter-spacing:.5px;opacity:.55;transition:opacity .2s var(--ease)}
+.logo-item:hover{opacity:.85}
+@media(max-width:600px){.logos-row{gap:24px}.logo-item{font-size:12px}}
 
 /* ── Marquee ──────────────────────────────────────────── */
 .mq{border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:14px 0;overflow:hidden}
@@ -260,6 +283,62 @@ footer{border-top:1px solid var(--border);padding:24px 0}
   .cta{padding:44px 20px}
 }
 
+/* ── AI Qualifier widget ─────────────────────────────── */
+.qbtn{position:fixed;bottom:24px;right:24px;z-index:150;display:flex;align-items:center;gap:8px;background:var(--s1);border:1px solid var(--b2);border-radius:100px;padding:10px 18px 10px 12px;font-size:13px;font-weight:500;color:var(--t1);cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.4);transition:border-color .2s var(--ease),box-shadow .2s var(--ease)}
+.qbtn:hover{border-color:var(--accent);box-shadow:0 4px 28px rgba(61,124,245,.2)}
+.qbtn-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:p 2.5s var(--ease) infinite;flex-shrink:0}
+/* qualifier modal */
+.qo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(10px);z-index:200;align-items:center;justify-content:center;padding:20px}
+.qo.on{display:flex}
+.qcard{background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);max-width:480px;width:100%;max-height:90vh;overflow-y:auto;position:relative}
+.qx{position:absolute;top:12px;right:12px;width:26px;height:26px;border-radius:50%;border:none;background:var(--s3);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:var(--t3);transition:color .2s var(--ease)}
+.qx:hover{color:var(--t1)}
+.qh{padding:28px 28px 0}
+.qh-label{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.qh-title{font-family:'Newsreader',serif;font-size:22px;font-weight:400;line-height:1.2;margin-bottom:6px}
+.qh-sub{font-size:12.5px;color:var(--t3);font-weight:300;margin-bottom:20px}
+.qbody{padding:0 28px 24px}
+/* question steps */
+.qstep{display:none}.qstep.active{display:block}
+.qopts{display:flex;flex-direction:column;gap:6px}
+.qopt{display:flex;align-items:center;gap:10px;padding:11px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--t2);transition:border-color .18s var(--ease),background .18s var(--ease),color .18s var(--ease)}
+.qopt:hover{border-color:var(--b2);color:var(--t1)}
+.qopt.sel{border-color:var(--accent);background:var(--accent-bg);color:var(--t1)}
+.qopt-icon{width:28px;height:28px;border-radius:6px;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;color:var(--t3)}
+.qopt.sel .qopt-icon{background:var(--accent-bg);color:var(--accent)}
+/* progress bar */
+.qprog{height:2px;background:var(--border);border-radius:2px;margin:0 28px 24px;overflow:hidden}
+.qprog-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .4s var(--ease)}
+/* analysing step */
+.qanalyse{padding:48px 28px;text-align:center}
+.qanalyse-spinner{width:36px;height:36px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.qanalyse-t{font-size:13.5px;color:var(--t2)}
+.qanalyse-dots::after{content:'';animation:dots 1.4s steps(3,end) infinite}
+@keyframes dots{0%{content:''}33%{content:'.'}66%{content:'..'}100%{content:'...'}}
+/* result */
+.qresult{padding:28px;display:none}
+.qresult.show{display:block}
+.qr-icon{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:16px;font-size:20px}
+.qr-icon.fit{background:var(--green-bg);color:var(--green)}
+.qr-icon.maybe{background:var(--orange-bg);color:var(--orange)}
+.qr-icon.nope{background:rgba(248,113,113,.1);color:#f87171}
+.qr-h{font-family:'Newsreader',serif;font-size:22px;font-weight:400;margin-bottom:8px;line-height:1.2}
+.qr-p{font-size:13.5px;color:var(--t2);line-height:1.7;margin-bottom:20px;font-weight:300}
+.qr-why{background:var(--s2);border-radius:8px;padding:14px;margin-bottom:20px}
+.qr-why-label{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--t3);margin-bottom:8px}
+.qr-why-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t2);margin-bottom:4px}
+.qr-why-item::before{content:'';display:block;width:4px;height:4px;border-radius:50%;background:var(--accent);flex-shrink:0}
+.qr-why-item.bad::before{background:#f87171}
+.qnav{display:flex;justify-content:space-between;align-items:center;padding:16px 28px;border-top:1px solid var(--border)}
+.qnav-back{font-size:12px;color:var(--t3);background:none;border:none;cursor:pointer;font-family:inherit;transition:color .2s var(--ease)}
+.qnav-back:hover{color:var(--t1)}
+.qnav-next{background:var(--accent);color:#fff;padding:9px 20px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:inherit;transition:background .2s var(--ease)}
+.qnav-next:hover{background:var(--accent-h)}
+.qnav-next:disabled{opacity:.3;cursor:default}
+
+@media(max-width:480px){.qbtn{bottom:16px;right:16px;font-size:12px;padding:9px 14px 9px 10px}}
+
 /* == SECTION STYLES == */
 </style>
 </head>
@@ -295,9 +374,20 @@ footer{border-top:1px solid var(--border);padding:24px 0}
     <div class="hc-r"><span class="hc-l">Contacted</span><span class="hc-v">14</span></div>
     <div class="hc-r"><span class="hc-l">Meetings booked</span><span class="hc-v" style="color:var(--accent)">3</span></div>
     <div class="hc-r"><span class="hc-l">Reply rate</span><span class="hc-v">12.4%</span></div>
-    <div class="hc-cap">A typical Tuesday for a client on the system.</div>
+    <div class="hc-cap">A typical Tuesday for a client on the system — figures anonymised.</div>
   </div>
 </div></div></section>
+
+<!-- CLIENT LOGO STRIP -->
+<div class="logos"><div class="w">
+  <div class="logos-row">
+    <span class="logo-item">ADVANTEDGE</span>
+    <span class="logo-item">CIC EVENT</span>
+    <span class="logo-item">EVINCO</span>
+    <span class="logo-item">ROCA</span>
+    <span class="logo-item">VIDORA MEDIA</span>
+  </div>
+</div></div>
 
 <!-- MARQUEE -->
 <div class="mq"><div class="mq-t">
@@ -358,11 +448,12 @@ footer{border-top:1px solid var(--border);padding:24px 0}
       <div class="showcase-body">
         <div class="showcase-name">Advantedge</div>
         <div class="showcase-desc">Professional services — London</div>
-        <div class="showcase-stats">
-          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Views</div></div>
-          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Engagement</div></div>
-          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Leads</div></div>
+        <div class="showcase-outcome">
+          <span class="showcase-tag">Outbound live</span>
+          <span class="showcase-tag">Content produced</span>
+          <span class="showcase-tag">Pipeline active</span>
         </div>
+        <div class="showcase-coming">Full case study coming soon</div>
       </div>
     </div>
 
@@ -377,11 +468,11 @@ footer{border-top:1px solid var(--border);padding:24px 0}
       <div class="showcase-body">
         <div class="showcase-name">CIC Event</div>
         <div class="showcase-desc">Corporate events — London</div>
-        <div class="showcase-stats">
-          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Views</div></div>
-          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Engagement</div></div>
-          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Leads</div></div>
+        <div class="showcase-outcome">
+          <span class="showcase-tag">Brand content</span>
+          <span class="showcase-tag">Lead system live</span>
         </div>
+        <div class="showcase-coming">Full case study coming soon</div>
       </div>
     </div>
 
@@ -396,11 +487,11 @@ footer{border-top:1px solid var(--border);padding:24px 0}
       <div class="showcase-body">
         <div class="showcase-name">Evinco</div>
         <div class="showcase-desc">Strategy consulting</div>
-        <div class="showcase-stats">
-          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Views</div></div>
-          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Engagement</div></div>
-          <div class="showcase-stat"><div class="showcase-stat-n">—</div><div class="showcase-stat-l">Leads</div></div>
+        <div class="showcase-outcome">
+          <span class="showcase-tag">Outbound launched</span>
+          <span class="showcase-tag">Meetings in week 2</span>
         </div>
+        <div class="showcase-coming">Full case study coming soon</div>
       </div>
     </div>
 
@@ -448,7 +539,7 @@ footer{border-top:1px solid var(--border);padding:24px 0}
     <div class="rc rv d1">
       <div class="rc-h">
         <div class="rc-av" style="background:var(--s3);color:var(--t2)">VM</div>
-        <div><div class="rc-name">Vidora Media</div><div class="rc-co">Content production — Manchester</div></div>
+        <div><div class="rc-name">Vidora Media</div><div class="rc-co">Content production — Manchester · Sammy's studio</div></div>
       </div>
       <div class="rc-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
       <p class="rc-q">"We film KSI and Premier League footballers. Innovite built us a pipeline of business clients that finally matches the level of work we produce."</p>
@@ -504,12 +595,12 @@ footer{border-top:1px solid var(--border);padding:24px 0}
   <div class="ey rv"><span class="ey-d"></span><span class="ey-t">FAQ</span></div>
   <h2 class="sh rv">Things people ask before they start.</h2>
   <div class="rv" style="margin-top:28px">
-    <div class="fi"><button class="fq">How long before I see results?<span class="fic">+</span></button><div class="fa">Most clients get their first booked meeting inside 14 days of going live. Outbound starts producing conversations in week one or two. Paid ads usually deliver leads inside a fortnight.</div></div>
-    <div class="fi"><button class="fq">Am I locked into a contract?<span class="fic">+</span></button><div class="fa">No. Month to month, no setup fees, no cancellation penalty. We keep clients because the work pays for itself, not because they're stuck in a contract.</div></div>
-    <div class="fi"><button class="fq">What makes you different from other agencies?<span class="fic">+</span></button><div class="fa">Most agencies pick one lane — ads, content, or outbound. We run all three, and they feed each other. The outbound uses real research, not templates. The content's produced by a team that films KSI and Premier League footballers, not a freelancer with a stock library.</div></div>
-    <div class="fi"><button class="fq">What do I actually have to do?<span class="fic">+</span></button><div class="fa">Show up to the calls we book. That's about it. Research, outreach, content, ads, follow-ups — we handle the lot. Most clients spend under 30 minutes a week on anything Innovite-related.</div></div>
-    <div class="fi"><button class="fq">What kind of businesses do you work with?<span class="fic">+</span></button><div class="fa">B2B service businesses with a deal value above £5,000. Strongest results have come from professional services firms, agencies, consultants and specialist providers. If you sell directly to consumers, we're not the right fit.</div></div>
-    <div class="fi"><button class="fq">How much does it cost?<span class="fic">+</span></button><div class="fa">Depends on which services you need and the volume we're running. We'll cover pricing on the strategy call once we understand your setup. No setup fees, no minimum commitment.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa1">How long before I see results?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa1" role="region">Most clients get their first booked meeting inside 14 days of going live. Outbound starts producing conversations in week one or two. Paid ads usually deliver leads inside a fortnight.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa2">Am I locked into a contract?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa2" role="region">No. Month to month, no setup fees, no cancellation penalty. We keep clients because the work pays for itself, not because they're stuck in a contract.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa3">What makes you different from other agencies?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa3" role="region">Most agencies pick one lane — ads, content, or outbound. We run all three, and they feed each other. The outbound uses real research, not templates. The content's produced by a team that films KSI and Premier League footballers, not a freelancer with a stock library.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa4">What do I actually have to do?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa4" role="region">Show up to the calls we book. That's about it. Research, outreach, content, ads, follow-ups — we handle the lot. Most clients spend under 30 minutes a week on anything Innovite-related.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa5">What kind of businesses do you work with?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa5" role="region">B2B service businesses with a deal value above £5,000. Strongest results have come from professional services firms, agencies, consultants and specialist providers. If you sell directly to consumers, we're not the right fit.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa6">How much does it cost?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa6" role="region">Depends on which services you need and the volume we're running. We'll cover pricing on the strategy call once we understand your setup. No setup fees, no minimum commitment.</div></div>
   </div>
 </div></section>
 
@@ -544,11 +635,11 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 </div></div></footer>
 
 <!-- FORM MODAL -->
-<div class="fo" id="fo" onclick="if(event.target===this)cF()">
+<div class="fo" id="fo" role="dialog" aria-modal="true" aria-labelledby="ftl-main" onclick="if(event.target===this)cF()">
   <div class="fcard">
     <button class="fx" onclick="cF()">&#x2715;</button>
     <div id="f1">
-      <div class="fh"><div class="fsl">Step 1 of 5</div><div class="ftl">What industry are you in?</div><div class="fsb">So we can tailor the approach.</div></div>
+      <div class="fh"><div class="fsl">Step 1 of 5</div><div class="ftl" id="ftl-main">What industry are you in?</div><div class="fsb">So we can tailor the approach.</div></div>
       <div class="fbd"><div class="fos" data-s="1">
         <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Professional services</div>
         <div class="fop" onclick="sO(this)"><span class="foi">&#9670;</span>Recruitment</div>
@@ -614,24 +705,217 @@ footer{border-top:1px solid var(--border);padding:24px 0}
   </div>
 </div>
 
+<!-- AI QUALIFIER TRIGGER BUTTON -->
+<button class="qbtn" onclick="oQ()" aria-label="Find out if Innovite is a fit for your business">
+  <span class="qbtn-dot"></span>Are we a good fit?
+</button>
+
+<!-- AI QUALIFIER MODAL -->
+<div class="qo" id="qo" role="dialog" aria-modal="true" aria-labelledby="qh-title" onclick="if(event.target===this)cQ()">
+  <div class="qcard">
+    <button class="qx" onclick="cQ()" aria-label="Close">&#x2715;</button>
+    <div id="qmain">
+      <div class="qh">
+        <div class="qh-label" id="qstep-label">Qualifying — 4 questions</div>
+        <div class="qh-title" id="qh-title">Let's find out if we're the right fit.</div>
+        <div class="qh-sub">Answer four quick questions. We'll tell you honestly whether it makes sense.</div>
+      </div>
+      <div class="qprog"><div class="qprog-fill" id="qpfill" style="width:0%"></div></div>
+      <div class="qbody">
+
+        <!-- Q1: Business type -->
+        <div class="qstep active" id="qq1">
+          <div style="font-size:13px;color:var(--t3);margin-bottom:12px;font-weight:500">What do you sell?</div>
+          <div class="qopts">
+            <div class="qopt" onclick="qSel(this,'q1','b2b')"><div class="qopt-icon">B</div>A service to other businesses (B2B)</div>
+            <div class="qopt" onclick="qSel(this,'q1','b2c')"><div class="qopt-icon">C</div>Directly to consumers (B2C)</div>
+            <div class="qopt" onclick="qSel(this,'q1','mix')"><div class="qopt-icon">~</div>A mix of both</div>
+          </div>
+        </div>
+
+        <!-- Q2: Deal value -->
+        <div class="qstep" id="qq2">
+          <div style="font-size:13px;color:var(--t3);margin-bottom:12px;font-weight:500">What's your average deal value?</div>
+          <div class="qopts">
+            <div class="qopt" onclick="qSel(this,'q2','sub2k')"><div class="qopt-icon">£</div>Under £2,000</div>
+            <div class="qopt" onclick="qSel(this,'q2','2to5k')"><div class="qopt-icon">£</div>£2,000 — £5,000</div>
+            <div class="qopt" onclick="qSel(this,'q2','5to15k')"><div class="qopt-icon">£</div>£5,000 — £15,000</div>
+            <div class="qopt" onclick="qSel(this,'q2','15kplus')"><div class="qopt-icon">£</div>£15,000+</div>
+          </div>
+        </div>
+
+        <!-- Q3: Current pipeline -->
+        <div class="qstep" id="qq3">
+          <div style="font-size:13px;color:var(--t3);margin-bottom:12px;font-weight:500">How are you finding clients right now?</div>
+          <div class="qopts">
+            <div class="qopt" onclick="qSel(this,'q3','referrals')"><div class="qopt-icon">&#128172;</div>Mainly referrals — it's hit or miss</div>
+            <div class="qopt" onclick="qSel(this,'q3','active')"><div class="qopt-icon">&#128270;</div>Some active outreach, not consistent</div>
+            <div class="qopt" onclick="qSel(this,'q3','ads')"><div class="qopt-icon">&#9650;</div>Running ads but need more volume</div>
+            <div class="qopt" onclick="qSel(this,'q3','nothing')"><div class="qopt-icon">&#10005;</div>Honestly — not enough of anything</div>
+          </div>
+        </div>
+
+        <!-- Q4: Capacity -->
+        <div class="qstep" id="qq4">
+          <div style="font-size:13px;color:var(--t3);margin-bottom:12px;font-weight:500">Can you take on new clients right now?</div>
+          <div class="qopts">
+            <div class="qopt" onclick="qSel(this,'q4','yes')"><div class="qopt-icon">&#10003;</div>Yes — ready to go</div>
+            <div class="qopt" onclick="qSel(this,'q4','soon')"><div class="qopt-icon">&#9654;</div>Within the next 1—3 months</div>
+            <div class="qopt" onclick="qSel(this,'q4','no')"><div class="qopt-icon">&#10005;</div>No, at capacity right now</div>
+          </div>
+        </div>
+
+      </div>
+      <div class="qnav" id="qnav">
+        <button class="qnav-back" id="qback" onclick="qPrev()" style="display:none">&#8592; Back</button>
+        <button class="qnav-next" id="qnext" onclick="qNext()" disabled>Next</button>
+      </div>
+    </div>
+
+    <!-- Analysing state -->
+    <div id="qanalyse" style="display:none">
+      <div class="qanalyse">
+        <div class="qanalyse-spinner"></div>
+        <div class="qanalyse-t">Checking your answers<span class="qanalyse-dots"></span></div>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div id="qresult" class="qresult">
+      <div class="qr-icon" id="qr-icon"></div>
+      <div class="qr-h" id="qr-h"></div>
+      <div class="qr-p" id="qr-p"></div>
+      <div class="qr-why" id="qr-why"></div>
+      <div id="qr-cta"></div>
+    </div>
+  </div>
+</div>
+
 <script>
-// Reveal on scroll
+// ── AI Qualifier ─────────────────────────────────────
+const qa={};let qc=1;const qTotal=4;
+function oQ(){
+  document.getElementById('qo').classList.add('on');
+  document.body.style.overflow='hidden';
+  setTimeout(()=>document.querySelector('#qo .qx').focus(),50);
+}
+function cQ(){document.getElementById('qo').classList.remove('on');document.body.style.overflow='';}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('qo').classList.contains('on'))cQ();});
+function qSel(el,key,val){
+  el.parentElement.querySelectorAll('.qopt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  qa[key]=val;
+  document.getElementById('qnext').disabled=false;
+}
+function qProg(n){document.getElementById('qpfill').style.width=((n-1)/qTotal*100)+'%';}
+function qShow(n){
+  document.querySelectorAll('.qstep').forEach(s=>s.classList.remove('active'));
+  document.getElementById('qq'+n).classList.add('active');
+  document.getElementById('qback').style.display=n>1?'inline-block':'none';
+  document.getElementById('qnext').disabled=!qa['q'+n];
+  document.getElementById('qnext').textContent=n===qTotal?'See my result':'Next';
+  document.getElementById('qstep-label').textContent='Question '+n+' of '+qTotal;
+  qProg(n);
+  qc=n;
+}
+function qNext(){
+  if(qc<qTotal){qShow(qc+1);}
+  else{qAnalyse();}
+}
+function qPrev(){if(qc>1)qShow(qc-1);}
+function qAnalyse(){
+  document.getElementById('qmain').style.display='none';
+  document.getElementById('qanalyse').style.display='block';
+  setTimeout(qShowResult,1400);
+}
+function qScore(){
+  let score=0,flags=[];
+  // Business type
+  if(qa.q1==='b2c'){score-=3;flags.push({bad:true,t:'You sell to consumers — our system is built for B2B'});}
+  else if(qa.q1==='mix'){score+=1;flags.push({bad:false,t:'You do some B2B — we can focus there'});}
+  else{score+=2;}
+  // Deal value
+  if(qa.q2==='sub2k'){score-=3;flags.push({bad:true,t:'Deal value under £2k — the economics are tight'});}
+  else if(qa.q2==='2to5k'){score+=0;flags.push({bad:false,t:'Deal value £2–5k — possible, but margins need to work'});}
+  else if(qa.q2==='5to15k'){score+=2;flags.push({bad:false,t:'£5–15k deal value — solid fit range'});}
+  else if(qa.q2==='15kplus'){score+=3;flags.push({bad:false,t:'£15k+ deals — this is where we do our best work'});}
+  // Pipeline
+  if(qa.q3==='nothing'||qa.q3==='referrals'){score+=1;flags.push({bad:false,t:'Referral-heavy pipeline — the most room to improve'});}
+  else{score+=1;}
+  // Capacity
+  if(qa.q4==='no'){score-=1;flags.push({bad:true,t:'No capacity right now — better to plan ahead'});}
+  else if(qa.q4==='soon'){score+=1;flags.push({bad:false,t:'Ready in 1–3 months — good time to start building'});}
+  else{score+=2;}
+  return{score,flags};
+}
+function qShowResult(){
+  document.getElementById('qanalyse').style.display='none';
+  const r=document.getElementById('qresult');
+  r.style.display='block';
+  const{score,flags}=qScore();
+  let icon,heading,body,cta;
+  if(score>=4){
+    icon='<div class="qr-icon fit">&#10003;</div>';
+    heading='You look like a strong fit.';
+    body='Based on what you\'ve told us, we\'d be confident taking you on. The strategy call is free and there\'s no obligation — we\'ll tell you exactly what we\'d do and what you\'d get back.';
+    cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a free strategy call</a>';
+  } else if(score>=1){
+    icon='<div class="qr-icon maybe">&#8764;</div>';
+    heading='There might be something here.';
+    body='It\'s not a clear-cut yes, but it\'s worth a conversation. A few things could go either way — the strategy call is the right place to dig into whether the numbers work for your situation.';
+    cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a call anyway — no obligation</a>';
+  } else {
+    icon='<div class="qr-icon nope">&#10005;</div>';
+    heading='We\'re probably not the right fit.';
+    body='We try to be upfront about this. Based on your answers, the economics of our system are unlikely to pay off for your situation — and we\'d rather save you the time than take on a client we can\'t deliver for.';
+    cta='<p style="font-size:12.5px;color:var(--t3);margin-top:4px">If things change — deal value grows, you move into B2B — we\'re here. <a href="mailto:sammy@innoviteai.com" style="color:var(--accent)">Drop us a line.</a></p>';
+  }
+  document.getElementById('qr-icon').outerHTML=icon;
+  document.getElementById('qr-h').textContent=heading;
+  document.getElementById('qr-p').textContent=body;
+  // Build why list
+  const why=document.getElementById('qr-why');
+  why.innerHTML='<div class="qr-why-label">What we looked at</div>'+flags.map(f=>`<div class="qr-why-item${f.bad?' bad':''}">${f.t}</div>`).join('');
+  document.getElementById('qr-cta').innerHTML=cta;
+}
+
+// ── Reveal on scroll
 const ob=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting)x.target.classList.add('in')})},{threshold:.06});
 document.querySelectorAll('.rv').forEach(e=>ob.observe(e));
 
-// FAQ accordion
+// FAQ accordion — keeps aria-expanded in sync
 document.querySelectorAll('.fq').forEach(b=>{
   b.addEventListener('click',()=>{
     const i=b.parentElement;
     const o=i.classList.contains('open');
-    document.querySelectorAll('.fi.open').forEach(x=>x.classList.remove('open'));
-    if(!o)i.classList.add('open');
+    document.querySelectorAll('.fi.open').forEach(x=>{
+      x.classList.remove('open');
+      x.querySelector('.fq').setAttribute('aria-expanded','false');
+    });
+    if(!o){i.classList.add('open');b.setAttribute('aria-expanded','true');}
   });
 });
 
-// Form modal
+// Form modal — ESC to close + focus trap
 let c=1;const d={};
-function oF(){document.getElementById('fo').classList.add('on');document.body.style.overflow='hidden'}
+function oF(){
+  const m=document.getElementById('fo');
+  m.classList.add('on');
+  document.body.style.overflow='hidden';
+  // Move focus to close button
+  setTimeout(()=>m.querySelector('.fx').focus(),50);
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){cF();}
+  if(e.key==='Tab'&&document.getElementById('fo').classList.contains('on')){
+    const sel='button:not([disabled]),input,[tabindex]:not([tabindex="-1"])';
+    const els=[...document.getElementById('fo').querySelectorAll(sel)].filter(el=>el.offsetParent!==null);
+    if(!els.length)return;
+    const fi=els[0],la=els[els.length-1];
+    if(e.shiftKey&&document.activeElement===fi){e.preventDefault();la.focus();}
+    else if(!e.shiftKey&&document.activeElement===la){e.preventDefault();fi.focus();}
+  }
+});
 function cF(){document.getElementById('fo').classList.remove('on');document.body.style.overflow=''}
 function sO(e){
   e.parentElement.querySelectorAll('.fop').forEach(o=>o.classList.remove('sel'));
