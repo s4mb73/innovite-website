@@ -356,7 +356,7 @@ footer{border-top:1px solid var(--border);padding:24px 0}
     <a href="#work" class="na">Work</a>
     <a href="#how" class="na">Process</a>
     <a href="#faq" class="na">FAQ</a>
-    <a href="#" onclick="oF();return false" class="btn btn-a">Get started</a>
+    <a href="#" onclick="oF();return false" class="btn btn-a">Book a call</a>
   </div>
 </div></div></nav>
 
@@ -730,24 +730,23 @@ footer{border-top:1px solid var(--border);padding:24px 0}
           </div>
         </div>
 
-        <!-- Q3: Current pipeline -->
+        <!-- Q3: Decision authority -->
         <div class="qstep" id="qq3">
-          <div style="font-size:13px;color:var(--t3);margin-bottom:12px;font-weight:500">How are you finding clients right now?</div>
+          <div style="font-size:13px;color:var(--t3);margin-bottom:12px;font-weight:500">Are you the main decision-maker on this?</div>
           <div class="qopts">
-            <div class="qopt" onclick="qSel(this,'q3','referrals')"><div class="qopt-icon">&#128172;</div>Mainly referrals — it's hit or miss</div>
-            <div class="qopt" onclick="qSel(this,'q3','active')"><div class="qopt-icon">&#128270;</div>Some active outreach, not consistent</div>
-            <div class="qopt" onclick="qSel(this,'q3','ads')"><div class="qopt-icon">&#9650;</div>Running ads but need more volume</div>
-            <div class="qopt" onclick="qSel(this,'q3','nothing')"><div class="qopt-icon">&#10005;</div>Honestly — not enough of anything</div>
+            <div class="qopt" onclick="qSel(this,'q3','yes')"><div class="qopt-icon">&#10003;</div>Yes — it's my call to make</div>
+            <div class="qopt" onclick="qSel(this,'q3','partner')"><div class="qopt-icon">&#9649;</div>Yes, alongside a business partner</div>
+            <div class="qopt" onclick="qSel(this,'q3','no')"><div class="qopt-icon">&#8679;</div>No — there's someone above me who'd need to sign off</div>
           </div>
         </div>
 
-        <!-- Q4: Capacity -->
+        <!-- Q4: Timeline -->
         <div class="qstep" id="qq4">
-          <div style="font-size:13px;color:var(--t3);margin-bottom:12px;font-weight:500">Can you take on new clients right now?</div>
+          <div style="font-size:13px;color:var(--t3);margin-bottom:12px;font-weight:500">When are you looking to get started?</div>
           <div class="qopts">
-            <div class="qopt" onclick="qSel(this,'q4','yes')"><div class="qopt-icon">&#10003;</div>Yes — ready to go</div>
-            <div class="qopt" onclick="qSel(this,'q4','soon')"><div class="qopt-icon">&#9654;</div>Within the next 1—3 months</div>
-            <div class="qopt" onclick="qSel(this,'q4','no')"><div class="qopt-icon">&#10005;</div>No, at capacity right now</div>
+            <div class="qopt" onclick="qSel(this,'q4','now')"><div class="qopt-icon">&#9889;</div>Now — this is a priority</div>
+            <div class="qopt" onclick="qSel(this,'q4','soon')"><div class="qopt-icon">&#9654;</div>In the next 1—3 months</div>
+            <div class="qopt" onclick="qSel(this,'q4','exploring')"><div class="qopt-icon">&#128270;</div>Just exploring right now</div>
           </div>
         </div>
 
@@ -779,87 +778,154 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 
 <script>
 // ── AI Qualifier ─────────────────────────────────────
-const qa={};let qc=1;const qTotal=4;
+const qa={};let qc=1;const qTotal=4;let qAutoTimer=null;
+
 function oQ(){
   document.getElementById('qo').classList.add('on');
   document.body.style.overflow='hidden';
   setTimeout(()=>document.querySelector('#qo .qx').focus(),50);
 }
-function cQ(){document.getElementById('qo').classList.remove('on');document.body.style.overflow='';}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('qo').classList.contains('on'))cQ();});
+function cQ(){
+  document.getElementById('qo').classList.remove('on');
+  document.body.style.overflow='';
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&document.getElementById('qo').classList.contains('on'))cQ();
+});
+
 function qSel(el,key,val){
+  if(qAutoTimer)clearTimeout(qAutoTimer);
   el.parentElement.querySelectorAll('.qopt').forEach(o=>o.classList.remove('sel'));
   el.classList.add('sel');
   qa[key]=val;
   document.getElementById('qnext').disabled=false;
+  // auto-advance after 450ms — feels conversational, still lets user see their pick
+  qAutoTimer=setTimeout(()=>qNext(),450);
 }
-function qProg(n){document.getElementById('qpfill').style.width=((n-1)/qTotal*100)+'%';}
+
+function qProg(n,total){
+  document.getElementById('qpfill').style.width=((n-1)/total*100)+'%';
+}
+
 function qShow(n){
   document.querySelectorAll('.qstep').forEach(s=>s.classList.remove('active'));
   document.getElementById('qq'+n).classList.add('active');
   document.getElementById('qback').style.display=n>1?'inline-block':'none';
   document.getElementById('qnext').disabled=!qa['q'+n];
-  document.getElementById('qnext').textContent=n===qTotal?'See my result':'Next';
+  document.getElementById('qnext').textContent=n===qTotal?'See my result →':'Next';
   document.getElementById('qstep-label').textContent='Question '+n+' of '+qTotal;
-  qProg(n);
+  qProg(n,qTotal);
   qc=n;
 }
+
 function qNext(){
+  if(qAutoTimer)clearTimeout(qAutoTimer);
+  // B2C short-circuit — no point asking 3 more questions
+  if(qc===1&&qa.q1==='b2c'){qAnalyse();return;}
   if(qc<qTotal){qShow(qc+1);}
   else{qAnalyse();}
 }
-function qPrev(){if(qc>1)qShow(qc-1);}
+function qPrev(){
+  if(qAutoTimer)clearTimeout(qAutoTimer);
+  if(qc>1)qShow(qc-1);
+}
+
 function qAnalyse(){
   document.getElementById('qmain').style.display='none';
   document.getElementById('qanalyse').style.display='block';
-  setTimeout(qShowResult,1400);
+  setTimeout(qShowResult,1600);
 }
+
+// Weighted scoring: business model 30 | deal value 30 | authority 20 | timeline 20 = 100
 function qScore(){
-  let score=0,flags=[];
-  // Business type
-  if(qa.q1==='b2c'){score-=3;flags.push({bad:true,t:'You sell to consumers — our system is built for B2B'});}
-  else if(qa.q1==='mix'){score+=1;flags.push({bad:false,t:'You do some B2B — we can focus there'});}
-  else{score+=2;}
+  let score=0,flags=[],hardNo=false;
+
+  // Business model
+  if(qa.q1==='b2c'){
+    hardNo=true;
+    flags.push({bad:true,t:'You sell to consumers — our system is built for B2B'});
+  } else if(qa.q1==='mix'){
+    score+=15;
+    flags.push({bad:false,t:'Mostly B2B — we\'d focus the system there'});
+  } else {
+    score+=30;
+    flags.push({bad:false,t:'Pure B2B service firm — exactly who we\'re built for'});
+  }
+
   // Deal value
-  if(qa.q2==='sub2k'){score-=3;flags.push({bad:true,t:'Deal value under £2k — the economics are tight'});}
-  else if(qa.q2==='2to5k'){score+=0;flags.push({bad:false,t:'Deal value £2–5k — possible, but margins need to work'});}
-  else if(qa.q2==='5to15k'){score+=2;flags.push({bad:false,t:'£5–15k deal value — solid fit range'});}
-  else if(qa.q2==='15kplus'){score+=3;flags.push({bad:false,t:'£15k+ deals — this is where we do our best work'});}
-  // Pipeline
-  if(qa.q3==='nothing'||qa.q3==='referrals'){score+=1;flags.push({bad:false,t:'Referral-heavy pipeline — the most room to improve'});}
-  else{score+=1;}
-  // Capacity
-  if(qa.q4==='no'){score-=1;flags.push({bad:true,t:'No capacity right now — better to plan ahead'});}
-  else if(qa.q4==='soon'){score+=1;flags.push({bad:false,t:'Ready in 1–3 months — good time to start building'});}
-  else{score+=2;}
-  return{score,flags};
+  if(qa.q2==='sub2k'){
+    hardNo=true;
+    flags.push({bad:true,t:'Deal value under £2k — the ROI maths doesn\'t work at this level'});
+  } else if(qa.q2==='2to5k'){
+    score+=8;
+    flags.push({bad:false,t:'£2–5k deal value — workable if volume is there'});
+  } else if(qa.q2==='5to15k'){
+    score+=22;
+    flags.push({bad:false,t:'£5–15k contracts — solid economics for outbound'});
+  } else if(qa.q2==='15kplus'){
+    score+=30;
+    flags.push({bad:false,t:'£15k+ deals — this is where we do our best work'});
+  }
+
+  // Decision authority
+  if(qa.q3==='yes'){
+    score+=20;
+    flags.push({bad:false,t:'You\'re the decision-maker — we can move quickly'});
+  } else if(qa.q3==='partner'){
+    score+=14;
+    flags.push({bad:false,t:'Shared decision — straightforward to get aligned'});
+  } else if(qa.q3==='no'){
+    score+=5;
+    flags.push({bad:false,t:'Sign-off needed — we\'d want the right people in the room early'});
+  }
+
+  // Timeline
+  if(qa.q4==='now'){
+    score+=20;
+    flags.push({bad:false,t:'Ready now — we can start building immediately'});
+  } else if(qa.q4==='soon'){
+    score+=14;
+    flags.push({bad:false,t:'Starting in 1–3 months — good window to plan ahead'});
+  } else if(qa.q4==='exploring'){
+    score+=5;
+    flags.push({bad:false,t:'Just exploring — no pressure, reach out when the time\'s right'});
+  }
+
+  return{score,flags,hardNo};
 }
+
 function qShowResult(){
   document.getElementById('qanalyse').style.display='none';
   const r=document.getElementById('qresult');
   r.style.display='block';
-  const{score,flags}=qScore();
+  const{score,flags,hardNo}=qScore();
   let icon,heading,body,cta;
-  if(score>=4){
+
+  if(hardNo){
+    icon='<div class="qr-icon nope">&#10005;</div>';
+    heading='We\'re not the right fit — and we\'d rather tell you now.';
+    body='We only take on clients where we\'re confident the numbers work. Based on your answers, that\'s not the case here. Better to be honest than waste each other\'s time.';
+    cta='<p style="font-size:12.5px;color:var(--t3);margin-top:4px">If things change — deal size grows, you shift to B2B — we\'d love to talk. <a href="mailto:sammy@innoviteai.com" style="color:var(--accent)">Drop us a line.</a></p>';
+  } else if(score>=70){
     icon='<div class="qr-icon fit">&#10003;</div>';
     heading='You look like a strong fit.';
-    body='Based on what you\'ve told us, we\'d be confident taking you on. The strategy call is free and there\'s no obligation — we\'ll tell you exactly what we\'d do and what you\'d get back.';
-    cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a free strategy call</a>';
-  } else if(score>=1){
+    body='Based on what you\'ve told us, we\'d be confident working together. The strategy call is free — we\'ll walk you through exactly what we\'d build and what you\'d expect to get back.';
+    cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a free strategy call →</a>';
+  } else if(score>=45){
     icon='<div class="qr-icon maybe">&#8764;</div>';
-    heading='There might be something here.';
-    body='It\'s not a clear-cut yes, but it\'s worth a conversation. A few things could go either way — the strategy call is the right place to dig into whether the numbers work for your situation.';
-    cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a call anyway — no obligation</a>';
+    heading='There\'s probably something here.';
+    body='It\'s not a clear-cut yes, but the fundamentals are there. A 20-minute call is the right next step — we can dig into whether the numbers make sense for your specific situation.';
+    cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a call — no obligation</a>';
   } else {
-    icon='<div class="qr-icon nope">&#10005;</div>';
-    heading='We\'re probably not the right fit.';
-    body='We try to be upfront about this. Based on your answers, the economics of our system are unlikely to pay off for your situation — and we\'d rather save you the time than take on a client we can\'t deliver for.';
-    cta='<p style="font-size:12.5px;color:var(--t3);margin-top:4px">If things change — deal value grows, you move into B2B — we\'re here. <a href="mailto:sammy@innoviteai.com" style="color:var(--accent)">Drop us a line.</a></p>';
+    icon='<div class="qr-icon maybe">&#8764;</div>';
+    heading='The timing might not be right yet.';
+    body='The fundamentals look okay, but a few things suggest now isn\'t the moment. Come back when you\'re ready to move — the first conversation is always free.';
+    cta='<p style="font-size:12.5px;color:var(--t3);margin-top:4px">No rush. <a href="mailto:sammy@innoviteai.com" style="color:var(--accent)">Email us when the time is right.</a></p>';
   }
+
   document.getElementById('qr-icon').outerHTML=icon;
   document.getElementById('qr-h').textContent=heading;
   document.getElementById('qr-p').textContent=body;
-  // Build why list
   const why=document.getElementById('qr-why');
   why.innerHTML='<div class="qr-why-label">What we looked at</div>'+flags.map(f=>`<div class="qr-why-item${f.bad?' bad':''}">${f.t}</div>`).join('');
   document.getElementById('qr-cta').innerHTML=cta;
