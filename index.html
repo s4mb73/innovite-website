@@ -87,6 +87,46 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
   .hbtns{flex-direction:column;align-items:flex-start}
 }
 
+/* ── Marquee ──────────────────────────────────────────── */
+.mq{border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:14px 0;overflow:hidden}
+.mq-t{display:flex;animation:mq-scroll 32s linear infinite;width:max-content}
+.mq-i{padding:0 28px;font-size:12px;color:var(--t3);white-space:nowrap;font-weight:400;opacity:.6}
+@keyframes mq-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ── Stats ───────────────────────────────────────────── */
+.stats{border-bottom:1px solid var(--border)}
+.sr{display:grid;grid-template-columns:repeat(4,1fr)}
+.si{padding:32px 20px;border-right:1px solid var(--border);text-align:center}
+.si:last-child{border-right:none}
+.sn{font-family:'Newsreader',serif;font-size:40px;font-weight:400;color:var(--accent);line-height:1;margin-bottom:4px}
+.sl{font-size:12px;color:var(--t3);line-height:1.4}
+
+/* ── Section header shared styles ───────────────────── */
+.sec{padding:80px 0;border-bottom:1px solid var(--border)}
+.ey{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.ey-d{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.ey-t{font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--accent)}
+.sh{font-family:'Newsreader',serif;font-size:clamp(26px,3.5vw,40px);font-weight:400;line-height:1.15;max-width:520px;margin-bottom:10px}
+.ss{font-size:15px;color:var(--t2);max-width:440px;line-height:1.65;margin-bottom:44px;font-weight:300}
+
+/* ── Services ────────────────────────────────────────── */
+.svg{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden}
+.svc{background:var(--s1);padding:28px;transition:background .25s var(--ease)}
+.svc:hover{background:var(--s2)}
+.svc-i{width:36px;height:36px;border-radius:8px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;margin-bottom:16px;font-size:16px;color:var(--accent)}
+.svc h3{font-size:15px;font-weight:600;margin-bottom:6px}
+.svc p{font-size:13px;color:var(--t2);line-height:1.6;font-weight:300}
+.svc-tags{display:flex;gap:5px;margin-top:12px;flex-wrap:wrap}
+.svc-tag{font-size:10px;font-weight:500;padding:3px 8px;border-radius:100px;background:var(--s3);color:var(--t3)}
+
+@media(max-width:768px){
+  .sr{grid-template-columns:1fr 1fr}
+  .si:nth-child(odd){border-right:1px solid var(--border)}.si:nth-child(even){border-right:none}
+  .si:nth-child(3),.si:nth-child(4){border-top:1px solid var(--border)}
+  .svg{grid-template-columns:1fr}
+  .sec{padding:56px 0}
+}
+
 /* == SECTION STYLES == */
 </style>
 </head>
@@ -125,6 +165,47 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
     <div class="hc-cap">A typical Tuesday for a client on the system.</div>
   </div>
 </div></div></section>
+
+<!-- MARQUEE -->
+<div class="mq"><div class="mq-t">
+  <span class="mq-i">Recruitment</span><span class="mq-i">Management consulting</span><span class="mq-i">IT services</span><span class="mq-i">Accountancy</span><span class="mq-i">Marketing agencies</span><span class="mq-i">Commercial law</span><span class="mq-i">Corporate finance</span><span class="mq-i">PR firms</span><span class="mq-i">Architecture</span><span class="mq-i">Business coaching</span>
+  <span class="mq-i">Recruitment</span><span class="mq-i">Management consulting</span><span class="mq-i">IT services</span><span class="mq-i">Accountancy</span><span class="mq-i">Marketing agencies</span><span class="mq-i">Commercial law</span><span class="mq-i">Corporate finance</span><span class="mq-i">PR firms</span><span class="mq-i">Architecture</span><span class="mq-i">Business coaching</span>
+</div></div>
+
+<!-- STATS -->
+<section class="stats"><div class="w"><div class="sr">
+  <div class="si rv"><div class="sn">6</div><div class="sl">Clients on the<br>system right now</div></div>
+  <div class="si rv d1"><div class="sn">12%</div><div class="sl">Average reply rate<br>on cold outreach</div></div>
+  <div class="si rv d2"><div class="sn">14</div><div class="sl">Days from kickoff<br>to first booked meeting</div></div>
+  <div class="si rv d3"><div class="sn">0</div><div class="sl">Hours of your time<br>spent prospecting</div></div>
+</div></div></section>
+
+<!-- SERVICES -->
+<section class="sec" id="services"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Services</span></div>
+  <h2 class="sh rv">Outbound. Content. Ads.<br>All pointed at the same target.</h2>
+  <p class="ss rv">Most agencies run one channel. We run three — because that's what actually keeps a calendar full.</p>
+  <div class="svg rv">
+    <div class="svc">
+      <div class="svc-i">&#8631;</div>
+      <h3>Intelligent Outbound</h3>
+      <p>We research your ideal clients, look at where they're underperforming, and reach out with something so specific it doesn't read like outreach. It reads like someone who actually paid attention.</p>
+      <div class="svc-tags"><span class="svc-tag">Research</span><span class="svc-tag">Lead scoring</span><span class="svc-tag">Personalised outreach</span></div>
+    </div>
+    <div class="svc">
+      <div class="svc-i">&#9655;</div>
+      <h3>Content Production</h3>
+      <p>Our production team films KSI and Premier League footballers. Same team, same craft — turned on your business. Short-form video, stills, and a plan that makes people stop scrolling.</p>
+      <div class="svc-tags"><span class="svc-tag">Video</span><span class="svc-tag">Photography</span><span class="svc-tag">Strategy</span></div>
+    </div>
+    <div class="svc">
+      <div class="svc-i">&#9670;</div>
+      <h3>Paid Advertising</h3>
+      <p>Meta and Google built for revenue, not impressions. We write the ads, build the landing pages, run the targeting — and follow up with every lead inside five minutes of them clicking.</p>
+      <div class="svc-tags"><span class="svc-tag">Meta</span><span class="svc-tag">Google</span><span class="svc-tag">Instant follow-up</span></div>
+    </div>
+  </div>
+</div></section>
 
 <!-- == SECTION CONTENT == -->
 
