@@ -18,6 +18,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<script src="https://fast.wistia.com/player.js" async></script>
+<script src="https://fast.wistia.com/embed/r3nqe371nk.js" async type="module"></script>
+<script src="https://fast.wistia.com/embed/e5d9fo3nuq.js" async type="module"></script>
+<script src="https://fast.wistia.com/embed/j5e27g9bhc.js" async type="module"></script>
+<script src="https://fast.wistia.com/embed/bfnl22makg.js" async type="module"></script>
 <style>
 /* ── Tokens ──────────────────────────────────────────────
    Neutrals are clearly blue-tinted (not pure grey).
@@ -157,10 +162,9 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
 .showcase-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden}
 .showcase-card{background:var(--s1);padding:28px;transition:background .25s var(--ease)}
 .showcase-card:hover{background:var(--s2)}
-.showcase-video{position:relative;width:100%;aspect-ratio:16/9;background:var(--s2);overflow:hidden;border-radius:8px;margin-bottom:16px}
-.showcase-video video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border:none;display:block}
-.showcase-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;background:rgba(0,0,0,.55);border:2px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:19px;transition:background .2s var(--ease),transform .2s var(--ease);z-index:2;padding:0;font-family:inherit;line-height:1}
-.showcase-play:hover{background:rgba(61,124,245,.85);border-color:transparent;transform:translate(-50%,-50%) scale(1.1)}
+.showcase-video{position:relative;width:100%;height:280px;background:var(--s2);overflow:hidden;border-radius:8px;margin-bottom:16px}
+.showcase-video wistia-player{display:block;width:100%}
+.showcase-card-wide .showcase-video{height:360px}
 .showcase-client{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
 .showcase-name{font-size:16px;font-weight:600;line-height:1.2}
 .showcase-desc{font-size:11.5px;color:var(--t3);font-weight:300;margin-top:2px}
@@ -444,8 +448,7 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 
     <div class="showcase-card rv">
       <div class="showcase-video">
-        <video src="advantedge.mp4" preload="none" playsinline></video>
-        <button class="showcase-play" onclick="svPlay(this)" aria-label="Play Advantedge case study">&#9654;</button>
+        <wistia-player media-id="r3nqe371nk" aspect="0.5625"></wistia-player>
       </div>
       <div class="showcase-client">
         <div>
@@ -463,8 +466,7 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 
     <div class="showcase-card rv d1">
       <div class="showcase-video">
-        <video src="cic-event.mp4" preload="none" playsinline></video>
-        <button class="showcase-play" onclick="svPlay(this)" aria-label="Play CIC Event case study">&#9654;</button>
+        <wistia-player media-id="e5d9fo3nuq" aspect="0.5625"></wistia-player>
       </div>
       <div class="showcase-client">
         <div>
@@ -481,8 +483,7 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 
     <div class="showcase-card rv d2">
       <div class="showcase-video">
-        <video src="evinco.mp4" preload="none" playsinline></video>
-        <button class="showcase-play" onclick="svPlay(this)" aria-label="Play Evinco case study">&#9654;</button>
+        <wistia-player media-id="j5e27g9bhc" aspect="0.5625"></wistia-player>
       </div>
       <div class="showcase-client">
         <div>
@@ -498,10 +499,6 @@ footer{border-top:1px solid var(--border);padding:24px 0}
     </div>
 
     <div class="showcase-card rv d3">
-      <div class="showcase-video">
-        <video src="roca.mp4" preload="none" playsinline></video>
-        <button class="showcase-play" onclick="svPlay(this)" aria-label="Play ROCA case study">&#9654;</button>
-      </div>
       <div class="showcase-client">
         <div>
           <div class="showcase-name">ROCA Accountants</div>
@@ -523,8 +520,7 @@ footer{border-top:1px solid var(--border);padding:24px 0}
 
     <div class="showcase-card showcase-card-wide rv d4">
       <div class="showcase-video">
-        <video src="more-than-a-match.mp4" preload="none" playsinline></video>
-        <button class="showcase-play" onclick="svPlay(this)" aria-label="Play More Than A Match case study">&#9654;</button>
+        <wistia-player media-id="bfnl22makg" aspect="0.5625"></wistia-player>
       </div>
       <div class="showcase-client">
         <div>
@@ -960,22 +956,6 @@ function qShowResult(){
   const why=document.getElementById('qr-why');
   why.innerHTML='<div class="qr-why-label">What we looked at</div>'+flags.map(f=>`<div class="qr-why-item${f.bad?' bad':''}">${f.t}</div>`).join('');
   document.getElementById('qr-cta').innerHTML=cta;
-}
-
-// ── Showcase video player ─────────────────────────────
-function svPlay(btn){
-  const wrap=btn.closest('.showcase-video');
-  const v=wrap.querySelector('video');
-  // Pause all other showcase videos
-  document.querySelectorAll('.showcase-video').forEach(w=>{
-    if(w===wrap)return;
-    const ov=w.querySelector('video');
-    if(!ov.paused){ov.pause();ov.controls=false;w.querySelector('.showcase-play').style.display='flex';}
-  });
-  v.controls=true;
-  v.play();
-  btn.style.display='none';
-  v.onended=()=>{v.controls=false;btn.style.display='flex';};
 }
 
 // ── Reveal on scroll
