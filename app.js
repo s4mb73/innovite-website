@@ -278,7 +278,12 @@ function cF(){document.getElementById('fo').classList.remove('on');document.body
 function sO(e){
   e.parentElement.querySelectorAll('.fop').forEach(o=>o.classList.remove('sel'));
   e.classList.add('sel');
-  d['s'+c]=e.textContent.trim();
+  // Strip the leading .foi icon span so we save just the label text,
+  // not "◆Professional services" or "££5k — £15k".
+  const clone=e.cloneNode(true);
+  const icon=clone.querySelector('.foi');
+  if(icon) icon.remove();
+  d['s'+c]=clone.textContent.trim();
   document.getElementById('fnx').disabled=false;
 }
 function sh(n){
