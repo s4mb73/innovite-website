@@ -1,0 +1,13 @@
+# Local environment — never commit
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

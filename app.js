@@ -296,8 +296,9 @@ function sh(n){
 }
 function nx(){if(c===5){sb();return}sh(c+1)}
 function pv(){if(c>1)sh(c-1)}
-// TODO: replace YOUR_FORM_ID with the Formspree form ID from https://formspree.io
-const FORMSPREE_ENDPOINT='https://formspree.io/f/YOUR_FORM_ID';
+// Posts to the Vercel serverless function at /api/submit, which writes the lead
+// to Supabase. See SETUP.md for the env vars Vercel needs to make this work.
+const SUBMIT_ENDPOINT='/api/submit';
 
 async function sb(){
   d.name=document.getElementById('fN').value.trim();
@@ -321,12 +322,15 @@ async function sb(){
   btn.textContent='Sending…';
 
   try{
-    const res=await fetch(FORMSPREE_ENDPOINT,{
+    const res=await fetch(SUBMIT_ENDPOINT,{
       method:'POST',
       headers:{'Accept':'application/json','Content-Type':'application/json'},
       body:JSON.stringify(d)
     });
-    if(!res.ok) throw new Error('Submit failed: '+res.status);
+    if(!res.ok){
+      const payload=await res.json().catch(()=>({}));
+      throw new Error(payload.error||('Submit failed: '+res.status));
+    }
     for(let i=1;i<=5;i++)document.getElementById('f'+i).style.display='none';
     document.getElementById('f6').style.display='block';
     document.getElementById('fnv').style.display='none';
