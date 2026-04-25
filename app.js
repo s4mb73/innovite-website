@@ -327,10 +327,13 @@ async function sb(){
   btn.textContent='Sending…';
 
   try{
+    // Send the form payload + any qualifier answers the visitor already gave.
+    // qa is the AI Qualifier's answer object; empty if they skipped it.
+    const payload={...d, qualifier: Object.keys(qa).length ? qa : null};
     const res=await fetch(SUBMIT_ENDPOINT,{
       method:'POST',
       headers:{'Accept':'application/json','Content-Type':'application/json'},
-      body:JSON.stringify(d)
+      body:JSON.stringify(payload)
     });
     if(!res.ok){
       const payload=await res.json().catch(()=>({}));
