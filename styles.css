@@ -182,18 +182,21 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
 .rc-more a:hover{text-decoration:underline}
 
 /* ── Process steps ───────────────────────────────────── */
-.stg{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.stc{background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);padding:28px;position:relative}
-.stc-n{font-family:'Newsreader',serif;font-size:56px;color:var(--accent);opacity:.1;position:absolute;top:-4px;right:14px;line-height:1}
-.stc h3{font-size:14px;font-weight:600;margin-bottom:6px;position:relative}
-.stc p{font-size:13px;color:var(--t2);line-height:1.6;font-weight:300;position:relative}
+/* Process — horizontal timeline (visually distinct from card-grid sections above & below) */
+.tline{position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:32px}
+.tline-track{position:absolute;top:18px;left:50px;right:50px;height:1px;background:var(--border);z-index:0;pointer-events:none}
+.tstep{position:relative;z-index:1}
+.tstep-dot{width:36px;height:36px;border-radius:50%;background:var(--bg);border:1px solid var(--accent);color:var(--accent);font-family:'Newsreader',serif;font-size:14px;display:flex;align-items:center;justify-content:center;margin-bottom:18px;position:relative;z-index:2}
+.tstep h3{font-size:14px;font-weight:600;margin-bottom:6px}
+.tstep p{font-size:13px;color:var(--t2);line-height:1.6;font-weight:300;max-width:300px}
 
 /* ── Who we work with ────────────────────────────────── */
-.wg{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden;margin-bottom:12px}
-.wc{background:var(--s1);padding:24px;transition:background .25s var(--ease)}
-.wc:hover{background:var(--s2)}
-.wc h3{font-size:14px;font-weight:600;margin-bottom:5px}
-.wc p{font-size:12.5px;color:var(--t2);line-height:1.55;font-weight:300}
+/* Who — list-style rows (distinct from card grids — feels like a directory not a grid) */
+.wlist{border-top:1px solid var(--border);margin-bottom:16px}
+.wrow{display:grid;grid-template-columns:220px 1fr;gap:32px;padding:18px 24px;margin:0 -24px;border-bottom:1px solid var(--border);transition:background .2s var(--ease);align-items:start;border-radius:var(--r)}
+.wrow:hover{background:var(--s1)}
+.wrow h3{font-size:14px;font-weight:600;color:var(--t1)}
+.wrow p{font-size:13px;color:var(--t2);line-height:1.6;font-weight:300}
 .wn{background:var(--orange-bg);border:1px solid rgba(232,164,58,.1);border-radius:var(--r);padding:14px 18px;font-size:12.5px;color:var(--t2);line-height:1.6;font-weight:300}
 .wn strong{color:var(--orange);font-weight:600}
 
@@ -207,7 +210,9 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
 .fi.open .fa{max-height:280px;padding-bottom:18px}
 
 @media(max-width:768px){
-  .stg,.wg{grid-template-columns:1fr}
+  .tline{grid-template-columns:1fr;gap:24px}
+  .tline-track{top:0;bottom:0;left:18px;right:auto;width:1px;height:auto}
+  .wrow{grid-template-columns:1fr;gap:6px;padding:16px 20px;margin:0 -20px}
 }
 
 /* ── Founder ─────────────────────────────────────────── */
