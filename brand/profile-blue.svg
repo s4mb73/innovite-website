@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Alternative profile picture: solid blue background, dark mark.
+       Higher visibility at small sizes, more "modern" / less corporate feel. -->
+  <rect width="1024" height="1024" rx="224" fill="#8FB7FF"/>
+  <g transform="translate(232 460) scale(9.33)">
+    <rect x="0" y="0" width="42" height="12" rx="6" fill="#0b0c11"/>
+    <circle cx="54" cy="6" r="6" fill="#0b0c11"/>
+  </g>
+</svg>

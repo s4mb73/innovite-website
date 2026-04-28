@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 12" fill="#3d7cf5">
+  <!-- Mark using the saturated --accent-deep colour, for use on white / light
+       backgrounds where the lighter #8FB7FF would lack contrast. -->
+  <rect x="0" y="0" width="42" height="12" rx="6"/>
+  <circle cx="54" cy="6" r="6"/>
+</svg>

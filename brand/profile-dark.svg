@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Profile picture for IG / LinkedIn / Twitter / TikTok / YouTube
+       Dark rounded square that crops cleanly to a circle on platforms that do that.
+       Mark sits centred at ~55% of canvas width. -->
+  <rect width="1024" height="1024" rx="224" fill="#0b0c11"/>
+  <g transform="translate(232 460) scale(9.33)">
+    <rect x="0" y="0" width="42" height="12" rx="6" fill="#8FB7FF"/>
+    <circle cx="54" cy="6" r="6" fill="#8FB7FF"/>
+  </g>
+</svg>
