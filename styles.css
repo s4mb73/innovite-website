@@ -21,6 +21,11 @@ body{font-family:'Outfit',sans-serif;color:var(--t1);background:var(--bg);-webki
 /* ── Nav ─────────────────────────────────────────────── */
 nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
 .nr{display:flex;justify-content:space-between;align-items:center;height:60px}
+.nav-toggle{display:none;background:transparent;border:none;color:var(--t1);padding:8px;cursor:pointer;border-radius:6px;align-items:center;justify-content:center;transition:background .2s var(--ease)}
+.nav-toggle:hover{background:var(--accent-bg)}
+.nav-toggle-close{display:none}
+nav.open .nav-toggle-open{display:none}
+nav.open .nav-toggle-close{display:block}
 .logo{display:flex;align-items:center;gap:9px;text-decoration:none}
 .logo-mark{flex-shrink:0;display:block;height:13px;width:auto;color:var(--accent)}
 .logo-word{font-family:'Outfit',sans-serif;font-size:17px;font-weight:600;color:var(--t1);letter-spacing:-.3px;line-height:1}
@@ -84,7 +89,12 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
   .hg{grid-template-columns:1fr}
   /* Hero card stacks below on mobile instead of hiding */
   .hc{margin-top:28px;font-size:12px}
-  .nl .na{display:none}
+  .nav-toggle{display:flex}
+  /* Mobile menu sheet — hidden until nav.open is toggled */
+  .nl{display:none;position:absolute;top:60px;left:0;right:0;flex-direction:column;align-items:stretch;gap:0;background:var(--bg);border-bottom:1px solid var(--border);padding:8px 20px 20px;box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:99}
+  nav.open .nl{display:flex}
+  .nl .na{display:block;font-size:15px;color:var(--t1);padding:14px 0;border-bottom:1px solid var(--border);font-weight:500}
+  .nl .btn-nav{margin-top:14px;justify-content:center;font-size:14px;padding:11px 18px}
   .hbtns{flex-direction:column;align-items:flex-start}
 }
 
@@ -221,7 +231,18 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
 .fc-av img{width:100%;height:100%;object-fit:cover;display:block}
 .fc-n{font-size:15px;font-weight:600;margin-bottom:2px}
 .fc-t{font-size:12.5px;color:var(--t3);margin-bottom:10px}
+.fc-t-link{color:var(--t3);text-decoration:none;transition:color .2s var(--ease)}
+.fc-t-link:hover{color:var(--accent)}
 .fc-b{font-size:13.5px;color:var(--t2);line-height:1.7;font-weight:300}
+
+/* ── Mid-page inline CTA (sits between FAQ and founder) ── */
+.midcta-w{padding:0 0 32px}
+.midcta{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:22px 28px;background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);flex-wrap:wrap}
+.midcta p{font-family:'Newsreader',serif;font-size:18px;font-style:italic;color:var(--t1);font-weight:400;margin:0}
+@media(max-width:600px){
+  .midcta{flex-direction:column;align-items:flex-start;text-align:left;gap:14px;padding:20px 22px}
+  .midcta .btn-a{align-self:stretch;justify-content:center}
+}
 
 /* ── CTA ─────────────────────────────────────────────── */
 .cta-w{padding:0 0 80px}

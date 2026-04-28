@@ -240,6 +240,25 @@ if(scGrid&&scTrack){
 const ob=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting)x.target.classList.add('in')})},{threshold:.06});
 document.querySelectorAll('.rv').forEach(e=>ob.observe(e));
 
+// Mobile nav — hamburger toggle. Section links call closeNav() on click.
+function toggleNav(){
+  const n=document.querySelector('nav');
+  const open=n.classList.toggle('open');
+  const t=document.querySelector('.nav-toggle');
+  if(t) t.setAttribute('aria-expanded',String(open));
+}
+function closeNav(){
+  const n=document.querySelector('nav');
+  if(!n||!n.classList.contains('open')) return;
+  n.classList.remove('open');
+  const t=document.querySelector('.nav-toggle');
+  if(t) t.setAttribute('aria-expanded','false');
+}
+// Close mobile menu on Escape
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') closeNav();
+});
+
 // FAQ accordion — keeps aria-expanded in sync
 document.querySelectorAll('.fq').forEach(b=>{
   b.addEventListener('click',()=>{

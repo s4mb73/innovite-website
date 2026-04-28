@@ -52,12 +52,20 @@
     </svg>
     <span class="logo-word">innovite</span>
   </a>
+  <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" onclick="toggleNav()">
+    <svg class="nav-toggle-i nav-toggle-open" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+    </svg>
+    <svg class="nav-toggle-i nav-toggle-close" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/>
+    </svg>
+  </button>
   <div class="nl">
-    <a href="#services" class="na">Services</a>
-    <a href="#work" class="na">Work</a>
-    <a href="#how" class="na">Process</a>
-    <a href="#faq" class="na">FAQ</a>
-    <a href="#" onclick="oF();return false" class="btn btn-nav">Book a call</a>
+    <a href="#services" class="na" onclick="closeNav()">Services</a>
+    <a href="#work" class="na" onclick="closeNav()">Work</a>
+    <a href="#how" class="na" onclick="closeNav()">Process</a>
+    <a href="#faq" class="na" onclick="closeNav()">FAQ</a>
+    <a href="#" onclick="closeNav();oF();return false" class="btn btn-nav">Book a call</a>
   </div>
 </div></div></nav>
 
@@ -87,7 +95,7 @@
 <!-- SOCIAL PROOF STRIP -->
 <div class="proof-strip"><div class="w">
   <div class="proof-inner">
-    <p class="proof-quote">"We went from justifying our fees to discussing strategy."</p>
+    <p class="proof-quote">&ldquo;We went from justifying our fees to discussing strategy.&rdquo;</p>
     <div class="proof-divider"></div>
     <div class="proof-attr"><strong>Aidan Oliver</strong>Director, ROCA Accountants — Manchester</div>
   </div>
@@ -157,7 +165,7 @@
   <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Our work</span></div>
   <div class="sc-header rv">
     <div>
-      <h2 class="sh" style="margin-bottom:6px">Four clients. Four different problems. One system.</h2>
+      <h2 class="sh" style="margin-bottom:6px">Different clients. Different problems. One system.</h2>
       <p class="ss">Here's what we built and what moved.</p>
     </div>
     <div class="sc-nav">
@@ -324,6 +332,14 @@
   </div>
 </div></section>
 
+<!-- INLINE MID-PAGE CTA -->
+<div class="w midcta-w">
+  <div class="midcta rv">
+    <p>Got the answer you needed?</p>
+    <a href="#" onclick="oF();return false" class="btn btn-a">Book a strategy call &rarr;</a>
+  </div>
+</div>
+
 <!-- FOUNDER -->
 <section class="sec"><div class="w">
   <div class="ey rv"><span class="ey-d"></span><span class="ey-t">About</span></div>
@@ -332,7 +348,7 @@
     <div class="fc-av"><img src="sammy.jpg" alt="Sammy Bimpson" onerror="this.outerHTML='SB'"></div>
     <div>
       <div class="fc-n">Sammy Bimpson</div>
-      <div class="fc-t">Founder, Innovite</div>
+      <div class="fc-t">Founder, Innovite &nbsp;&middot;&nbsp; <a href="https://www.linkedin.com/in/sammybimpson" target="_blank" rel="noopener" class="fc-t-link">LinkedIn &rarr;</a></div>
       <p class="fc-b">I run a content production company that films KSI, Premier League footballers and some of the most-followed creators in the UK. The work was never the bottleneck — finding the right business clients was. So I built a system to do it in the background. It worked well enough that other founders started asking if they could use it. That's Innovite.</p>
     </div>
   </div>
@@ -361,6 +377,8 @@
     <a href="mailto:sammy@innoviteai.com">sammy@innoviteai.com</a>
     <span class="fr2-sep" aria-hidden="true">&middot;</span>
     <a href="https://www.linkedin.com/company/innovite-automation/" target="_blank" rel="noopener">LinkedIn</a>
+    <span class="fr2-sep" aria-hidden="true">&middot;</span>
+    <a href="https://www.instagram.com/innovite.io/" target="_blank" rel="noopener">Instagram</a>
     <span class="fr2-sep" aria-hidden="true">&middot;</span>
     <a href="/privacy">Privacy</a>
     <span class="fr2-sep" aria-hidden="true">&middot;</span>
