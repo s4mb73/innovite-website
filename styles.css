@@ -200,6 +200,29 @@ nav.open .nav-toggle-close{display:block}
 .tstep h3{font-size:14px;font-weight:600;margin-bottom:6px}
 .tstep p{font-size:13px;color:var(--t2);line-height:1.6;font-weight:300;max-width:300px}
 
+/* ── Platform preview ────────────────────────────────── */
+.pp{position:relative;background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);padding:22px;max-width:780px;margin:8px auto 0}
+.pp-top{display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.pp-brand{display:flex;align-items:center;gap:9px;color:var(--accent)}
+.pp-word{font-family:'Outfit',sans-serif;font-size:13px;font-weight:600;color:var(--t1);letter-spacing:-.3px;line-height:1}
+.pp-status{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--green);background:var(--green-bg);border:1px solid rgba(62,207,142,.18);border-radius:100px;padding:4px 11px 4px 9px}
+.pp-status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:p 2.5s var(--ease) infinite}
+.pp-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:0;padding:22px 0;border-bottom:1px solid var(--border)}
+.pp-metric{text-align:center;padding:0 12px}
+.pp-metric+.pp-metric{border-left:1px solid var(--border)}
+.pp-n{font-family:'Newsreader',serif;font-size:34px;color:var(--accent);line-height:1;margin-bottom:6px}
+.pp-l{font-size:11.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.8px}
+.pp-table-wrap{position:relative;margin-top:18px;min-height:170px}
+.pp-table{filter:blur(3px);opacity:.4;pointer-events:none;user-select:none}
+.pp-row{display:grid;grid-template-columns:1.2fr 1.6fr .8fr .8fr;gap:14px;padding:12px 4px;font-size:12.5px;color:var(--t2);align-items:center}
+.pp-row+.pp-row{border-top:1px solid var(--border)}
+.pp-c1{color:var(--t1);font-weight:500}
+.pp-c3{color:var(--accent)}
+.pp-c4{color:var(--t3);text-align:right}
+.pp-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(20,21,29,0) 0%,rgba(20,21,29,.55) 50%,rgba(20,21,29,.85) 100%)}
+.pp-overlay span{font-size:11.5px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--t2);background:var(--s2);border:1px solid var(--b2);border-radius:100px;padding:8px 16px}
+.pp-note{text-align:center;font-size:13px;color:var(--t3);margin-top:22px;font-weight:300}
+
 /* ── Who we work with ────────────────────────────────── */
 /* Who — list-style rows (distinct from card grids — feels like a directory not a grid) */
 .wlist{border-top:1px solid var(--border);margin-bottom:16px}
@@ -223,6 +246,13 @@ nav.open .nav-toggle-close{display:block}
   .tline{grid-template-columns:1fr;gap:24px}
   .tline-track{top:0;bottom:0;left:18px;right:auto;width:1px;height:auto}
   .wrow{grid-template-columns:1fr;gap:6px;padding:16px 20px;margin:0 -20px}
+  .pp{padding:18px}
+  .pp-metrics{padding:18px 0}
+  .pp-metric{padding:0 6px}
+  .pp-n{font-size:26px}
+  .pp-l{font-size:11.5px;letter-spacing:.5px}
+  .pp-row{grid-template-columns:1fr 1fr;gap:8px;font-size:12px}
+  .pp-c2,.pp-c4{display:none}
 }
 
 /* ── Founder ─────────────────────────────────────────── */
