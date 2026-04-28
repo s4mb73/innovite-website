@@ -309,7 +309,6 @@ async function sb(){
   d.name=document.getElementById('fN').value.trim();
   d.company=document.getElementById('fC').value.trim();
   d.email=document.getElementById('fE').value.trim();
-  d.phone=document.getElementById('fP').value.trim();
 
   const emailOk=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email);
   const err=document.getElementById('fErr');

@@ -93,7 +93,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-fil
 
 /* ── Marquee ──────────────────────────────────────────── */
 .mq{border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:14px 0;overflow:hidden}
-.mq-t{display:flex;animation:mq-scroll 32s linear infinite;width:max-content}
+.mq-t{display:flex;animation:mq-scroll 55s linear infinite;width:max-content}
 .mq-i{padding:0 28px;font-size:12px;color:var(--t3);white-space:nowrap;font-weight:400;opacity:.6}
 @keyframes mq-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
