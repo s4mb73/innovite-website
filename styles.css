@@ -20,8 +20,11 @@ body{font-family:'Outfit',sans-serif;color:var(--t1);background:var(--bg);-webki
 /* ── Nav ─────────────────────────────────────────────── */
 nav{position:sticky;top:0;z-index:100;background:rgba(11,12,17,.88);backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
 .nr{display:flex;justify-content:space-between;align-items:center;height:60px}
-.logo{display:flex;align-items:center;text-decoration:none}
-.logo img{height:24px}
+.logo{display:flex;align-items:center;gap:9px;text-decoration:none}
+.logo-mark{flex-shrink:0;display:block;height:13px;width:auto}
+.logo-word{font-family:'Outfit',sans-serif;font-size:17px;font-weight:600;color:var(--t1);letter-spacing:-.3px;line-height:1}
+.logo-sm .logo-mark{height:10px}
+.logo-sm .logo-word{font-size:13px;color:var(--t2)}
 .nl{display:flex;align-items:center;gap:28px}
 .na{font-size:13.5px;color:var(--t3);text-decoration:none;font-weight:400;transition:color .2s var(--ease)}
 .na:hover{color:var(--t1)}
