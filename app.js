@@ -240,6 +240,43 @@ if(scGrid&&scTrack){
 const ob=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting)x.target.classList.add('in')})},{threshold:.06});
 document.querySelectorAll('.rv').forEach(e=>ob.observe(e));
 
+// ── Count-up on numeric metrics (hero ROCA card + platform preview)
+// Skips animation when the visitor prefers reduced motion.
+(function(){
+  const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const targets=document.querySelectorAll('.hc-v, .pp-n');
+  const numeric=[];
+  targets.forEach(el=>{
+    const raw=el.textContent.trim();
+    const n=parseInt(raw,10);
+    if(!Number.isNaN(n)&&String(n)===raw){
+      numeric.push(el);
+      if(!reduce) el.textContent='0';
+      el.dataset.target=String(n);
+    }
+  });
+  if(reduce||!numeric.length) return;
+  function run(el){
+    const target=parseInt(el.dataset.target,10);
+    const dur=900+target*8; // bigger numbers count slightly longer
+    const start=performance.now();
+    function tick(now){
+      const t=Math.min(1,(now-start)/dur);
+      // easeOutCubic — quiet deceleration, no overshoot
+      const eased=1-Math.pow(1-t,3);
+      el.textContent=String(Math.round(target*eased));
+      if(t<1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+  const cob=new IntersectionObserver(es=>{
+    es.forEach(x=>{
+      if(x.isIntersecting){run(x.target);cob.unobserve(x.target);}
+    });
+  },{threshold:.4});
+  numeric.forEach(el=>cob.observe(el));
+})();
+
 // Mobile nav — hamburger toggle. Section links call closeNav() on click.
 function toggleNav(){
   const n=document.querySelector('nav');
