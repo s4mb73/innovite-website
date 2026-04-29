@@ -44,7 +44,13 @@ def overview():
 
 @app.route('/clients')
 def clients():
-    return render_template('clients.html', active='clients')
+    db_error = None
+    rows: list[dict] = []
+    try:
+        rows = db.list_clients()
+    except Exception as e:
+        db_error = str(e).splitlines()[0][:240]
+    return render_template('clients.html', active='clients', clients=rows, db_error=db_error)
 
 
 @app.route('/clients/<int:client_id>')

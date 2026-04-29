@@ -1,7 +1,86 @@
 {% extends "base.html" %}
 {% block title %}Clients · Innovite CRM{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Clients</h1>
-<p class="page-sub">Active client roster.</p>
-<div class="placeholder"><strong>Clients</strong> arrives in Step 4.</div>
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Clients</h1>
+    <p class="page-sub">Active client roster.</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" disabled title="Onboarding flow ships next">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+        <line x1="12" y1="5" x2="12" y2="19"/>
+        <line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      Add client
+    </button>
+  </div>
+</div>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong> Couldn't load the client roster.
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{% if clients %}
+<div class="client-list" role="list">
+  {% for c in clients %}
+    <a href="{{ url_for('client_detail', client_id=c.id) }}"
+       class="client-row is-{{ c.status }}"
+       role="listitem">
+      <div class="client-row-head">
+        <div class="client-row-name">{{ c.name }}</div>
+        <div class="client-status status-{{ c.status }}">
+          <span class="status-dot" aria-hidden="true"></span>{{ c.status|capitalize }}
+        </div>
+      </div>
+
+      <div class="client-row-meta">
+        {% if c.industry %}{{ c.industry }}{% else %}—{% endif %}
+        {% if c.since %} · since {{ c.since }}{% endif %}
+        {% if c.contact_name %} · {{ c.contact_name }}{% endif %}
+      </div>
+
+      <div class="client-row-divider" aria-hidden="true"></div>
+
+      <div class="client-row-stats">
+        <div class="cstat">
+          <div class="cstat-v">{{ c.leads_7d }}</div>
+          <div class="cstat-l">leads · 7d</div>
+          <div class="cstat-d {{ 'up' if c.leads_7d_delta > 0 else ('down' if c.leads_7d_delta < 0 else 'flat') }}">
+            {% if c.leads_7d_delta > 0 %}↑ {{ c.leads_7d_delta }} vs prev
+            {% elif c.leads_7d_delta < 0 %}↓ {{ -c.leads_7d_delta }} vs prev
+            {% else %}— no change{% endif %}
+          </div>
+        </div>
+
+        <div class="cstat">
+          <div class="cstat-v">{{ c.reply_rate }}%</div>
+          <div class="cstat-l">reply rate · 7d</div>
+          <div class="cstat-d {{ 'up' if c.reply_rate_delta > 0 else ('down' if c.reply_rate_delta < 0 else 'flat') }}">
+            {% if c.reply_rate_delta > 0 %}↑ {{ c.reply_rate_delta }}% vs prev
+            {% elif c.reply_rate_delta < 0 %}↓ {{ -c.reply_rate_delta }}% vs prev
+            {% else %}— no change{% endif %}
+          </div>
+        </div>
+
+        <div class="cstat cstat-fee">
+          <div class="cstat-v">
+            {% if c.monthly_fee %}£{{ '{:,.0f}'.format(c.monthly_fee) }}<span class="cstat-mo">/mo</span>
+            {% else %}—{% endif %}
+          </div>
+          <div class="cstat-l">retainer</div>
+          <div class="cstat-d flat">{{ c.pricing_tier or '' }}</div>
+        </div>
+      </div>
+    </a>
+  {% endfor %}
+</div>
+{% elif not db_error %}
+  <div class="empty">No clients yet — onboard your first to start running pipelines.</div>
+{% endif %}
 {% endblock %}

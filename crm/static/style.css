@@ -317,6 +317,124 @@ a { color:inherit; text-decoration:none; }
   font-size:13px;
 }
 
+/* ── Clients page (Step 4) ───────────────────────────── */
+.client-list { display:flex; flex-direction:column; gap:14px; }
+.client-row {
+  display:block;
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  padding:20px 22px 18px;
+  text-decoration:none;
+  color:inherit;
+  transition: background .2s var(--ease), border-color .2s var(--ease), transform .2s var(--ease);
+}
+.client-row:hover  { background:var(--s2); border-color:var(--b2); }
+.client-row:focus-visible {
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+}
+.client-row.is-paused  { opacity:.78; }
+.client-row.is-churned { opacity:.55; }
+
+.client-row-head {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:14px;
+}
+.client-row-name {
+  font-family:'Newsreader', serif;
+  font-size:22px;
+  font-weight:400;
+  letter-spacing:-.3px;
+  color:var(--t1);
+  line-height:1.1;
+}
+
+.client-status {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  font-size:11.5px;
+  font-weight:600;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:var(--t3);
+}
+.client-status .status-dot {
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:currentColor;
+  flex-shrink:0;
+}
+.status-active  { color:var(--green); }
+.status-paused  { color:var(--amber); }
+.status-churned { color:var(--t3); }
+
+.client-row-meta {
+  font-size:12.5px;
+  color:var(--t2);
+  font-weight:300;
+  margin-top:4px;
+}
+
+.client-row-divider {
+  height:1px;
+  background:var(--border);
+  margin:14px 0 14px;
+}
+
+.client-row-stats {
+  display:grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap:24px;
+}
+.cstat {
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:0;
+}
+.cstat-fee { text-align:right; }
+.cstat-v {
+  font-family:'Newsreader', serif;
+  font-size:24px;
+  font-weight:400;
+  letter-spacing:-.3px;
+  color:var(--t1);
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+.cstat-mo {
+  font-family:'Outfit', sans-serif;
+  font-size:13px;
+  color:var(--t3);
+  margin-left:2px;
+}
+.cstat-l {
+  font-size:11.5px;
+  font-weight:500;
+  letter-spacing:.6px;
+  color:var(--t3);
+  text-transform:lowercase;
+}
+.cstat-d {
+  font-size:11.5px;
+  color:var(--t3);
+  font-variant-numeric:tabular-nums;
+  margin-top:2px;
+}
+.cstat-d.up   { color:var(--green); }
+.cstat-d.down { color:var(--red); }
+.cstat-d.flat { color:var(--t3); }
+
+@media (max-width: 720px) {
+  .client-row-stats { grid-template-columns:1fr 1fr; gap:16px; }
+  .cstat-fee { grid-column:1 / -1; text-align:left; padding-top:10px; border-top:1px solid var(--border); }
+}
+
 /* ── Mobile ──────────────────────────────────────────── */
 @media (max-width: 768px) {
   body { grid-template-columns:1fr; }

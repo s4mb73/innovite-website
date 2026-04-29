@@ -157,3 +157,49 @@ def relative_time(dt: datetime) -> str:
     if secs < 3600:  return f'{secs // 60}m ago'
     if secs < 86400: return f'{secs // 3600}h ago'
     return f'{secs // 86400}d ago'
+
+
+# ── Clients page (Step 4) ────────────────────────────────────────────
+def list_clients() -> list[dict]:
+    """All clients with embedded 7-day metrics + change vs prior 7d."""
+    sql = """
+        select
+          c.id, c.name, c.industry, c.contact_name, c.contact_email,
+          c.monthly_fee, c.pricing_tier, c.status, c.created_at, c.onboarded_at,
+          (select count(*) from crm.leads l
+             where l.client_id = c.id and l.created_at >= now() - interval '7 days')          as leads_7d,
+          (select count(*) from crm.leads l
+             where l.client_id = c.id and l.created_at >= now() - interval '14 days'
+                                      and l.created_at <  now() - interval '7 days')         as leads_7d_prev,
+          (select count(*) from crm.emails e
+             where e.client_id = c.id and e.status = 'sent'
+                                      and e.sent_at  >= now() - interval '7 days')           as sent_7d,
+          (select count(*) from crm.emails e
+             where e.client_id = c.id and e.replied_at is not null
+                                      and e.replied_at >= now() - interval '7 days')         as replied_7d,
+          (select count(*) from crm.emails e
+             where e.client_id = c.id and e.status = 'sent'
+                                      and e.sent_at  >= now() - interval '14 days'
+                                      and e.sent_at  <  now() - interval '7 days')           as sent_7d_prev,
+          (select count(*) from crm.emails e
+             where e.client_id = c.id and e.replied_at is not null
+                                      and e.replied_at >= now() - interval '14 days'
+                                      and e.replied_at <  now() - interval '7 days')         as replied_7d_prev
+        from crm.clients c
+        order by
+          case c.status when 'active' then 0 when 'paused' then 1 else 2 end,
+          c.created_at desc
+    """
+    rows = fetch_all(sql)
+    for r in rows:
+        sent       = r.get('sent_7d', 0) or 0
+        replied    = r.get('replied_7d', 0) or 0
+        sent_prev  = r.get('sent_7d_prev', 0) or 0
+        replied_pv = r.get('replied_7d_prev', 0) or 0
+        r['reply_rate']       = round(replied   / sent      * 100, 1) if sent      else 0.0
+        r['reply_rate_prev']  = round(replied_pv / sent_prev * 100, 1) if sent_prev else 0.0
+        r['reply_rate_delta'] = round(r['reply_rate'] - r['reply_rate_prev'], 1)
+        r['leads_7d_delta']   = (r.get('leads_7d') or 0) - (r.get('leads_7d_prev') or 0)
+        since_dt              = r.get('onboarded_at') or r.get('created_at')
+        r['since']            = since_dt.strftime('%b %Y') if since_dt else ''
+    return rows
