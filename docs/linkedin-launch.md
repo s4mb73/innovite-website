@@ -18,7 +18,7 @@ LinkedIn limit: 120 chars
 
 **Backup options if you want to A/B:**
 - "Clients find you. Not the other way around. AI lead gen for B2B service firms in the UK." (90)
-- "AI-powered outbound, content, and paid ads for B2B service firms with deals from £2k+." (88)
+- "AI lead gen for B2B service firms. Outbound, content, paid ads — deal sizes from £2k+." (84)
 
 ---
 
@@ -51,7 +51,7 @@ How we work:
 - Strategy call to pipeline running, in under two weeks
 - You spend under 30 minutes a week on anything Innovite-related
 
-Retainers run £1,500 to £3,500 a month. Single-channel outbound starts at £1,500. Full system — outbound, content, ads — is £3,500. One-off Content Audit Days are £750.
+Pricing depends on which channels you need. Covered on the strategy call. Retainers are month-to-month — no setup fees, no lock-in.
 
 Book a strategy call: innoviteai.com
 Email: sammy@innoviteai.com

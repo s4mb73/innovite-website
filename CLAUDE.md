@@ -84,7 +84,7 @@ Marketing website for Innovite, an AI lead generation agency for B2B service fir
 - **No emoji** in body copy or LinkedIn posts
 - Service pillars are canonical: **AI Outbound / Content / Paid ads** (don't drift to "Outbound Marketing" / "Content Production" / "Paid Advertising")
 - Deal-value range is **£2k floor to £15k+ ceiling** with hero copy framing it as a range, not a badge
-- Pricing tiers: **£1,500 / £2,500 / £3,500** retainers + **£750** Audit Day
+- Pricing tiers (**internal only — never quote prices on the public site or in public LinkedIn/social copy**): £1,500 / £2,500 / £3,500 retainers + £750 Audit Day. Public copy directs the reader to the strategy call instead of quoting numbers. The call script and other internal materials may still reference these figures.
 - Reply rate stat: **12.4%** (peak, across 6 client campaigns) — never round to 12%
 
 ## Clients in showcase (in order)
