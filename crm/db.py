@@ -131,14 +131,16 @@ def recent_activity(limit: int = 20) -> list[dict]:
 
 # ── Display helpers ──────────────────────────────────────────────────
 ACTION_LABEL = {
-    'lead_created':   'Lead created',
-    'email_sent':     'Email sent',
-    'reply_received': 'Reply received',
-    'meeting_booked': 'Meeting booked',
-    'inbound_lead':   'Inbound lead',
-    'pipeline_run':   'Pipeline run',
-    'lead_won':       'Lead won',
-    'lead_lost':      'Lead lost',
+    'lead_created':         'Lead created',
+    'email_sent':           'Email sent',
+    'reply_received':       'Reply received',
+    'meeting_booked':       'Meeting booked',
+    'inbound_lead':         'Inbound lead',
+    'pipeline_run':         'Pipeline run',
+    'lead_won':             'Lead won',
+    'lead_lost':            'Lead lost',
+    'lead_status_changed':  'Status changed',
+    'lead_status_undone':   'Status reverted',
 }
 
 ACTION_COLOUR = {
@@ -411,16 +413,74 @@ def all_clients_min() -> list[dict]:
     return fetch_all("select id, name from crm.clients order by name")
 
 
-def bulk_change_status(lead_ids: list[int], new_status: str) -> int:
+def bulk_change_status(lead_ids: list[int], new_status: str) -> dict:
+    """Apply new_status to lead_ids, log every actual change to
+    crm.activity_log, and return the rows that changed so the caller
+    can offer Undo. Leads already on new_status are skipped silently."""
     if new_status not in LEAD_STATUSES:
         raise ValueError(f'Invalid status: {new_status!r}')
     if not lead_ids:
-        return 0
-    sql = "update crm.leads set status = %s where id = any(%s)"
+        return {'updated': 0, 'previous': []}
     with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql, (new_status, lead_ids))
-            n = cur.rowcount
+        with conn.cursor(row_factory=dict_row) as cur:
+            # Snapshot before we change anything (for audit + undo)
+            cur.execute(
+                "select id, status, client_id from crm.leads where id = any(%s)",
+                (lead_ids,),
+            )
+            snapshot = cur.fetchall()
+            changed = [s for s in snapshot if s['status'] != new_status]
+
+            if not changed:
+                conn.commit()
+                return {'updated': 0, 'previous': []}
+
+            changed_ids = [s['id'] for s in changed]
+            cur.execute(
+                "update crm.leads set status = %s where id = any(%s)",
+                (new_status, changed_ids),
+            )
+            for s in changed:
+                cur.execute(
+                    "insert into crm.activity_log (client_id, lead_id, action, detail)"
+                    " values (%s, %s, %s, %s)",
+                    (s['client_id'], s['id'], 'lead_status_changed',
+                     f"{s['status']} → {new_status}"),
+                )
+        conn.commit()
+    return {
+        'updated':  len(changed),
+        'previous': [(s['id'], s['status']) for s in changed],
+    }
+
+
+def bulk_revert_status(previous: list[tuple[int, str]]) -> int:
+    """Revert each (lead_id, old_status) and log each reversion."""
+    if not previous:
+        return 0
+    n = 0
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            for lid, old_status in previous:
+                if old_status not in LEAD_STATUSES:
+                    continue
+                cur.execute(
+                    "update crm.leads set status = %s where id = %s",
+                    (old_status, lid),
+                )
+                if cur.rowcount:
+                    n += 1
+                    cur.execute(
+                        "select client_id from crm.leads where id = %s",
+                        (lid,),
+                    )
+                    row = cur.fetchone()
+                    cur.execute(
+                        "insert into crm.activity_log (client_id, lead_id, action, detail)"
+                        " values (%s, %s, %s, %s)",
+                        (row['client_id'] if row else None, lid,
+                         'lead_status_undone', f'reverted to {old_status}'),
+                    )
         conn.commit()
     return n
 

@@ -6,9 +6,12 @@ TODO: add single-password session gate before this is publicly linked.
 import csv
 import io
 import os
-from flask import Flask, Response, abort, flash, redirect, render_template, request, url_for
+import time
+from flask import Flask, Response, abort, flash, redirect, render_template, request, session, url_for
 
 import db
+
+UNDO_TTL_SECONDS = 60
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-only-change-in-prod')
@@ -172,11 +175,56 @@ def leads_bulk_status():
         flash('Nothing to update — pick a status and select at least one lead.', 'error')
         return redirect(request.referrer or url_for('leads'))
     try:
-        n = db.bulk_change_status(ids, new_status)
-        flash(f'Updated {n} lead{"s" if n != 1 else ""} to “{new_status}”.', 'success')
+        result = db.bulk_change_status(ids, new_status)
+        n = result['updated']
+        if n == 0:
+            flash(f'No changes — selected leads were already “{new_status}”.', 'info')
+        else:
+            flash(f'Updated {n} lead{"s" if n != 1 else ""} to “{new_status}”.', 'success')
+            # Stash undo payload — picked up by inject_undo() context processor.
+            session['undo'] = {
+                'ts':       int(time.time()),
+                'previous': result['previous'],
+                'desc':     f'Reverted {n} lead{"s" if n != 1 else ""} to previous status.',
+            }
     except Exception as e:
         flash(f'Update failed: {e}', 'error')
     return redirect(request.referrer or url_for('leads'))
+
+
+@app.route('/leads/undo', methods=['POST'])
+def leads_undo():
+    undo = session.pop('undo', None)
+    if not undo:
+        flash('Nothing to undo.', 'error')
+        return redirect(request.referrer or url_for('leads'))
+    if int(time.time()) - int(undo.get('ts', 0)) > UNDO_TTL_SECONDS:
+        flash('Undo window has expired.', 'error')
+        return redirect(request.referrer or url_for('leads'))
+    try:
+        previous = [(int(i), str(s)) for i, s in undo.get('previous', [])]
+        n = db.bulk_revert_status(previous)
+        flash(undo.get('desc') or f'Reverted {n} leads.', 'success')
+    except Exception as e:
+        flash(f'Undo failed: {e}', 'error')
+    return redirect(request.referrer or url_for('leads'))
+
+
+@app.context_processor
+def inject_undo():
+    """Surface the undo banner across every page until consumed or expired."""
+    undo = session.get('undo')
+    if not undo:
+        return {}
+    age = int(time.time()) - int(undo.get('ts', 0))
+    if age > UNDO_TTL_SECONDS:
+        session.pop('undo', None)
+        return {}
+    return {
+        'undo_available':   True,
+        'undo_description': undo.get('desc') or 'Undo last change',
+        'undo_seconds_left': max(0, UNDO_TTL_SECONDS - age),
+    }
 
 
 @app.route('/leads/<int:lead_id>')

@@ -737,6 +737,62 @@ a { color:inherit; text-decoration:none; }
 .col-decision { color:var(--t2); }
 .col-time     { color:var(--t3); white-space:nowrap; font-variant-numeric:tabular-nums; text-align:right; }
 .col-business { font-weight:500; }
+.lead-name-link {
+  color:var(--t1);
+  text-decoration:none;
+  display:inline-block;
+  padding:1px 0;
+  border-radius:3px;
+}
+.lead-name-link:hover { color:var(--accent); }
+.lead-name-link:focus-visible {
+  outline:2px solid var(--accent);
+  outline-offset:3px;
+}
+
+/* Undo banner — bottom-left, persists for 60s after a bulk action */
+.undo-banner {
+  position:fixed;
+  bottom:24px;
+  left:240px;     /* clear the 220px sidebar + 20px gutter */
+  display:inline-flex;
+  align-items:center;
+  gap:14px;
+  padding:10px 14px;
+  background:var(--s2);
+  border:1px solid var(--b2);
+  border-radius:var(--r-sm);
+  box-shadow:0 8px 24px rgba(0,0,0,.45);
+  z-index:90;
+  font-size:13px;
+  color:var(--t1);
+  animation:undoIn .25s var(--ease);
+}
+.undo-banner form { margin:0; }
+.undo-banner-text { font-weight:500; }
+.undo-banner-ttl {
+  font-size:11.5px;
+  color:var(--t3);
+  font-variant-numeric:tabular-nums;
+  min-width:24px;
+}
+.undo-banner-btn {
+  background:transparent;
+  border:1px solid var(--accent);
+  color:var(--accent);
+  font:inherit;
+  font-size:12px;
+  font-weight:600;
+  padding:5px 12px;
+  border-radius:var(--r-sm);
+  cursor:pointer;
+  transition: background .15s var(--ease);
+}
+.undo-banner-btn:hover { background:var(--accent-bg); }
+@keyframes undoIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@media (max-width: 768px) {
+  .undo-banner { left:16px; right:16px; bottom:16px; }
+}
 
 .leads-table input[type="checkbox"] {
   width:14px;

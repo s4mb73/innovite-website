@@ -46,5 +46,32 @@
   {% block content %}{% endblock %}
 </main>
 
+{% if undo_available %}
+<div class="undo-banner" role="status" aria-live="polite">
+  <span class="undo-banner-text">{{ undo_description }}</span>
+  <span class="undo-banner-ttl" id="undoTTL" data-seconds="{{ undo_seconds_left }}">{{ undo_seconds_left }}s</span>
+  <form method="post" action="{{ url_for('leads_undo') }}">
+    <button class="undo-banner-btn" type="submit">Undo</button>
+  </form>
+</div>
+<script>
+  (function () {
+    const el = document.getElementById('undoTTL');
+    if (!el) return;
+    let s = parseInt(el.dataset.seconds, 10) || 0;
+    const tick = setInterval(() => {
+      s -= 1;
+      if (s <= 0) {
+        clearInterval(tick);
+        const banner = el.closest('.undo-banner');
+        if (banner) banner.remove();
+        return;
+      }
+      el.textContent = s + 's';
+    }, 1000);
+  })();
+</script>
+{% endif %}
+
 </body>
 </html>
