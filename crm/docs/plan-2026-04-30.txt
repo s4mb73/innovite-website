@@ -1,0 +1,183 @@
+================================================================
+INNOVITE — DAILY PLAN
+Thursday, 30 April 2026
+Day 1 of Step 7 (the big one)
+================================================================
+
+
+GOALS FOR TODAY
+---------------
+1. Step 7 backend skeleton live: pipeline runner + first signal
+   detector (Apollo people-changes)
+2. All six v1 API keys provisioned and tested
+3. Scraper devs briefed on LinkedIn-posts scope
+4. Domain warming started for the cold outbound sender
+5. First real enrichment run against 5 ROCA prospects, end-to-end
+
+
+TASKS
+-----
+[ ] Companies House API key                       (5 min, free)
+[ ] PageSpeed Insights API key                    (5 min, free)
+[ ] Google Places API + billing card              (10 min)
+[ ] Apollo.io Basic                               (10 min, £39/mo)
+[ ] Bouncer account + 100 free credits            (5 min)
+[ ] Apify account + Instagram actor sandbox       (10 min)
+[ ] Decide: reuse marketing Anthropic key vs new  (5 min)
+[ ] Zoho app password for SMTP                    (10 min)
+[ ] Zoho app password for IMAP                    (10 min)
+[ ] DKIM record on innoviteai.com                 (10 min)
+[ ] SPF record on innoviteai.com                  (10 min)
+[ ] DMARC record on innoviteai.com                (15 min, p=none)
+[ ] Brief hard-area devs on LinkedIn-posts spec   (45 min)
+[ ] Step 7 deep-work session — pipeline runner    (3 hours)
+[ ] Step 7 — signal selector + email drafter      (1.5 hours)
+[ ] Run pipeline against 5 ROCA test prospects    (30 min)
+[ ] Inbound sweep: innovite.io form + ROCA/Vidora reply queues
+[ ] Tomorrow's first three things written down
+
+
+MEETINGS
+--------
+None confirmed — flag any I don't know about.
+
+
+DEADLINES
+---------
+- First real outbound email sent:    ~12 working days from today
+- Step 7 backend complete:           end of this week
+- Domain warming starts:             TODAY (every day delayed
+                                     pushes day 12 back by 1)
+- Confidence to handover from any
+  existing system:                   ~6 weeks from today
+
+
+================================================================
+TOP 3 PRIORITIES
+================================================================
+
+1. Provision the six API keys.
+   Single highest-leverage hour of the day. Without keys, all
+   of Step 7's backend code is shelf-software. Do it before
+   any code work. ~45 min total in one block.
+
+2. Brief the scraper devs.
+   They are a parallel track. The earlier they start the
+   LinkedIn-posts scraper, the earlier the highest-value signal
+   lands in the pipeline. Don't wait until you "need" it —
+   their clock starts when you message them, not when you ask
+   for the result.
+
+3. Step 7 backend session with me.
+   Pipeline runner + Apollo people-changes detector + first
+   end-to-end run on 5 real ROCA prospects. After today, every
+   day on this build gets faster.
+
+
+================================================================
+SCHEDULE (UK time)
+================================================================
+
+08:00 – 08:30   Inbound check
+                Clear innovite.io form replies + ROCA & Vidora
+                reply queues before deep work starts.
+
+08:30 – 09:30   Provision API keys (sequenced)
+                Companies House → PSI → Google Places → Apollo
+                → Bouncer → Apify. Free-to-paid order so
+                card-on-file friction is one cluster.
+
+09:30 – 10:00   Brief scraper devs
+                One paragraph + the data-points spec from
+                crm/docs/data-sources.md. Hand them work to
+                start today.
+
+10:00 – 13:00   DEEP WORK — Step 7 with me
+                Pipeline runner skeleton.
+                Apollo people-changes signal detector.
+                First enrichment run against 5 ROCA prospects.
+                Three uninterrupted hours = the only block
+                where real progress lands.
+
+13:00 – 14:00   Lunch / off the screen
+                Non-negotiable. The afternoon depends on it.
+
+14:00 – 15:00   Zoho + DNS
+                SMTP + IMAP app passwords.
+                DKIM + SPF + DMARC records on innoviteai.com.
+                Lower cognitive load, doable post-lunch.
+
+15:00 – 16:30   Step 7 continue
+                Signal selector logic.
+                Claude email-drafter prompt.
+                Second deep-work block, smaller scope.
+
+16:30 – 17:00   End-of-day sweep
+                Inbound check.
+                Tomorrow's first three things written down so
+                no "what was I doing?" in the morning.
+
+17:00 +         STOP.
+                Domain warming runs overnight regardless of
+                you being at the keyboard.
+
+
+================================================================
+AUTOMATE / DELEGATE
+================================================================
+
+DELEGATED OR AUTOMATED:
+  - LinkedIn-posts scraping        → hard-area devs
+  - Lead enrichment from APIs      → the CRM pipeline (building it)
+  - Outbound email sends           → cron / scheduler (Step 7d)
+  - Reply sentiment classification → Claude (Step 7e)
+  - Inbound auto-response          → already live in api/submit.js
+
+DO NOT DELEGATE TODAY:
+  - Vendor decisions (Apollo vs Cognism call, etc.)
+  - API card-on-file
+  - Scraper-dev spec
+  - Final read on the first batch of outbound copy before send
+
+
+================================================================
+HIGHEST-IMPACT ACTIVITIES
+================================================================
+
+If the day blows up and you only have three hours, do these
+three things — in this order:
+
+  1. Companies House + Google Places + Apollo keys
+     (30 min total — 80% of enrichment unblocked)
+
+  2. Brief the scraper devs
+     (10 min message starts their clock — saves 2–3 days
+      at the end of week two)
+
+  3. Start domain warming
+     (5 emails from the cold-outbound sender today.
+      Day-one delay = day-fourteen delay.
+      If using sammy@innoviteai.com, it's already warm —
+      skip this. Otherwise it must start today.)
+
+Code for the CRM is real work, but it's INTERRUPTIBLE.
+The two non-interruptible items today are vendor sign-ups
+(cards on file) and the scraper-dev brief (their schedule,
+not yours). Front-load both.
+
+
+================================================================
+END-OF-DAY CHECK
+================================================================
+
+Before you stop, answer these three:
+
+  - Are all 6 API keys live and tested?
+  - Did the scraper devs reply / acknowledge the brief?
+  - Did the pipeline run successfully against at least 1 real
+    ROCA prospect end-to-end?
+
+If yes to all three, day was a win.
+If no on any, that's the first thing tomorrow.
+
+================================================================
