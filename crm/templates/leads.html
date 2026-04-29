@@ -1,7 +1,215 @@
 {% extends "base.html" %}
 {% block title %}Leads · Innovite CRM{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Leads</h1>
-<p class="page-sub">Every prospect across every client, filterable.</p>
-<div class="placeholder"><strong>Leads</strong> arrives in Step 5.</div>
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Leads</h1>
+    <p class="page-sub">Every prospect across every client.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn" href="{{ url_for('leads_csv', **request.args) }}" title="Download these results as CSV">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Export CSV
+    </a>
+  </div>
+</div>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong>
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{% set c = result.counts %}
+
+{# ── Status tabs ──────────────────────────────────────── #}
+<div class="tabbar" role="tablist" aria-label="Status">
+  {% set tabs = [
+    ('all',       'All',        c.all),
+    ('new',       'New',        c.new),
+    ('contacted', 'Contacted',  c.contacted),
+    ('replied',   'Replied',    c.replied),
+    ('meeting',   'Meeting',    c.meeting),
+    ('won',       'Won',        c.won),
+    ('lost',      'Lost',       c.lost),
+  ] %}
+  {% for slug, label, count in tabs %}
+    {% set qs = request.args.to_dict() %}
+    {% set _ = qs.pop('page', None) %}
+    {% if slug == 'all' %}{% set _ = qs.pop('status', None) %}{% else %}{% set _ = qs.update({'status': slug}) %}{% endif %}
+    <a class="tab {% if active_status == slug %}is-active{% endif %}"
+       href="{{ url_for('leads', **qs) }}"
+       role="tab"
+       aria-selected="{{ 'true' if active_status == slug else 'false' }}">
+      {{ label }} <span class="tab-count">{{ count }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+{# ── Filter bar ───────────────────────────────────────── #}
+<form class="leads-toolbar" method="get" action="{{ url_for('leads') }}">
+  {% if f.status %}<input type="hidden" name="status" value="{{ f.status }}">{% endif %}
+  <select class="filter-select" name="client" onchange="this.form.submit()">
+    <option value="">All clients</option>
+    {% for cl in clients_min %}
+      <option value="{{ cl.id }}" {% if f.client_id == cl.id %}selected{% endif %}>{{ cl.name }}</option>
+    {% endfor %}
+  </select>
+
+  <label class="search-wrap">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"/>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input type="search" name="q" placeholder="Search name or decision-maker"
+           value="{{ f.search or '' }}" autocomplete="off" data-debounce-search>
+  </label>
+
+  <select class="filter-select" name="sort" onchange="this.form.submit()">
+    <option value="recent" {% if f.sort == 'recent' %}selected{% endif %}>Sort · Recent</option>
+    <option value="grade"  {% if f.sort == 'grade'  %}selected{% endif %}>Sort · Grade</option>
+    <option value="score"  {% if f.sort == 'score'  %}selected{% endif %}>Sort · Score</option>
+  </select>
+</form>
+
+{# ── Bulk-action bar (shown when rows selected) ──────── #}
+<form id="bulkForm" class="bulkbar" method="post" action="{{ url_for('leads_bulk_status') }}" hidden>
+  <span class="bulkbar-count" data-bulk-count>0 selected</span>
+  <select class="filter-select" name="status" required>
+    <option value="">Change status to…</option>
+    {% for s in ['new','contacted','replied','meeting','won','lost','closed'] %}
+      <option value="{{ s }}">{{ s|capitalize }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Apply</button>
+  <button type="button" class="btn" data-bulk-clear>Clear selection</button>
+</form>
+
+{# ── Table ───────────────────────────────────────────── #}
+{% if result.rows %}
+<div class="leads-table-wrap">
+  <table class="leads-table" aria-label="Leads">
+    <thead>
+      <tr>
+        <th class="col-check"><input type="checkbox" data-bulk-toggle-all aria-label="Select all"></th>
+        <th class="col-business">Business</th>
+        <th class="col-grade">Grade</th>
+        <th class="col-client">Client</th>
+        <th class="col-status">Status</th>
+        <th class="col-decision">Decision-maker</th>
+        <th class="col-time">Added</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in result.rows %}
+        <tr class="lead-tr" data-href="{{ url_for('lead_detail', lead_id=l.id) }}">
+          <td class="col-check"><input type="checkbox" name="ids" form="bulkForm" value="{{ l.id }}" aria-label="Select {{ l.business_name }}"></td>
+          <td class="col-business">{{ l.business_name }}</td>
+          <td class="col-grade"><span class="grade grade-{{ l.grade_colour }}">{{ l.grade or '—' }}</span></td>
+          <td class="col-client">{{ l.client_name or '—' }}</td>
+          <td class="col-status"><span class="lead-status pill-{{ l.status_colour }}">{{ l.status|capitalize }}</span></td>
+          <td class="col-decision">{{ l.decision_maker_name or '—' }}</td>
+          <td class="col-time">{{ l.relative }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="pagination">
+  <span class="page-info">Showing {{ result.page_start }}–{{ result.page_end }} of {{ '{:,}'.format(result.total) }}</span>
+  <div class="page-nav">
+    {% set qs = request.args.to_dict() %}
+    {% set _ = qs.pop('page', None) %}
+    {% if result.page > 1 %}
+      <a class="btn" href="{{ url_for('leads', **qs, page=result.page - 1) }}">← Prev</a>
+    {% else %}
+      <span class="btn" aria-disabled="true">← Prev</span>
+    {% endif %}
+    <span class="page-num">page {{ result.page }} of {{ result.pages }}</span>
+    {% if result.page < result.pages %}
+      <a class="btn" href="{{ url_for('leads', **qs, page=result.page + 1) }}">Next →</a>
+    {% else %}
+      <span class="btn" aria-disabled="true">Next →</span>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+  {% if f.search or f.status or f.client_id %}
+    <div class="empty">
+      No leads match these filters.
+      <a href="{{ url_for('leads') }}" class="card-link">Clear filters →</a>
+    </div>
+  {% else %}
+    <div class="empty">No leads yet — run the pipeline to start seeing data.</div>
+  {% endif %}
+{% endif %}
+
+{# ── Flash messages ─────────────────────────────────── #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-stack" aria-live="polite">
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<script>
+  // Debounced search — submit the form after 250ms of typing pause.
+  (function () {
+    const input = document.querySelector('[data-debounce-search]');
+    if (!input) return;
+    let t;
+    input.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => input.form.submit(), 250);
+    });
+  })();
+
+  // Row click → navigate, but don't hijack checkbox / link clicks.
+  (function () {
+    document.querySelectorAll('.lead-tr').forEach(tr => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('input, a, button, label')) return;
+        window.location = tr.dataset.href;
+      });
+    });
+  })();
+
+  // Bulk-action bar: show when any checkbox is ticked.
+  (function () {
+    const form  = document.getElementById('bulkForm');
+    const count = form?.querySelector('[data-bulk-count]');
+    const all   = document.querySelector('[data-bulk-toggle-all]');
+    const clear = form?.querySelector('[data-bulk-clear]');
+    if (!form) return;
+    const boxes = () => Array.from(document.querySelectorAll('input[name="ids"]'));
+    function refresh() {
+      const checked = boxes().filter(b => b.checked);
+      const n = checked.length;
+      form.hidden = n === 0;
+      if (count) count.textContent = `${n} selected`;
+      if (all) all.checked = n > 0 && n === boxes().length;
+    }
+    boxes().forEach(b => b.addEventListener('change', refresh));
+    if (all) all.addEventListener('change', () => {
+      boxes().forEach(b => { b.checked = all.checked; });
+      refresh();
+    });
+    if (clear) clear.addEventListener('click', () => {
+      boxes().forEach(b => { b.checked = false; });
+      refresh();
+    });
+  })();
+</script>
 {% endblock %}

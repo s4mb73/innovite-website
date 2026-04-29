@@ -3,8 +3,10 @@
 POC stage: no auth (Railway URL stays unguessable).
 TODO: add single-password session gate before this is publicly linked.
 """
+import csv
+import io
 import os
-from flask import Flask, abort, render_template
+from flask import Flask, Response, abort, flash, redirect, render_template, request, url_for
 
 import db
 
@@ -84,9 +86,97 @@ def client_detail(client_id: int):
     )
 
 
+def _lead_filters_from_request():
+    """Pull filter / search / sort / page from request.args. Centralised
+    so /leads, /leads.csv, and the bulk-action POST all parse identically.
+    """
+    args = request.args
+    status = args.get('status') or None
+    if status not in db.LEAD_STATUSES and status != 'all':
+        status = None
+    if status == 'all':
+        status = None
+    client_raw = args.get('client')
+    client_id = int(client_raw) if (client_raw or '').isdigit() else None
+    search = (args.get('q') or '').strip() or None
+    sort = args.get('sort') or 'recent'
+    if sort not in db.SORT_SQL:
+        sort = 'recent'
+    page = int(args.get('page') or 1)
+    return {'status': status, 'client_id': client_id, 'search': search, 'sort': sort, 'page': page}
+
+
 @app.route('/leads')
 def leads():
-    return render_template('leads.html', active='leads')
+    db_error = None
+    result = {'rows': [], 'total': 0, 'counts': {s: 0 for s in db.LEAD_STATUSES} | {'all': 0},
+              'page': 1, 'pages': 1, 'page_size': 50, 'page_start': 0, 'page_end': 0}
+    clients_min: list[dict] = []
+    f = _lead_filters_from_request()
+    try:
+        result = db.leads_search(**f, page_size=50)
+        clients_min = db.all_clients_min()
+    except Exception as e:
+        db_error = str(e).splitlines()[0][:240]
+    return render_template(
+        'leads.html',
+        active='leads',
+        result=result,
+        clients_min=clients_min,
+        f=f,
+        active_status=request.args.get('status', 'all'),
+        db_error=db_error,
+    )
+
+
+@app.route('/leads.csv')
+def leads_csv():
+    f = _lead_filters_from_request()
+    try:
+        rows = db.leads_for_csv(status=f['status'], client_id=f['client_id'], search=f['search'])
+    except Exception as e:
+        return Response(f'Could not generate export: {e}', status=502, mimetype='text/plain')
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['business_name', 'client', 'grade', 'status', 'score',
+                'reviews', 'decision_maker', 'email', 'phone', 'website', 'city', 'added'])
+    for r in rows:
+        w.writerow([
+            r.get('business_name') or '',
+            r.get('client_name') or '',
+            r.get('grade') or '',
+            r.get('status') or '',
+            r.get('overall_score') if r.get('overall_score') is not None else '',
+            r.get('google_review_count') if r.get('google_review_count') is not None else '',
+            r.get('decision_maker_name') or '',
+            r.get('email') or '',
+            r.get('phone') or '',
+            r.get('website') or '',
+            r.get('city') or '',
+            r['created_at'].isoformat() if r.get('created_at') else '',
+        ])
+    return Response(
+        buf.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename="innovite-leads.csv"'},
+    )
+
+
+@app.route('/leads/bulk-status', methods=['POST'])
+def leads_bulk_status():
+    new_status = (request.form.get('status') or '').strip()
+    ids_raw = request.form.getlist('ids')
+    ids = [int(x) for x in ids_raw if x.isdigit()]
+    if not ids or new_status not in db.LEAD_STATUSES:
+        flash('Nothing to update — pick a status and select at least one lead.', 'error')
+        return redirect(request.referrer or url_for('leads'))
+    try:
+        n = db.bulk_change_status(ids, new_status)
+        flash(f'Updated {n} lead{"s" if n != 1 else ""} to “{new_status}”.', 'success')
+    except Exception as e:
+        flash(f'Update failed: {e}', 'error')
+    return redirect(request.referrer or url_for('leads'))
 
 
 @app.route('/leads/<int:lead_id>')

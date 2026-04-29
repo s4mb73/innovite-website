@@ -303,3 +303,151 @@ def client_recent_leads(client_id: int, limit: int = 10) -> list[dict]:
         r['status_colour'] = STATUS_COLOUR.get(r.get('status') or '', 'grey')
         r['relative']      = relative_time(r['created_at'])
     return rows
+
+
+# ── Leads list (Step 5) ──────────────────────────────────────────────
+LEAD_STATUSES = ['new', 'contacted', 'replied', 'meeting', 'won', 'lost', 'closed']
+
+SORT_SQL = {
+    'recent': 'l.created_at desc',
+    'grade':  "case l.grade when 'A' then 1 when 'B' then 2 when 'C' then 3 when 'D' then 4 when 'F' then 5 else 6 end, l.created_at desc",
+    'score':  'coalesce(l.overall_score, 0) desc, l.created_at desc',
+}
+
+
+def leads_search(
+    *,
+    status: str | None = None,
+    client_id: int | None = None,
+    search: str | None = None,
+    sort: str = 'recent',
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    """List leads with filters, search, sort, pagination — and the
+    counts per status for the filter tabs. One round-trip would be
+    nicer; for clarity we keep three queries (rows / total / status counts).
+    """
+    where = ['1=1']
+    params: dict = {}
+    if status and status in LEAD_STATUSES:
+        where.append('l.status = %(status)s')
+        params['status'] = status
+    if client_id:
+        where.append('l.client_id = %(client_id)s')
+        params['client_id'] = client_id
+    if search:
+        where.append('(l.business_name ilike %(q)s or l.decision_maker_name ilike %(q)s)')
+        params['q'] = f'%{search}%'
+
+    where_sql = ' and '.join(where)
+    order_sql = SORT_SQL.get(sort, SORT_SQL['recent'])
+    page = max(1, page)
+    offset = (page - 1) * page_size
+    params['limit'] = page_size
+    params['offset'] = offset
+
+    rows = fetch_all(f"""
+        select l.id, l.business_name, l.grade, l.status, l.overall_score,
+               l.decision_maker_name, l.google_review_count, l.created_at,
+               c.id as client_id, c.name as client_name
+          from crm.leads l
+          left join crm.clients c on c.id = l.client_id
+         where {where_sql}
+         order by {order_sql}
+         limit %(limit)s offset %(offset)s
+    """, params)
+
+    for r in rows:
+        r['grade_colour']  = GRADE_COLOUR.get(r.get('grade') or '', 'grey')
+        r['status_colour'] = STATUS_COLOUR.get(r.get('status') or '', 'grey')
+        r['relative']      = relative_time(r['created_at'])
+
+    total_row = fetch_one(f"""
+        select count(*) as total
+          from crm.leads l
+         where {where_sql}
+    """, params) or {'total': 0}
+    total = int(total_row['total'])
+
+    # Status counts ignore the *status* filter (so the tabs always show
+    # how many you'd see if you switched to that tab) but DO honour the
+    # other filters (client, search).
+    other_where = ['1=1']
+    other_params: dict = {}
+    if client_id:
+        other_where.append('l.client_id = %(client_id)s')
+        other_params['client_id'] = client_id
+    if search:
+        other_where.append('(l.business_name ilike %(q)s or l.decision_maker_name ilike %(q)s)')
+        other_params['q'] = f'%{search}%'
+    counts_rows = fetch_all(f"""
+        select coalesce(l.status, 'new') as status, count(*) as n
+          from crm.leads l
+         where {' and '.join(other_where)}
+         group by 1
+    """, other_params)
+    counts = {s: 0 for s in LEAD_STATUSES}
+    for c in counts_rows:
+        if c['status'] in counts:
+            counts[c['status']] = int(c['n'])
+    counts['all'] = sum(counts.values())
+
+    pages = max(1, (total + page_size - 1) // page_size)
+    return {
+        'rows':       rows,
+        'total':      total,
+        'counts':     counts,
+        'page':       page,
+        'pages':      pages,
+        'page_size':  page_size,
+        'page_start': offset + 1 if total else 0,
+        'page_end':   min(offset + page_size, total),
+    }
+
+
+def all_clients_min() -> list[dict]:
+    """Tiny client list for the leads-page filter dropdown."""
+    return fetch_all("select id, name from crm.clients order by name")
+
+
+def bulk_change_status(lead_ids: list[int], new_status: str) -> int:
+    if new_status not in LEAD_STATUSES:
+        raise ValueError(f'Invalid status: {new_status!r}')
+    if not lead_ids:
+        return 0
+    sql = "update crm.leads set status = %s where id = any(%s)"
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (new_status, lead_ids))
+            n = cur.rowcount
+        conn.commit()
+    return n
+
+
+def leads_for_csv(
+    *,
+    status: str | None = None,
+    client_id: int | None = None,
+    search: str | None = None,
+) -> list[dict]:
+    """Same filters as the list page, no pagination — for CSV export."""
+    where = ['1=1']
+    params: dict = {}
+    if status and status in LEAD_STATUSES:
+        where.append('l.status = %(status)s'); params['status'] = status
+    if client_id:
+        where.append('l.client_id = %(client_id)s'); params['client_id'] = client_id
+    if search:
+        where.append('(l.business_name ilike %(q)s or l.decision_maker_name ilike %(q)s)')
+        params['q'] = f'%{search}%'
+    return fetch_all(f"""
+        select l.business_name, c.name as client_name, l.grade, l.status,
+               l.overall_score, l.google_review_count, l.decision_maker_name,
+               l.email, l.phone, l.website, l.city,
+               l.created_at
+          from crm.leads l
+          left join crm.clients c on c.id = l.client_id
+         where {' and '.join(where)}
+         order by l.created_at desc
+    """, params)
