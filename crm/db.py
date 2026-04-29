@@ -203,3 +203,103 @@ def list_clients() -> list[dict]:
         since_dt              = r.get('onboarded_at') or r.get('created_at')
         r['since']            = since_dt.strftime('%b %Y') if since_dt else ''
     return rows
+
+
+# ── Client detail (Step 4 part 2) ────────────────────────────────────
+def get_client(client_id: int) -> dict | None:
+    sql = """
+        select id, name, industry, contact_name, contact_email,
+               monthly_fee, pricing_tier, status,
+               onboarded_at, created_at
+        from crm.clients
+        where id = %s
+    """
+    r = fetch_one(sql, (client_id,))
+    if r:
+        since_dt = r.get('onboarded_at') or r.get('created_at')
+        r['since'] = since_dt.strftime('%b %Y') if since_dt else ''
+    return r
+
+
+def client_stats(client_id: int) -> dict:
+    """Headline numbers for one client. Mirrors dashboard_metrics() scoped."""
+    sql = """
+        select
+          (select count(*) from crm.leads
+             where client_id = %(cid)s)                                                                    as total_leads,
+          (select count(*) from crm.leads
+             where client_id = %(cid)s and created_at >= now() - interval '7 days')                        as leads_7d,
+          (select count(*) from crm.leads
+             where client_id = %(cid)s and created_at >= now() - interval '14 days'
+                                       and created_at <  now() - interval '7 days')                       as leads_7d_prev,
+
+          (select count(*) from crm.emails
+             where client_id = %(cid)s and status = 'sent'
+                                       and sent_at >= now() - interval '7 days')                          as sent_7d,
+          (select count(*) from crm.emails
+             where client_id = %(cid)s and replied_at is not null
+                                       and replied_at >= now() - interval '7 days')                       as repl_7d,
+          (select count(*) from crm.emails
+             where client_id = %(cid)s and status = 'sent'
+                                       and sent_at >= now() - interval '14 days'
+                                       and sent_at <  now() - interval '7 days')                          as sent_7d_prev,
+          (select count(*) from crm.emails
+             where client_id = %(cid)s and replied_at is not null
+                                       and replied_at >= now() - interval '14 days'
+                                       and replied_at <  now() - interval '7 days')                       as repl_7d_prev,
+
+          (select count(*) from crm.leads
+             where client_id = %(cid)s and status = 'meeting'
+                                       and updated_at >= now() - interval '30 days')                      as meetings_30d,
+          (select count(*) from crm.leads
+             where client_id = %(cid)s and status = 'meeting'
+                                       and updated_at >= now() - interval '60 days'
+                                       and updated_at <  now() - interval '30 days')                      as meetings_30d_prev
+    """
+    r = fetch_one(sql, {'cid': client_id}) or {}
+
+    def rate(num: int, den: int) -> float:
+        return round(num / den * 100, 1) if den else 0.0
+
+    sent      = r.get('sent_7d', 0) or 0
+    repl      = r.get('repl_7d', 0) or 0
+    sent_prev = r.get('sent_7d_prev', 0) or 0
+    repl_prev = r.get('repl_7d_prev', 0) or 0
+
+    return {
+        'total_leads':        r.get('total_leads', 0) or 0,
+        'total_leads_delta':  (r.get('leads_7d', 0) or 0) - (r.get('leads_7d_prev', 0) or 0),
+        'reply_rate':         rate(repl, sent),
+        'reply_rate_delta':   round(rate(repl, sent) - rate(repl_prev, sent_prev), 1),
+        'meetings_month':     r.get('meetings_30d', 0) or 0,
+        'meetings_month_delta': (r.get('meetings_30d', 0) or 0) - (r.get('meetings_30d_prev', 0) or 0),
+    }
+
+
+GRADE_COLOUR = {'A': 'green', 'B': 'blue', 'C': 'amber', 'D': 'red', 'F': 'grey'}
+STATUS_COLOUR = {
+    'new':       'grey',
+    'contacted': 'grey',
+    'replied':   'blue',
+    'meeting':   'green',
+    'won':       'green',
+    'lost':      'red',
+    'closed':    'grey',
+}
+
+
+def client_recent_leads(client_id: int, limit: int = 10) -> list[dict]:
+    sql = """
+        select id, business_name, grade, status, revenue_gap_estimate,
+               decision_maker_name, created_at
+        from crm.leads
+        where client_id = %s
+        order by created_at desc
+        limit %s
+    """
+    rows = fetch_all(sql, (client_id, limit))
+    for r in rows:
+        r['grade_colour']  = GRADE_COLOUR.get(r.get('grade') or '', 'grey')
+        r['status_colour'] = STATUS_COLOUR.get(r.get('status') or '', 'grey')
+        r['relative']      = relative_time(r['created_at'])
+    return rows

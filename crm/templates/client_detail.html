@@ -1,7 +1,119 @@
 {% extends "base.html" %}
-{% block title %}Client · Innovite CRM{% endblock %}
+{% block title %}{{ client.name if client else 'Client' }} · Innovite CRM{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Client</h1>
-<p class="page-sub">Pipeline config, stats, and lead list for this client.</p>
-<div class="placeholder"><strong>Client</strong> arrives in Step 4.</div>
+<a href="{{ url_for('clients') }}" class="back-link">
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <polyline points="15 18 9 12 15 6"/>
+  </svg>
+  Clients
+</a>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong> Showing stale or empty data.
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{% if client %}
+<div class="page-head">
+  <div>
+    <h1 class="page-title">{{ client.name }}</h1>
+    <p class="page-sub">
+      {% if client.industry %}{{ client.industry }}{% else %}—{% endif %}
+      {% if client.since %} · since {{ client.since }}{% endif %}
+      {% if client.contact_name %} · {{ client.contact_name }}{% endif %}
+      <span class="meta-status status-{{ client.status }}">
+        <span class="status-dot" aria-hidden="true"></span>{{ client.status|capitalize }}
+      </span>
+    </p>
+  </div>
+  <div class="page-actions">
+    <button class="btn" disabled title="Available from Step 7">
+      <span class="btn-icon">⟳</span> Run pipeline
+    </button>
+    <button class="btn" disabled title="Available from Step 9">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+      </svg>
+      Generate report
+    </button>
+  </div>
+</div>
+
+{# ── Stats strip ────────────────────────────────────────── #}
+{% set s = stats %}
+<div class="metrics">
+  <div class="metric">
+    <div class="metric-label">Total leads</div>
+    <div class="metric-value">{{ '{:,}'.format(s.total_leads) }}</div>
+    <div class="metric-change {{ 'up' if s.total_leads_delta > 0 else ('down' if s.total_leads_delta < 0 else 'flat') }}">
+      {% if s.total_leads_delta > 0 %}↑ {{ s.total_leads_delta }} vs prev 7d
+      {% elif s.total_leads_delta < 0 %}↓ {{ -s.total_leads_delta }} vs prev 7d
+      {% else %}— no change{% endif %}
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Reply rate · 7d</div>
+    <div class="metric-value">{{ s.reply_rate }}%</div>
+    <div class="metric-change {{ 'up' if s.reply_rate_delta > 0 else ('down' if s.reply_rate_delta < 0 else 'flat') }}">
+      {% if s.reply_rate_delta > 0 %}↑ {{ s.reply_rate_delta }}% vs prev 7d
+      {% elif s.reply_rate_delta < 0 %}↓ {{ -s.reply_rate_delta }}% vs prev 7d
+      {% else %}— no change{% endif %}
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Meetings · 30d</div>
+    <div class="metric-value">{{ '{:,}'.format(s.meetings_month) }}</div>
+    <div class="metric-change {{ 'up' if s.meetings_month_delta > 0 else ('down' if s.meetings_month_delta < 0 else 'flat') }}">
+      {% if s.meetings_month_delta > 0 %}↑ {{ s.meetings_month_delta }} vs prev 30d
+      {% elif s.meetings_month_delta < 0 %}↓ {{ -s.meetings_month_delta }} vs prev 30d
+      {% else %}— no change{% endif %}
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Retainer</div>
+    <div class="metric-value">
+      {% if client.monthly_fee %}£{{ '{:,.0f}'.format(client.monthly_fee) }}<span class="metric-suffix">/mo</span>
+      {% else %}—{% endif %}
+    </div>
+    <div class="metric-change flat">{{ client.pricing_tier or 'tier not set' }}</div>
+  </div>
+</div>
+
+{# ── Recent leads ──────────────────────────────────────── #}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Recent leads</div>
+    <a class="card-link" href="{{ url_for('leads') }}?client={{ client.id }}">View all →</a>
+  </div>
+  {% if leads %}
+    <div class="lead-rows">
+      {% for l in leads %}
+        <a href="{{ url_for('lead_detail', lead_id=l.id) }}" class="lead-row">
+          <span class="grade grade-{{ l.grade_colour }}">{{ l.grade or '—' }}</span>
+          <span class="lead-name">{{ l.business_name }}</span>
+          <span class="lead-status pill-{{ l.status_colour }}">{{ l.status|capitalize }}</span>
+          <span class="lead-est">{{ l.revenue_gap_estimate or '—' }}</span>
+          <span class="lead-time">{{ l.relative }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">No leads yet — run the pipeline to start seeing data.</div>
+  {% endif %}
+</div>
+
+{# ── Pipeline config (placeholder until Step 7) ─────────── #}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Pipeline config</div>
+  </div>
+  <div class="empty">Pipeline config arrives in Step 7 — once outbound is wired up, this is where target industries, locations, filters, and email settings live.</div>
+</div>
+{% endif %}
 {% endblock %}

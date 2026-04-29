@@ -4,7 +4,7 @@ POC stage: no auth (Railway URL stays unguessable).
 TODO: add single-password session gate before this is publicly linked.
 """
 import os
-from flask import Flask, render_template
+from flask import Flask, abort, render_template
 
 import db
 
@@ -55,7 +55,33 @@ def clients():
 
 @app.route('/clients/<int:client_id>')
 def client_detail(client_id: int):
-    return render_template('client_detail.html', active='clients', client_id=client_id)
+    db_error = None
+    client = None
+    stats = {
+        'total_leads': 0, 'total_leads_delta': 0,
+        'reply_rate': 0.0, 'reply_rate_delta': 0.0,
+        'meetings_month': 0, 'meetings_month_delta': 0,
+    }
+    leads: list[dict] = []
+    try:
+        client = db.get_client(client_id)
+        if client is None:
+            abort(404)
+        stats = db.client_stats(client_id)
+        leads = db.client_recent_leads(client_id, 10)
+    except Exception as e:
+        # 404s should propagate; everything else degrades gracefully.
+        if hasattr(e, 'code') and e.code == 404:
+            raise
+        db_error = str(e).splitlines()[0][:240]
+    return render_template(
+        'client_detail.html',
+        active='clients',
+        client=client,
+        stats=stats,
+        leads=leads,
+        db_error=db_error,
+    )
 
 
 @app.route('/leads')
