@@ -416,21 +416,29 @@ async function sb(){
   if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
   const events=[
-    {t:'New prospect identified',           s:'<strong>Apex Financial Partners</strong> — Manchester', dot:'blue',  stat:'prospects'},
-    {t:'Qualified — high priority',         s:'<strong>Sterling Partners LLP</strong>',                 dot:'blue'},
-    {t:'Outreach sent',                     s:'<strong>Manchester Skin Clinic</strong>',                dot:'blue',  stat:'contacted'},
-    {t:'Reply received',                    s:'<strong>Apex Financial Partners</strong>',               dot:'green', stat:'replies'},
-    {t:'Positive — meeting requested',      s:'<strong>Apex Financial Partners</strong>',               dot:'green', pulse:true},
-    {t:'Meeting booked — Thursday 2:30pm',  s:'<strong>Sarah Chen</strong>, Managing Director',         dot:'green', pulse:true, stat:'meetings'},
-    {t:'New prospect identified',           s:'<strong>Summit Advisory Group</strong> — Leeds',         dot:'blue',  stat:'prospects'},
-    {t:'Outreach sent',                     s:'<strong>Bloom Aesthetics</strong>',                      dot:'blue',  stat:'contacted'},
-    {t:'Reply received',                    s:'<strong>Peak Consulting</strong>',                       dot:'green', stat:'replies'},
-    {t:'Qualified — high priority',         s:'<strong>Clarke &amp; Partners</strong>',                 dot:'blue'}
+    {t:'New prospect identified',           s:'<strong>Apex Financial Partners</strong> — Manchester',    dot:'blue',  stat:'prospects'},
+    {t:'Qualified — high value',            s:'<strong>Sterling Partners LLP</strong> — <em>£12k est.</em>', dot:'blue', pipeline:12000},
+    {t:'Outreach sent',                     s:'<strong>Manchester Skin Clinic</strong>',                  dot:'blue',  stat:'contacted'},
+    {t:'Qualified — high value',            s:'<strong>Summit Advisory</strong> — <em>£8.5k est.</em>',   dot:'blue',  pipeline:8500},
+    {t:'Reply received',                    s:'<strong>Apex Financial Partners</strong>',                 dot:'green', stat:'replies'},
+    {t:'Positive — wants to talk',          s:'<strong>Sarah Chen</strong>, Managing Director',           dot:'green', pulse:true},
+    {t:'Meeting booked — Thursday 2:30pm',  s:'<strong>Apex Financial Partners</strong> — <em>£12.5k</em>', dot:'green', pulse:true, stat:'meetings', won:12500},
+    {t:'New prospect identified',           s:'<strong>Clarke &amp; Partners</strong> — Leeds',           dot:'blue',  stat:'prospects'},
+    {t:'Outreach sent',                     s:'<strong>Bloom Aesthetics</strong>',                        dot:'blue',  stat:'contacted'},
+    {t:'Qualified — high value',            s:'<strong>Peak Consulting</strong> — <em>£15k est.</em>',    dot:'blue',  pipeline:15000},
+    {t:'Reply received',                    s:'<strong>Peak Consulting</strong>',                         dot:'green', stat:'replies'},
+    {t:'Meeting booked — Friday 11am',      s:'<strong>Peak Consulting</strong> — <em>£6.5k</em>',        dot:'green', pulse:true, stat:'meetings', won:19000}
   ];
 
   const stats={prospects:0,contacted:0,replies:0,meetings:0};
   const statEls={};
   document.querySelectorAll('.lp .lp-n').forEach(el=>{statEls[el.dataset.stat]=el;});
+
+  const revEls={pipeline:document.querySelector('.lp [data-rev="pipeline"]'),won:document.querySelector('.lp [data-rev="won"]')};
+  const revVals={pipeline:0,won:0};
+  const revTweens={};
+  const fmt=new Intl.NumberFormat('en-GB');
+  const money=v=>'£'+fmt.format(Math.round(v));
 
   let i=0,timer=null;
 
@@ -443,8 +451,30 @@ async function sb(){
     el.classList.add('lp-bump');
   }
 
+  function tweenRev(key,target){
+    if(revTweens[key]) cancelAnimationFrame(revTweens[key]);
+    const from=revVals[key];
+    const to=target;
+    const start=performance.now();
+    const dur=800;
+    const el=revEls[key];
+    function frame(now){
+      const t=Math.min(1,(now-start)/dur);
+      const eased=1-Math.pow(1-t,3); // easeOutCubic
+      const cur=from+(to-from)*eased;
+      el.textContent=money(cur);
+      if(t<1) revTweens[key]=requestAnimationFrame(frame);
+      else{revVals[key]=to;revTweens[key]=null;}
+    }
+    revTweens[key]=requestAnimationFrame(frame);
+  }
+
   function reset(){
     Object.keys(stats).forEach(k=>{stats[k]=0;statEls[k].textContent='0';});
+    Object.keys(revVals).forEach(k=>{
+      if(revTweens[k]) cancelAnimationFrame(revTweens[k]);
+      revVals[k]=0;revEls[k].textContent='£0';
+    });
     [...feed.children].forEach(c=>c.remove());
   }
 
@@ -462,6 +492,8 @@ async function sb(){
     feed.appendChild(row);
     requestAnimationFrame(()=>row.classList.add('in'));
     if(ev.stat) bump(ev.stat);
+    if(ev.pipeline) tweenRev('pipeline',revVals.pipeline+ev.pipeline);
+    if(ev.won) tweenRev('won',ev.won);
     const visible=feed.querySelectorAll('.lp-ev:not(.out)');
     if(visible.length>5){
       const old=visible[0];

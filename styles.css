@@ -67,19 +67,26 @@ nav.open .nav-toggle-close{display:block}
 .lp-status{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:500;color:#3ecf8e;text-transform:uppercase;letter-spacing:.6px}
 .lp-status-dot{width:6px;height:6px;border-radius:50%;background:#3ecf8e;animation:lpPulse 2s var(--ease) infinite}
 @keyframes lpPulse{0%,100%{opacity:1}50%{opacity:.4}}
-.lp-feed{position:relative;padding:14px 0;height:240px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+.lp-rev{display:grid;grid-template-columns:1.1fr 1.1fr .9fr;gap:14px;padding:16px 0 14px;border-bottom:1px solid rgba(255,255,255,.04)}
+.lp-rev-cell{min-width:0}
+.lp-rev-l{font-size:11px;color:#5a5a6a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.lp-rev-v{font-size:20px;font-weight:500;color:#ededf2;line-height:1;letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+.lp-rev-won{color:#3ecf8e}
+.lp-rev-avg{font-size:14px;color:#5a5a6a;font-weight:500}
+.lp-feed{position:relative;padding:14px 0;height:230px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 36px,#000 100%);mask-image:linear-gradient(180deg,transparent 0,#000 36px,#000 100%)}
 .lp-ev{display:flex;align-items:flex-start;gap:10px;padding:6px 0;opacity:0;transform:translateY(10px);transition:opacity .4s var(--ease),transform .4s var(--ease)}
 .lp-ev.in{opacity:1;transform:translateY(0)}
 .lp-ev.out{opacity:0;transform:translateY(-6px)}
 .lp-dot{flex-shrink:0;width:6px;height:6px;border-radius:50%;margin-top:8px}
 .lp-dot-blue{background:#3d7cf5}
 .lp-dot-green{background:#3ecf8e}
-.lp-dot-pulse{animation:lpDotPulse 1.6s var(--ease) infinite}
-@keyframes lpDotPulse{0%{box-shadow:0 0 0 0 rgba(62,207,142,.5)}70%{box-shadow:0 0 0 7px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
+.lp-dot-pulse{animation:lpDotPulse .5s var(--ease) 1}
+@keyframes lpDotPulse{0%{transform:scale(1)}50%{transform:scale(1.4)}100%{transform:scale(1)}}
 .lp-ev-body{flex:1;line-height:1.4;min-width:0}
 .lp-ev-t{font-size:13px;color:#9898a8;font-weight:400;margin-bottom:2px}
 .lp-ev-s{font-size:12px;color:#5a5a6a;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lp-ev-s strong{color:#ededf2;font-weight:500}
+.lp-ev-s em{font-style:normal;color:#3d7cf5;font-weight:500}
 .lp-stats{display:grid;grid-template-columns:repeat(4,1fr);padding-top:14px;border-top:1px solid rgba(255,255,255,.04)}
 .lp-stat{text-align:center;padding:0 6px}
 .lp-stat+.lp-stat{border-left:1px solid rgba(255,255,255,.04)}
