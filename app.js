@@ -140,7 +140,7 @@ function qShowResult(){
     icon='<div class="qr-icon maybe">&#8764;</div>';
     heading='There\'s probably something here.';
     body='It\'s not a clear-cut yes, but the fundamentals are there. A 20-minute call is the right next step — we can dig into whether the numbers make sense for your specific situation.';
-    cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a call — no obligation</a>';
+    cta='<a href="#" onclick="cQ();oF();return false" class="btn btn-a" style="width:100%;justify-content:center;padding:13px;font-size:14px">Book a strategy call — no obligation</a>';
   } else {
     resultBucket='not-yet';
     icon='<div class="qr-icon maybe">&#8764;</div>';
