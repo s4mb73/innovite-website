@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Innovite CRM{% endblock %}</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23111116'/><rect x='5' y='13' width='14' height='6' rx='3' fill='%233d7cf5'/><circle cx='25' cy='16' r='3' fill='%233d7cf5'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Newsreader:ital,wght@0,400;0,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sb-top">
+    <a class="sb-logo" href="{{ url_for('overview') }}">
+      <svg class="sb-mark" viewBox="0 0 60 12" fill="none" aria-hidden="true">
+        <rect x="0" y="0" width="42" height="12" rx="6" fill="currentColor"/>
+        <circle cx="54" cy="6" r="6" fill="currentColor"/>
+      </svg>
+      <span class="sb-word">innovite</span>
+    </a>
+    <div class="sb-eyebrow">CRM</div>
+  </div>
+
+  <nav class="sb-nav" aria-label="Primary">
+    <a class="sb-item {% if active=='overview' %}is-active{% endif %}"  href="{{ url_for('overview') }}">Overview</a>
+    <a class="sb-item {% if active=='clients'  %}is-active{% endif %}"  href="{{ url_for('clients') }}">Clients</a>
+    <a class="sb-item {% if active=='leads'    %}is-active{% endif %}"  href="{{ url_for('leads') }}">Leads</a>
+    <a class="sb-item {% if active=='outreach' %}is-active{% endif %}"  href="{{ url_for('outreach') }}">Outreach</a>
+    <a class="sb-item {% if active=='inbound'  %}is-active{% endif %}"  href="{{ url_for('inbound') }}">Inbound</a>
+    <a class="sb-item {% if active=='reports'  %}is-active{% endif %}"  href="{{ url_for('reports') }}">Reports</a>
+    <a class="sb-item {% if active=='settings' %}is-active{% endif %}"  href="{{ url_for('settings') }}">Settings</a>
+  </nav>
+
+  <div class="sb-foot">
+    <div class="sb-user-name">Sammy</div>
+    <div class="sb-user-mail">sammy@innoviteai.com</div>
+  </div>
+</aside>
+
+<main class="main">
+  {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>
