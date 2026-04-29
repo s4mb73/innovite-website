@@ -1,7 +1,129 @@
 {% extends "base.html" %}
 {% block title %}Overview · Innovite CRM{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Overview</h1>
-<p class="page-sub">High-level state of every client's pipeline.</p>
-<div class="placeholder"><strong>Overview</strong> arrives in Step 3.</div>
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Overview</h1>
+    <p class="page-sub">High-level state of every client's pipeline.</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn" disabled title="Available from Step 7">
+      <span class="btn-icon">⟳</span> Run pipeline
+    </button>
+    <button class="btn btn-primary">+ New client</button>
+  </div>
+</div>
+
+{# ── Metrics ────────────────────────────────────────────── #}
+{% set m = metrics %}
+<div class="metrics">
+  <div class="metric">
+    <div class="metric-label">Total leads</div>
+    <div class="metric-value">{{ '{:,}'.format(m.total_leads) }}</div>
+    <div class="metric-change {{ 'up' if m.total_leads_delta > 0 else ('down' if m.total_leads_delta < 0 else 'flat') }}">
+      {% if m.total_leads_delta > 0 %}↑ {{ m.total_leads_delta }} vs prev period
+      {% elif m.total_leads_delta < 0 %}↓ {{ -m.total_leads_delta }} vs prev period
+      {% else %}— no change{% endif %}
+    </div>
+  </div>
+
+  <div class="metric">
+    <div class="metric-label">Emails sent · 7d</div>
+    <div class="metric-value">{{ '{:,}'.format(m.emails_week) }}</div>
+    <div class="metric-change {{ 'up' if m.emails_week_delta > 0 else ('down' if m.emails_week_delta < 0 else 'flat') }}">
+      {% if m.emails_week_delta > 0 %}↑ {{ m.emails_week_delta }} vs prev 7d
+      {% elif m.emails_week_delta < 0 %}↓ {{ -m.emails_week_delta }} vs prev 7d
+      {% else %}— no change{% endif %}
+    </div>
+  </div>
+
+  <div class="metric">
+    <div class="metric-label">Reply rate · 7d</div>
+    <div class="metric-value">{{ m.reply_rate }}%</div>
+    <div class="metric-change {{ 'up' if m.reply_rate_delta > 0 else ('down' if m.reply_rate_delta < 0 else 'flat') }}">
+      {% if m.reply_rate_delta > 0 %}↑ {{ m.reply_rate_delta }}% vs prev 7d
+      {% elif m.reply_rate_delta < 0 %}↓ {{ -m.reply_rate_delta }}% vs prev 7d
+      {% else %}— no change{% endif %}
+    </div>
+  </div>
+
+  <div class="metric">
+    <div class="metric-label">Meetings · 30d</div>
+    <div class="metric-value">{{ '{:,}'.format(m.meetings_month) }}</div>
+    <div class="metric-change {{ 'up' if m.meetings_month_delta > 0 else ('down' if m.meetings_month_delta < 0 else 'flat') }}">
+      {% if m.meetings_month_delta > 0 %}↑ {{ m.meetings_month_delta }} vs prev 30d
+      {% elif m.meetings_month_delta < 0 %}↓ {{ -m.meetings_month_delta }} vs prev 30d
+      {% else %}— no change{% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── Chart ──────────────────────────────────────────────── #}
+<div class="card chart-card">
+  <div class="card-title">Leads per day · last 7 days</div>
+  <div class="chart-wrap"><canvas id="leadsChart"></canvas></div>
+</div>
+
+{# ── Activity feed ──────────────────────────────────────── #}
+<div class="card activity-card">
+  <div class="card-title">Recent activity</div>
+  {% if activity %}
+    <div class="activity-feed">
+      {% for a in activity %}
+        <div class="activity-row">
+          <span class="activity-dot dot-{{ a.colour }}" aria-hidden="true"></span>
+          <div class="activity-text">
+            <span class="activity-label">{{ a.label }}</span>
+            <span class="activity-detail">— {{ a.detail }}</span>
+          </div>
+          <div class="activity-time">{{ a.relative }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">No activity yet — run the pipeline to start seeing data.</div>
+  {% endif %}
+</div>
+
+<script>
+  (function () {
+    const labels = {{ chart_labels|tojson }};
+    const data   = {{ chart_values|tojson }};
+    const ctx = document.getElementById('leadsChart');
+    if (!ctx || !window.Chart) return;
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data,
+          backgroundColor: '#3d7cf5',
+          borderRadius: 4,
+          maxBarThickness: 36,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { displayColors: false } },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#5a5a6a', stepSize: 1, precision: 0 },
+            grid:  { color: 'rgba(255,255,255,.05)', drawBorder: false },
+          },
+          x: {
+            ticks: { color: '#5a5a6a' },
+            grid:  { display: false },
+          },
+        },
+      },
+    });
+  })();
+</script>
 {% endblock %}

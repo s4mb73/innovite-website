@@ -6,13 +6,25 @@ TODO: add single-password session gate before this is publicly linked.
 import os
 from flask import Flask, render_template
 
+import db
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-only-change-in-prod')
 
 
 @app.route('/')
 def overview():
-    return render_template('overview.html', active='overview')
+    metrics = db.dashboard_metrics()
+    chart_labels, chart_values = db.leads_per_day(7)
+    activity = db.recent_activity(20)
+    return render_template(
+        'overview.html',
+        active='overview',
+        metrics=metrics,
+        chart_labels=chart_labels,
+        chart_values=chart_values,
+        activity=activity,
+    )
 
 
 @app.route('/clients')
