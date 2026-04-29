@@ -72,5 +72,13 @@ def healthz():
     return {'ok': True}
 
 
+@app.route('/favicon.ico')
+def favicon():
+    # Browsers request /favicon.ico regardless of <link rel="icon">; return
+    # 204 to silence the noise (the real favicon is set via the data-URI
+    # link in base.html).
+    return '', 204
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '8080')), debug=True)
