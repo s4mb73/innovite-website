@@ -229,7 +229,55 @@ def inject_undo():
 
 @app.route('/leads/<int:lead_id>')
 def lead_detail(lead_id: int):
-    return render_template('lead_detail.html', active='leads', lead_id=lead_id)
+    db_error = None
+    lead = None
+    timeline: list[dict] = []
+    activity: list[dict] = []
+    try:
+        lead = db.get_lead(lead_id)
+        if lead is None:
+            abort(404)
+        timeline = db.lead_timeline(lead_id)
+        activity = db.lead_activity(lead_id, 30)
+    except Exception as e:
+        if hasattr(e, 'code') and e.code == 404:
+            raise
+        db_error = str(e).splitlines()[0][:240]
+    return render_template(
+        'lead_detail.html',
+        active='leads',
+        lead=lead,
+        timeline=timeline,
+        activity=activity,
+        statuses=db.LEAD_STATUSES,
+        db_error=db_error,
+    )
+
+
+@app.post('/leads/<int:lead_id>/status')
+def update_lead_status_route(lead_id: int):
+    new_status = (request.form.get('status') or '').strip()
+    if new_status not in db.LEAD_STATUSES:
+        return {'ok': False, 'error': 'Invalid status'}, 400
+    try:
+        db.update_lead_status(lead_id, new_status)
+    except LookupError:
+        return {'ok': False, 'error': 'Lead not found'}, 404
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}, 500
+    return {'ok': True, 'saved_at': int(time.time())}
+
+
+@app.post('/leads/<int:lead_id>/notes')
+def update_lead_notes_route(lead_id: int):
+    notes = request.form.get('notes', '')
+    if len(notes) > 5000:
+        return {'ok': False, 'error': 'Notes too long (max 5000 chars)'}, 400
+    try:
+        db.update_lead_notes(lead_id, notes)
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}, 500
+    return {'ok': True, 'saved_at': int(time.time())}
 
 
 @app.route('/outreach')

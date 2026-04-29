@@ -585,6 +585,249 @@ a { color:inherit; text-decoration:none; }
   .lead-est, .lead-time { display:none; }
 }
 
+/* ── Lead detail (Step 6) ────────────────────────────── */
+.lead-status-row {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:24px;
+}
+.status-label {
+  font-size:11.5px;
+  font-weight:600;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:var(--t3);
+}
+.save-indicator {
+  font-size:11.5px;
+  color:var(--t3);
+  font-variant-numeric:tabular-nums;
+  transition:color .15s var(--ease);
+}
+.save-indicator.is-err { color:var(--red); }
+
+.lead-grid {
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:18px;
+  margin-bottom:24px;
+}
+.lead-col { display:flex; flex-direction:column; gap:18px; }
+.lead-col .card { margin-bottom:0; }
+
+.card-title-sub {
+  font-weight:400;
+  color:var(--t3);
+  margin-left:6px;
+  font-size:11.5px;
+}
+
+.empty-sm {
+  padding:16px 4px;
+  font-size:12.5px;
+  text-align:left;
+  color:var(--t3);
+}
+
+/* Timeline */
+.timeline {
+  list-style:none;
+  margin:0;
+  padding:0;
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+.timeline-item {
+  position:relative;
+  display:grid;
+  grid-template-columns: 14px 1fr;
+  gap:14px;
+  padding-left:0;
+}
+.timeline-item:not(:last-child)::before {
+  content:'';
+  position:absolute;
+  left:6px;
+  top:18px;
+  bottom:-18px;
+  width:1px;
+  background:var(--border);
+}
+.timeline-dot {
+  width:13px;
+  height:13px;
+  border-radius:50%;
+  border:2px solid var(--bg);
+  margin-top:2px;
+  position:relative;
+  z-index:1;
+  box-shadow:0 0 0 1px currentColor;
+}
+.timeline-dot.dot-blue  { background:var(--accent); color:var(--accent); }
+.timeline-dot.dot-green { background:var(--green);  color:var(--green); }
+.is-pending .timeline-dot { background:var(--bg); }
+.timeline-body { min-width:0; }
+.timeline-head {
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:baseline;
+  margin-bottom:4px;
+}
+.timeline-title {
+  font-size:13px;
+  font-weight:500;
+  color:var(--t1);
+}
+.is-pending .timeline-title { color:var(--t2); }
+.timeline-time {
+  font-size:11.5px;
+  color:var(--t3);
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.timeline-subject {
+  font-size:13px;
+  color:var(--t2);
+  font-style:italic;
+  margin-bottom:4px;
+}
+.timeline-body-text {
+  font-size:12.5px;
+  color:var(--t3);
+  line-height:1.55;
+}
+
+/* Key-value list */
+.kv {
+  list-style:none;
+  margin:0;
+  padding:0;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.kv li {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:13px;
+  color:var(--t2);
+}
+.kv li strong { color:var(--t1); font-weight:500; }
+.kv li a { color:var(--accent); text-decoration:none; }
+.kv li a:hover { text-decoration:underline; }
+.kv-icon { width:16px; flex-shrink:0; opacity:.7; }
+.kv-inline { flex-direction:row; flex-wrap:wrap; gap:14px; margin-top:10px; }
+.kv-inline li { font-size:12px; color:var(--t3); }
+
+/* Decision-maker */
+.dm-name { font-size:15px; font-weight:500; color:var(--t1); }
+.dm-title { font-size:12.5px; color:var(--t2); margin:2px 0 8px; }
+
+/* Big number block (Google rating) */
+.big-line { display:flex; align-items:baseline; gap:4px; flex-wrap:wrap; }
+.big-num {
+  font-family:'Newsreader', serif;
+  font-size:32px;
+  font-weight:400;
+  color:var(--t1);
+  line-height:1;
+}
+.big-suffix { font-size:18px; color:var(--amber); margin-right:4px; }
+.big-meta { font-size:12.5px; color:var(--t3); }
+
+/* Score bar */
+.bar-wrap { display:flex; align-items:center; gap:12px; }
+.bar {
+  flex:1;
+  height:6px;
+  background:var(--s3);
+  border-radius:100px;
+  overflow:hidden;
+}
+.bar-fill {
+  height:100%;
+  background:var(--accent);
+  border-radius:100px;
+  transition:width .3s var(--ease);
+}
+.bar-label {
+  font-size:12px;
+  color:var(--t2);
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+
+/* Competitors */
+.comp-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+.comp-row {
+  display:grid;
+  grid-template-columns: minmax(120px, 1.4fr) 2fr auto;
+  gap:14px;
+  align-items:center;
+  font-size:12.5px;
+}
+.comp-name { color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.comp-target .comp-name { color:var(--t1); font-weight:500; }
+.comp-tag {
+  display:inline-block;
+  margin-left:6px;
+  padding:1px 7px;
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:.6px;
+  text-transform:uppercase;
+  color:var(--accent);
+  background:var(--accent-bg);
+  border-radius:100px;
+  vertical-align:1px;
+}
+.comp-bar {
+  height:5px;
+  background:var(--s3);
+  border-radius:100px;
+  overflow:hidden;
+}
+.comp-fill {
+  display:block;
+  height:100%;
+  background:var(--t3);
+  border-radius:100px;
+}
+.comp-target .comp-fill { background:var(--accent); }
+.comp-meta {
+  font-size:11.5px;
+  color:var(--t3);
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+
+/* Notes textarea */
+.notes-textarea {
+  width:100%;
+  background:var(--s2);
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+  padding:12px 14px;
+  font-family:inherit;
+  font-size:13.5px;
+  color:var(--t1);
+  line-height:1.6;
+  resize:vertical;
+  min-height:80px;
+  outline:none;
+  transition:border-color .15s var(--ease);
+}
+.notes-textarea:focus { border-color:var(--accent); }
+.notes-textarea::placeholder { color:var(--t3); }
+
+@media (max-width: 980px) {
+  .lead-grid { grid-template-columns:1fr; }
+}
+
 /* ── Leads page (Step 5) ─────────────────────────────── */
 .tabbar {
   display:flex;

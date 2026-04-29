@@ -454,6 +454,116 @@ def bulk_change_status(lead_ids: list[int], new_status: str) -> dict:
     }
 
 
+# ── Lead detail (Step 6) ─────────────────────────────────────────────
+def get_lead(lead_id: int) -> dict | None:
+    sql = """
+        select l.*, c.id as client_id_, c.name as client_name
+        from crm.leads l
+        left join crm.clients c on c.id = l.client_id
+        where l.id = %s
+    """
+    r = fetch_one(sql, (lead_id,))
+    if not r:
+        return None
+    r['grade_colour']  = GRADE_COLOUR.get(r.get('grade') or '', 'grey')
+    r['status_colour'] = STATUS_COLOUR.get(r.get('status') or '', 'grey')
+    return r
+
+
+def lead_timeline(lead_id: int) -> list[dict]:
+    """Outbound emails + inbound replies, merged chronologically.
+
+    Each entry: {kind, ts, status, title, body, email_number, sentiment}
+    where kind in {'email', 'reply'}, status flags filled vs hollow dot.
+    """
+    emails = fetch_all("""
+        select id, email_number, subject, body, status,
+               sent_at, scheduled_at, replied_at
+        from crm.emails
+        where lead_id = %s
+    """, (lead_id,))
+    replies = fetch_all("""
+        select id, from_address, subject, body, sentiment, detected_at
+        from crm.replies
+        where lead_id = %s
+    """, (lead_id,))
+
+    items: list[dict] = []
+    for e in emails:
+        ts = e.get('sent_at') or e.get('scheduled_at')
+        items.append({
+            'kind':         'email',
+            'ts':           ts,
+            'sent':         bool(e.get('sent_at')),
+            'status':       e.get('status'),
+            'email_number': e.get('email_number'),
+            'title':        f"Day {e.get('email_number')} {'sent' if e.get('sent_at') else 'scheduled'}",
+            'subject':      e.get('subject') or '',
+            'body':         (e.get('body') or '')[:240],
+        })
+    for r in replies:
+        items.append({
+            'kind':       'reply',
+            'ts':         r.get('detected_at'),
+            'sent':       True,
+            'sentiment':  r.get('sentiment'),
+            'title':      f"Reply received · {r.get('sentiment') or 'neutral'}",
+            'subject':    r.get('subject') or '',
+            'body':       (r.get('body') or '')[:240],
+        })
+    items.sort(key=lambda x: x['ts'] or datetime.min.replace(tzinfo=timezone.utc))
+    for it in items:
+        it['relative'] = relative_time(it['ts']) if it['ts'] else ''
+        it['date']     = it['ts'].strftime('%-d %b') if it['ts'] else ''
+    return items
+
+
+def lead_activity(lead_id: int, limit: int = 30) -> list[dict]:
+    rows = fetch_all("""
+        select id, action, detail, created_at
+        from crm.activity_log
+        where lead_id = %s
+        order by created_at desc
+        limit %s
+    """, (lead_id, limit))
+    for r in rows:
+        r['label']    = ACTION_LABEL.get(r['action'], r['action'].replace('_', ' ').capitalize())
+        r['colour']   = ACTION_COLOUR.get(r['action'], 'blue')
+        r['relative'] = relative_time(r['created_at'])
+    return rows
+
+
+def update_lead_status(lead_id: int, new_status: str) -> str | None:
+    """Set status on a single lead and log the change. Returns the
+    previous status (or None if no change / lead missing)."""
+    if new_status not in LEAD_STATUSES:
+        raise ValueError(f'Invalid status: {new_status!r}')
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("select status, client_id from crm.leads where id = %s", (lead_id,))
+            row = cur.fetchone()
+            if not row:
+                raise LookupError(f'No lead {lead_id}')
+            old = row['status']
+            if old == new_status:
+                return None
+            cur.execute("update crm.leads set status = %s where id = %s", (new_status, lead_id))
+            cur.execute(
+                "insert into crm.activity_log (client_id, lead_id, action, detail)"
+                " values (%s, %s, %s, %s)",
+                (row['client_id'], lead_id, 'lead_status_changed', f'{old} → {new_status}'),
+            )
+        conn.commit()
+    return old
+
+
+def update_lead_notes(lead_id: int, notes: str) -> None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("update crm.leads set notes = %s where id = %s", (notes or None, lead_id))
+        conn.commit()
+
+
 def bulk_revert_status(previous: list[tuple[int, str]]) -> int:
     """Revert each (lead_id, old_status) and log each reversion."""
     if not previous:

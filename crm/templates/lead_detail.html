@@ -1,7 +1,306 @@
 {% extends "base.html" %}
-{% block title %}Lead · Innovite CRM{% endblock %}
+{% block title %}{{ lead.business_name if lead else 'Lead' }} · Innovite CRM{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Lead</h1>
-<p class="page-sub">Everything we know about one prospect, on one screen.</p>
-<div class="placeholder"><strong>Lead</strong> arrives in Step 6.</div>
+<a href="{{ url_for('leads') }}" class="back-link">
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <polyline points="15 18 9 12 15 6"/>
+  </svg>
+  Leads
+</a>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong>
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{% if lead %}
+{# ── Header ───────────────────────────────────────────── #}
+<div class="page-head">
+  <div>
+    <h1 class="page-title">{{ lead.business_name }}</h1>
+    <p class="page-sub">
+      {% if lead.city %}{{ lead.city }}{% else %}—{% endif %}
+      · <span class="grade grade-{{ lead.grade_colour }}">{{ lead.grade or '—' }}</span>
+      {% if lead.client_name %} · {{ lead.client_name }}{% endif %}
+    </p>
+  </div>
+  <div class="page-actions">
+    <button class="btn" disabled title="Available from Step 9">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Download PDF
+    </button>
+  </div>
+</div>
+
+{# ── Status row ───────────────────────────────────────── #}
+<div class="lead-status-row">
+  <label class="status-label" for="leadStatus">Status</label>
+  <select id="leadStatus" class="filter-select"
+          data-status-url="{{ url_for('update_lead_status_route', lead_id=lead.id) }}">
+    {% for s in statuses %}
+      <option value="{{ s }}" {% if lead.status == s %}selected{% endif %}>{{ s|capitalize }}</option>
+    {% endfor %}
+  </select>
+  <span class="save-indicator" id="statusSavedHint"></span>
+</div>
+
+{# ── Email outreach timeline ────────────────────────── #}
+<div class="card">
+  <div class="card-head"><div class="card-title">Email outreach</div></div>
+  {% if timeline %}
+    <ol class="timeline">
+      {% for t in timeline %}
+        <li class="timeline-item {% if not t.sent %}is-pending{% endif %} kind-{{ t.kind }}">
+          <span class="timeline-dot {{ 'dot-green' if t.kind == 'reply' else 'dot-blue' }}" aria-hidden="true"></span>
+          <div class="timeline-body">
+            <div class="timeline-head">
+              <span class="timeline-title">{{ t.title }}</span>
+              <span class="timeline-time">{{ t.date }} · {{ t.relative }}</span>
+            </div>
+            {% if t.subject %}<div class="timeline-subject">"{{ t.subject }}"</div>{% endif %}
+            {% if t.body %}<div class="timeline-body-text">{{ t.body }}{% if t.body|length >= 240 %}…{% endif %}</div>{% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+  {% else %}
+    <div class="empty">No outreach yet — Day 1 will go out when the pipeline next runs.</div>
+  {% endif %}
+</div>
+
+{# ── Two-column enrichment ──────────────────────────── #}
+<div class="lead-grid">
+  {# Left column: Business + Decision-maker + Google + Companies House #}
+  <div class="lead-col">
+    <div class="card">
+      <div class="card-title">Business</div>
+      <ul class="kv">
+        <li><span class="kv-icon">📞</span> {{ lead.phone or '—' }}</li>
+        <li><span class="kv-icon">✉</span>  {% if lead.email %}<a href="mailto:{{ lead.email }}">{{ lead.email }}</a>{% else %}—{% endif %}</li>
+        <li><span class="kv-icon">🌐</span> {% if lead.website %}<a href="{{ lead.website if '://' in lead.website else 'https://' ~ lead.website }}" target="_blank" rel="noopener">{{ lead.website }}</a>{% else %}—{% endif %}</li>
+        <li><span class="kv-icon">📍</span> {% if lead.address %}{{ lead.address }}{% else %}—{% endif %}{% if lead.google_maps_url %} · <a href="{{ lead.google_maps_url }}" target="_blank" rel="noopener">Maps ↗</a>{% endif %}</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Decision-maker</div>
+      {% if lead.decision_maker_name %}
+        <div class="dm-name">{{ lead.decision_maker_name }}</div>
+        <div class="dm-title">{{ lead.decision_maker_title or '—' }}</div>
+        {% if lead.linkedin_url %}<a class="card-link" href="{{ lead.linkedin_url }}" target="_blank" rel="noopener">LinkedIn ↗</a>{% endif %}
+      {% else %}
+        <div class="empty empty-sm">No decision-maker identified yet.</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-title">Google business</div>
+      {% if lead.google_rating or lead.google_review_count %}
+        <div class="big-line">
+          <span class="big-num">{{ lead.google_rating or '—' }}</span> <span class="big-suffix">★</span>
+          <span class="big-meta">({{ lead.google_review_count or 0 }} reviews)</span>
+        </div>
+      {% else %}
+        <div class="empty empty-sm">No Google data yet.</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-title">Companies House</div>
+      {% if lead.companies_house_number or lead.companies_house_revenue_band %}
+        <ul class="kv">
+          {% if lead.companies_house_revenue_band %}<li>Revenue · {{ lead.companies_house_revenue_band }}</li>{% endif %}
+          {% if lead.companies_house_sic_code %}<li>SIC · {{ lead.companies_house_sic_code }}</li>{% endif %}
+          {% if lead.companies_house_incorporated %}<li>Incorporated · {{ lead.companies_house_incorporated.strftime('%b %Y') }}</li>{% endif %}
+          {% if lead.companies_house_number %}<li>No · {{ lead.companies_house_number }}</li>{% endif %}
+        </ul>
+      {% else %}
+        <div class="empty empty-sm">No Companies House data yet.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Right column: Instagram + Website + Competitors #}
+  <div class="lead-col">
+    <div class="card">
+      <div class="card-title">Instagram</div>
+      {% if lead.instagram_handle or lead.instagram_followers %}
+        <ul class="kv">
+          {% if lead.instagram_handle %}<li>@{{ lead.instagram_handle }}</li>{% endif %}
+          {% if lead.instagram_followers %}<li><strong>{{ '{:,}'.format(lead.instagram_followers) }}</strong> followers</li>{% endif %}
+          {% if lead.instagram_engagement_rate %}<li><strong>{{ lead.instagram_engagement_rate }}%</strong> engagement</li>{% endif %}
+          {% if lead.instagram_posts_per_week %}<li><strong>{{ lead.instagram_posts_per_week }}</strong> posts / week</li>{% endif %}
+          {% if lead.instagram_avg_likes %}<li><strong>{{ '{:,}'.format(lead.instagram_avg_likes) }}</strong> avg likes</li>{% endif %}
+          {% if lead.instagram_last_post_date %}<li>Last post · {{ lead.instagram_last_post_date.strftime('%-d %b') }}</li>{% endif %}
+        </ul>
+      {% else %}
+        <div class="empty empty-sm">No Instagram data yet — pipeline will populate this in Step 7.</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-title">Website</div>
+      {% if lead.website_score is not none %}
+        <div class="bar-wrap">
+          <div class="bar"><div class="bar-fill" style="width: {{ lead.website_score }}%"></div></div>
+          <span class="bar-label">{{ lead.website_score }} / 100</span>
+        </div>
+        <ul class="kv kv-inline">
+          <li>{% if lead.website_ssl %}✓{% else %}✕{% endif %} SSL</li>
+          <li>{% if lead.website_cta %}✓{% else %}✕{% endif %} Has CTA</li>
+          {% if lead.website_load_time_ms %}<li>{{ (lead.website_load_time_ms / 1000) | round(1) }}s load</li>{% endif %}
+        </ul>
+      {% else %}
+        <div class="empty empty-sm">No website audit yet.</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-title">Competitors</div>
+      {% if lead.competitor_1_name or lead.overall_score is not none %}
+        <ul class="comp-list">
+          {% set target_score = lead.overall_score or 0 %}
+          <li class="comp-row comp-target">
+            <span class="comp-name">{{ lead.business_name }} <span class="comp-tag">target</span></span>
+            <span class="comp-bar"><span class="comp-fill" style="width: {{ target_score }}%"></span></span>
+            <span class="comp-meta">{{ target_score }} · {{ lead.google_review_count or 0 }} reviews</span>
+          </li>
+          {% for n in [1, 2, 3] %}
+            {% set name = lead['competitor_' ~ n ~ '_name'] %}
+            {% set score = lead['competitor_' ~ n ~ '_score'] %}
+            {% set reviews = lead['competitor_' ~ n ~ '_reviews'] %}
+            {% if name %}
+            <li class="comp-row">
+              <span class="comp-name">{{ name }}</span>
+              <span class="comp-bar"><span class="comp-fill" style="width: {{ score or 0 }}%"></span></span>
+              <span class="comp-meta">{{ score or '—' }} · {{ reviews or 0 }} reviews</span>
+            </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty empty-sm">No competitor data yet.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── Notes (debounced live save) ─────────────────────── #}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Notes <span class="card-title-sub">(private)</span></div>
+    <span class="save-indicator" id="notesSavedHint"></span>
+  </div>
+  <textarea
+    id="leadNotes"
+    class="notes-textarea"
+    rows="4"
+    maxlength="5000"
+    data-notes-url="{{ url_for('update_lead_notes_route', lead_id=lead.id) }}"
+    placeholder="Anything worth remembering before the next call…">{{ lead.notes or '' }}</textarea>
+</div>
+
+{# ── Activity log for this lead ──────────────────────── #}
+<div class="card">
+  <div class="card-head"><div class="card-title">Activity</div></div>
+  {% if activity %}
+    <div class="activity-feed">
+      {% for a in activity %}
+        <div class="activity-row">
+          <span class="activity-dot dot-{{ a.colour }}" aria-hidden="true"></span>
+          <div class="activity-text">
+            <span class="activity-label">{{ a.label }}</span>
+            {% if a.detail %}<span class="activity-detail">— {{ a.detail }}</span>{% endif %}
+          </div>
+          <div class="activity-time">{{ a.relative }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty empty-sm">No activity yet.</div>
+  {% endif %}
+</div>
+
+<script>
+  // Debounced live save for notes (800ms after typing pause).
+  // Status save fires immediately on change.
+  (function () {
+    function relTime(savedAt) {
+      const s = Math.max(0, Math.floor(Date.now() / 1000 - savedAt));
+      if (s < 5)    return 'saved just now';
+      if (s < 60)   return 'saved ' + s + 's ago';
+      if (s < 3600) return 'saved ' + Math.floor(s / 60) + 'm ago';
+      return 'saved ' + Math.floor(s / 3600) + 'h ago';
+    }
+
+    function liveTick(el, savedAt) {
+      el.textContent = relTime(savedAt);
+      el.dataset.savedAt = savedAt;
+    }
+
+    // Tick all save indicators every 10s
+    setInterval(() => {
+      document.querySelectorAll('.save-indicator[data-saved-at]').forEach(el => {
+        liveTick(el, parseInt(el.dataset.savedAt, 10));
+      });
+    }, 10000);
+
+    async function postForm(url, data, hintEl) {
+      hintEl.textContent = 'saving…';
+      const body = new URLSearchParams(data);
+      try {
+        const res = await fetch(url, { method: 'POST', body });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.ok) {
+          hintEl.textContent = 'save failed';
+          hintEl.classList.add('is-err');
+          return;
+        }
+        hintEl.classList.remove('is-err');
+        liveTick(hintEl, json.saved_at);
+      } catch (e) {
+        hintEl.textContent = 'offline — change not saved';
+        hintEl.classList.add('is-err');
+      }
+    }
+
+    // Status — submit immediately on change
+    const statusSel = document.getElementById('leadStatus');
+    const statusHint = document.getElementById('statusSavedHint');
+    if (statusSel) {
+      statusSel.addEventListener('change', () => {
+        postForm(statusSel.dataset.statusUrl, { status: statusSel.value }, statusHint);
+      });
+    }
+
+    // Notes — 800ms debounce on input
+    const notes = document.getElementById('leadNotes');
+    const notesHint = document.getElementById('notesSavedHint');
+    if (notes) {
+      let t;
+      notes.addEventListener('input', () => {
+        notesHint.textContent = '…';
+        clearTimeout(t);
+        t = setTimeout(() => {
+          postForm(notes.dataset.notesUrl, { notes: notes.value }, notesHint);
+        }, 800);
+      });
+      // Final save on blur as a safety net (covers tab-close mid-typing)
+      notes.addEventListener('blur', () => {
+        clearTimeout(t);
+        postForm(notes.dataset.notesUrl, { notes: notes.value }, notesHint);
+      });
+    }
+  })();
+</script>
+{% endif %}
 {% endblock %}
