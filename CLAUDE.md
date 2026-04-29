@@ -96,7 +96,8 @@ Marketing website for Innovite, an AI lead generation agency for B2B service fir
 ROCA is the only one with concrete metrics on the public site (3x pipeline, 60 days, 0 hrs prospecting).
 
 ## Key people
-- **Sammy Bimpson** — founder, runs Vidora Media (the content production company that films KSI + Premier League footballers)
+- **Sammy Bimpson** — founder of Innovite. Six years across CRM systems, business automation, and scaling companies with software (public + private sector). Built the Innovite system originally for his brother's content business; other founders started asking for it.
+- **Sammy's brother** — runs Vidora Media (the content production company that films KSI + Premier League footballers). The original "client zero" the system was built for. Not named on the public site.
 - **Louis** — outbound operations (mentioned in internal docs but not on the public site)
 
 ## Quality bar
