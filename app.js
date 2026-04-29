@@ -244,7 +244,7 @@ document.querySelectorAll('.rv').forEach(e=>ob.observe(e));
 // Skips animation when the visitor prefers reduced motion.
 (function(){
   const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const targets=document.querySelectorAll('.hc-v, .pp-n');
+  const targets=document.querySelectorAll('.pp-n');
   const numeric=[];
   targets.forEach(el=>{
     const raw=el.textContent.trim();
@@ -405,3 +405,84 @@ async function sb(){
     err.style.display='block';
   }
 }
+
+// ── Live pipeline card (hero) ───────────────────────
+// Shows OUTCOMES only — never reveals method. Static event list,
+// no real data, no network calls. Hidden on mobile via CSS and
+// disabled when prefers-reduced-motion is set.
+(function(){
+  const feed=document.getElementById('lpFeed');
+  if(!feed) return;
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const events=[
+    {t:'New prospect identified',           s:'<strong>Apex Financial Partners</strong> — Manchester', dot:'blue',  stat:'prospects'},
+    {t:'Qualified — high priority',         s:'<strong>Sterling Partners LLP</strong>',                 dot:'blue'},
+    {t:'Outreach sent',                     s:'<strong>Manchester Skin Clinic</strong>',                dot:'blue',  stat:'contacted'},
+    {t:'Reply received',                    s:'<strong>Apex Financial Partners</strong>',               dot:'green', stat:'replies'},
+    {t:'Positive — meeting requested',      s:'<strong>Apex Financial Partners</strong>',               dot:'green', pulse:true},
+    {t:'Meeting booked — Thursday 2:30pm',  s:'<strong>Sarah Chen</strong>, Managing Director',         dot:'green', pulse:true, stat:'meetings'},
+    {t:'New prospect identified',           s:'<strong>Summit Advisory Group</strong> — Leeds',         dot:'blue',  stat:'prospects'},
+    {t:'Outreach sent',                     s:'<strong>Bloom Aesthetics</strong>',                      dot:'blue',  stat:'contacted'},
+    {t:'Reply received',                    s:'<strong>Peak Consulting</strong>',                       dot:'green', stat:'replies'},
+    {t:'Qualified — high priority',         s:'<strong>Clarke &amp; Partners</strong>',                 dot:'blue'}
+  ];
+
+  const stats={prospects:0,contacted:0,replies:0,meetings:0};
+  const statEls={};
+  document.querySelectorAll('.lp .lp-n').forEach(el=>{statEls[el.dataset.stat]=el;});
+
+  let i=0,timer=null;
+
+  function bump(key){
+    stats[key]++;
+    const el=statEls[key];
+    el.textContent=String(stats[key]);
+    el.classList.remove('lp-bump');
+    void el.offsetWidth;
+    el.classList.add('lp-bump');
+  }
+
+  function reset(){
+    Object.keys(stats).forEach(k=>{stats[k]=0;statEls[k].textContent='0';});
+    [...feed.children].forEach(c=>c.remove());
+  }
+
+  function step(){
+    if(i>=events.length){
+      timer=setTimeout(()=>{reset();i=0;step();},5000);
+      return;
+    }
+    const ev=events[i++];
+    const row=document.createElement('div');
+    row.className='lp-ev';
+    row.innerHTML='<span class="lp-dot lp-dot-'+ev.dot+(ev.pulse?' lp-dot-pulse':'')+'"></span>'+
+                  '<div class="lp-ev-body"><div class="lp-ev-t">'+ev.t+'</div>'+
+                  '<div class="lp-ev-s">'+ev.s+'</div></div>';
+    feed.appendChild(row);
+    requestAnimationFrame(()=>row.classList.add('in'));
+    if(ev.stat) bump(ev.stat);
+    const visible=feed.querySelectorAll('.lp-ev:not(.out)');
+    if(visible.length>5){
+      const old=visible[0];
+      old.classList.add('out');
+      setTimeout(()=>{if(old.parentNode)old.remove();},400);
+    }
+    const delay=3000+Math.random()*1000;
+    timer=setTimeout(step,delay);
+  }
+
+  // Start when the card scrolls into view
+  const startObs=new IntersectionObserver((es,o)=>{
+    es.forEach(x=>{
+      if(x.isIntersecting){o.disconnect();step();}
+    });
+  },{threshold:.2});
+  startObs.observe(feed);
+
+  // Pause animation when tab is hidden so it doesn't drift forever
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden&&timer){clearTimeout(timer);timer=null;}
+    else if(!document.hidden&&!timer&&i>0&&i<=events.length){step();}
+  });
+})();

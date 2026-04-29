@@ -60,17 +60,38 @@ nav.open .nav-toggle-close{display:block}
 .hp{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--t3)}
 .hp-line{width:20px;height:1px;background:var(--t3)}
 
-/* Hero card — single card, no nested card backgrounds inside */
-.hc{background:var(--s1);border:1px solid var(--border);border-radius:var(--rlg);padding:22px}
-.hc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
-.hc-badge{font-size:11.5px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--t3)}
-.hc-name{font-size:12.5px;font-weight:500;color:var(--t2)}
-.hc-r{display:flex;align-items:center;justify-content:space-between;padding:7px 0;font-size:12.5px}
-.hc-r+.hc-r{border-top:1px solid var(--border)}
-.hc-l{color:var(--t3)}
-.hc-v{font-weight:600}
-/* caption, not a card-in-card */
-.hc-cap{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:12.5px;color:var(--t3);text-align:center;font-style:italic;font-family:'Newsreader',serif}
+/* Live pipeline card — outcomes only, never reveals method */
+.lp{background:#111116;border:.5px solid rgba(255,255,255,.06);border-radius:16px;padding:18px 18px 16px;max-width:420px;width:100%;font-family:'Outfit',sans-serif}
+.lp-top{display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.04)}
+.lp-brand{font-size:12px;font-weight:600;color:#ededf2;letter-spacing:-.2px}
+.lp-status{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:500;color:#3ecf8e;text-transform:uppercase;letter-spacing:.6px}
+.lp-status-dot{width:6px;height:6px;border-radius:50%;background:#3ecf8e;animation:lpPulse 2s var(--ease) infinite}
+@keyframes lpPulse{0%,100%{opacity:1}50%{opacity:.4}}
+.lp-feed{position:relative;padding:14px 0;height:240px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+.lp-ev{display:flex;align-items:flex-start;gap:10px;padding:6px 0;opacity:0;transform:translateY(10px);transition:opacity .4s var(--ease),transform .4s var(--ease)}
+.lp-ev.in{opacity:1;transform:translateY(0)}
+.lp-ev.out{opacity:0;transform:translateY(-6px)}
+.lp-dot{flex-shrink:0;width:6px;height:6px;border-radius:50%;margin-top:8px}
+.lp-dot-blue{background:#3d7cf5}
+.lp-dot-green{background:#3ecf8e}
+.lp-dot-pulse{animation:lpDotPulse 1.6s var(--ease) infinite}
+@keyframes lpDotPulse{0%{box-shadow:0 0 0 0 rgba(62,207,142,.5)}70%{box-shadow:0 0 0 7px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
+.lp-ev-body{flex:1;line-height:1.4;min-width:0}
+.lp-ev-t{font-size:13px;color:#9898a8;font-weight:400;margin-bottom:2px}
+.lp-ev-s{font-size:12px;color:#5a5a6a;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp-ev-s strong{color:#ededf2;font-weight:500}
+.lp-stats{display:grid;grid-template-columns:repeat(4,1fr);padding-top:14px;border-top:1px solid rgba(255,255,255,.04)}
+.lp-stat{text-align:center;padding:0 6px}
+.lp-stat+.lp-stat{border-left:1px solid rgba(255,255,255,.04)}
+.lp-n{font-size:16px;font-weight:500;color:#3d7cf5;line-height:1;margin-bottom:5px;transition:transform .25s var(--ease)}
+.lp-n.lp-bump{transform:scale(1.18)}
+.lp-sl{font-size:11px;color:#5a5a6a;text-transform:uppercase;letter-spacing:.5px}
+@media(max-width:767px){.lp{display:none}}
+@media (prefers-reduced-motion: reduce){
+  .lp-ev{opacity:1;transform:none;transition:none}
+  .lp-status-dot,.lp-dot-pulse{animation:none}
+  .lp-n{transition:none}
+}
 /* Showcase outcome tag for clients without published metrics yet */
 .showcase-coming{display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);font-size:11.5px;color:var(--t3);width:100%}
 .showcase-coming::before{content:'';display:block;width:4px;height:4px;border-radius:50%;background:var(--t3);flex-shrink:0}
@@ -87,8 +108,6 @@ nav.open .nav-toggle-close{display:block}
   .w{padding:0 20px}
   .hero{padding:48px 0 40px}
   .hg{grid-template-columns:1fr}
-  /* Hero card stacks below on mobile instead of hiding */
-  .hc{margin-top:28px;font-size:12px}
   .nav-toggle{display:flex}
   /* Mobile menu sheet — hidden until nav.open is toggled */
   .nl{display:none;position:absolute;top:60px;left:0;right:0;flex-direction:column;align-items:stretch;gap:0;background:var(--bg);border-bottom:1px solid var(--border);padding:8px 20px 20px;box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:99}
