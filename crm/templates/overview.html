@@ -6,6 +6,13 @@
 {% endblock %}
 
 {% block content %}
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong> Showing zeroes — the page will recover automatically once the connection is back.
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
 <div class="page-head">
   <div>
     <h1 class="page-title">Overview</h1>

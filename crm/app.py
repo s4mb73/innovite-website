@@ -14,9 +14,23 @@ app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-only-change-i
 
 @app.route('/')
 def overview():
-    metrics = db.dashboard_metrics()
-    chart_labels, chart_values = db.leads_per_day(7)
-    activity = db.recent_activity(20)
+    db_error = None
+    metrics = {
+        'total_leads': 0, 'total_leads_delta': 0,
+        'emails_week': 0, 'emails_week_delta': 0,
+        'reply_rate': 0.0, 'reply_rate_delta': 0.0,
+        'meetings_month': 0, 'meetings_month_delta': 0,
+    }
+    chart_labels: list[str] = []
+    chart_values: list[int] = []
+    activity: list[dict] = []
+    try:
+        metrics = db.dashboard_metrics()
+        chart_labels, chart_values = db.leads_per_day(7)
+        activity = db.recent_activity(20)
+    except Exception as e:
+        # Don't 500 the page on a DB blip — render the empty state with a banner.
+        db_error = str(e).splitlines()[0][:240]
     return render_template(
         'overview.html',
         active='overview',
@@ -24,6 +38,7 @@ def overview():
         chart_labels=chart_labels,
         chart_values=chart_values,
         activity=activity,
+        db_error=db_error,
     )
 
 
