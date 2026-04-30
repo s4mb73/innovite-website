@@ -409,7 +409,108 @@ def inbound_set_status(inbound_id: int):
 
 @app.route('/reports')
 def reports():
-    return render_template('reports.html', active='reports')
+    db_error = None
+    period = (request.args.get('period') or '30d').lower()
+    if period not in {p[0] for p in db.REPORTS_PERIODS}:
+        period = '30d'
+    days = db.reports_period_days(period)
+
+    clients_min: list[dict] = []
+    client: dict | None     = None
+    kpis = {'leads': 0, 'leads_delta': 0, 'sent': 0, 'sent_delta': 0,
+            'reply_rate': 0.0, 'reply_rate_delta': 0.0,
+            'meetings': 0, 'meetings_delta': 0}
+    chart   = {'labels': [], 'sent': [], 'replies': []}
+    funnel: list[dict]   = []
+    sequence: list[dict] = []
+    grade_mix: list[dict] = []
+
+    try:
+        clients_min = db.reports_clients_min()
+        # Pick client: ?client= query, else first client.
+        client_raw = request.args.get('client')
+        client_id = int(client_raw) if (client_raw or '').isdigit() else None
+        if client_id is None and clients_min:
+            client_id = clients_min[0]['id']
+        if client_id is not None:
+            client    = db.reports_client_summary(client_id)
+            kpis      = db.reports_kpis(client_id, days)
+            chart     = db.reports_chart_series(client_id, days)
+            funnel    = db.reports_funnel(client_id, days)
+            sequence  = db.reports_sequence(client_id, days)
+            grade_mix = db.reports_grade_mix(client_id, days)
+    except Exception as e:
+        db_error = str(e).splitlines()[0][:240]
+
+    # Build mailto for the "Email to client" button — non-functional but
+    # demonstrates the wired-in workflow to a prospect.
+    mailto_url = ''
+    if client and client.get('contact_email'):
+        period_label = next((lbl for slug, lbl, _ in db.REPORTS_PERIODS
+                             if slug == period), 'period')
+        subj = f"Innovite — {client['name']} — {period_label} performance report"
+        body = (
+            f"Hi {(client.get('contact_name') or '').split(' ')[0] or 'there'},"
+            f"\n\nQuick recap for {period_label.lower()} — full report attached:\n"
+            f"\n• Leads sourced: {kpis['leads']}"
+            f"\n• Emails sent: {kpis['sent']}"
+            f"\n• Reply rate: {kpis['reply_rate']}%"
+            f"\n• Meetings booked: {kpis['meetings']}"
+            f"\n\nLet me know if you want to dig into any of it.\n\n— Sammy"
+        )
+        from urllib.parse import quote
+        mailto_url = (
+            f"mailto:{client['contact_email']}"
+            f"?subject={quote(subj)}&body={quote(body)}"
+        )
+
+    return render_template(
+        'reports.html',
+        active='reports',
+        period=period,
+        days=days,
+        periods=db.REPORTS_PERIODS,
+        clients_min=clients_min,
+        client=client,
+        kpis=kpis,
+        chart=chart,
+        funnel=funnel,
+        sequence=sequence,
+        grade_mix=grade_mix,
+        mailto_url=mailto_url,
+        db_error=db_error,
+    )
+
+
+@app.route('/reports.csv')
+def reports_csv():
+    period = (request.args.get('period') or '30d').lower()
+    if period not in {p[0] for p in db.REPORTS_PERIODS}:
+        period = '30d'
+    days = db.reports_period_days(period)
+    client_raw = request.args.get('client')
+    client_id  = int(client_raw) if (client_raw or '').isdigit() else None
+    if client_id is None:
+        clients_min = db.reports_clients_min()
+        client_id = clients_min[0]['id'] if clients_min else None
+    if client_id is None:
+        return Response('', status=204)
+
+    rows = db.reports_csv_rows(client_id, days)
+    buf  = io.StringIO()
+    w    = csv.writer(buf)
+    for r in rows:
+        w.writerow(r)
+
+    client = db.reports_client_summary(client_id) or {'name': 'unknown'}
+    safe_name = ''.join(ch if ch.isalnum() or ch in '-_' else '_'
+                        for ch in client['name']).strip('_').lower()
+    fname = f'innovite-report-{safe_name}-{period}.csv'
+    return Response(
+        buf.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{fname}"'},
+    )
 
 
 @app.route('/settings')

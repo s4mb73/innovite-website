@@ -1623,6 +1623,286 @@ a { color:inherit; text-decoration:none; }
   .inbound-priority-row { transition:none; }
 }
 
+/* ── Reports (Step 9) ────────────────────────────────── */
+
+.report-head .report-actions {
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.report-select { min-width:150px; }
+
+.report-hero {
+  border:1px solid var(--border);
+  background:linear-gradient(180deg, var(--s1) 0%, var(--bg) 100%);
+  border-radius:var(--r-md);
+  padding:24px 28px;
+  margin-bottom:24px;
+}
+.report-hero-eyebrow {
+  font-size:11.5px;
+  letter-spacing:1.2px;
+  text-transform:uppercase;
+  color:var(--accent);
+  font-weight:600;
+  margin-bottom:8px;
+}
+.report-hero-title {
+  font-family:'Newsreader', serif;
+  font-weight:400;
+  font-size:34px;
+  line-height:1.15;
+  color:var(--t1);
+  margin:0 0 6px;
+  letter-spacing:-0.012em;
+}
+.report-hero-meta {
+  font-size:13px;
+  color:var(--t3);
+  font-weight:300;
+}
+
+.report-chart-card { padding:22px 24px; }
+.chart-wrap-tall { height:260px; }
+
+.report-grid {
+  display:grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap:20px;
+  margin-bottom:24px;
+}
+.report-grid-right {
+  display:flex;
+  flex-direction:column;
+  gap:20px;
+  min-width:0;
+}
+
+/* Funnel — text rows + horizontal bars proportional to conversion */
+.funnel-card { padding:20px 22px; }
+.funnel { display:flex; flex-direction:column; gap:14px; }
+.funnel-row { display:flex; flex-direction:column; gap:6px; }
+.funnel-row-head {
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  font-size:13px;
+}
+.funnel-label  { color:var(--t1); font-weight:500; }
+.funnel-value  { color:var(--t1); font-variant-numeric:tabular-nums; font-weight:600; }
+.funnel-bar-track {
+  position:relative;
+  height:22px;
+  background:var(--s3);
+  border-radius:6px;
+  overflow:hidden;
+  display:flex;
+  align-items:center;
+}
+.funnel-bar-track--top { background:var(--accent-bg); }
+.funnel-bar {
+  height:100%;
+  background:linear-gradient(90deg, var(--accent) 0%, var(--accent-h) 100%);
+  border-radius:6px;
+  transition:width .35s var(--ease);
+}
+.funnel-bar--full { width:100%; opacity:.6; }
+.funnel-bar-label {
+  position:absolute;
+  right:10px;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:11px;
+  font-weight:600;
+  color:var(--bg);
+  letter-spacing:.4px;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 0 2px rgba(255,255,255,.25);
+}
+.funnel-bar-track--top .funnel-bar-label {
+  color:var(--accent);
+  text-shadow:none;
+  text-transform:uppercase;
+  font-size:10.5px;
+  letter-spacing:.7px;
+}
+
+/* Sequence table */
+.sequence-card { padding:20px 22px; }
+.seq-table {
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+  font-variant-numeric:tabular-nums;
+}
+.seq-table th {
+  font-size:11px;
+  font-weight:600;
+  color:var(--t3);
+  text-transform:uppercase;
+  letter-spacing:.7px;
+  text-align:left;
+  padding:0 0 10px;
+  border-bottom:1px solid var(--border);
+}
+.seq-table th.num,
+.seq-table td.num { text-align:right; }
+.seq-table tbody td {
+  padding:11px 0;
+  color:var(--t1);
+  border-bottom:1px solid var(--border);
+}
+.seq-table tbody tr:last-child td { border-bottom:none; }
+
+/* Grade mix — letter pill, horizontal bar, count, % */
+.grade-card { padding:20px 22px; }
+.grade-stack { display:flex; flex-direction:column; gap:9px; }
+.grade-row {
+  display:grid;
+  grid-template-columns: 28px 1fr auto auto;
+  gap:14px;
+  align-items:center;
+  font-size:13px;
+}
+.grade-letter {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:24px;
+  height:24px;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:600;
+  font-family:'Newsreader', serif;
+  letter-spacing:.4px;
+}
+.grade-letter.grade-A { background:var(--green-bg); color:var(--green); }
+.grade-letter.grade-B { background:var(--accent-bg); color:var(--accent); }
+.grade-letter.grade-C { background:var(--accent-bg2); color:var(--accent); }
+.grade-letter.grade-D { background:var(--amber-bg); color:var(--amber); }
+.grade-letter.grade-F { background:rgba(239,68,68,.10); color:#fca5a5; }
+.grade-bar-track {
+  height:8px;
+  background:var(--s3);
+  border-radius:100px;
+  overflow:hidden;
+  min-width:60px;
+}
+.grade-bar { height:100%; border-radius:100px; transition:width .35s var(--ease); }
+.grade-bar.grade-bar-A { background:var(--green); }
+.grade-bar.grade-bar-B { background:var(--accent); }
+.grade-bar.grade-bar-C { background:var(--accent); opacity:.65; }
+.grade-bar.grade-bar-D { background:var(--amber); }
+.grade-bar.grade-bar-F { background:#ef4444; opacity:.78; }
+.grade-count {
+  color:var(--t1);
+  font-weight:500;
+  font-variant-numeric:tabular-nums;
+  min-width:30px;
+  text-align:right;
+}
+.grade-pct {
+  color:var(--t3);
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+  min-width:46px;
+  text-align:right;
+}
+
+/* Print-only blocks: hidden on screen, shown in print */
+.print-only { display:none; }
+
+@media (max-width: 980px) {
+  .report-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Print stylesheet ───────────────────────────────── */
+@media print {
+  /* Keep dark Innovite styling — the brand IS dark.
+     Force colour adjust so backgrounds print. */
+  :root, body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body { background:var(--bg); }
+
+  /* Hide chrome */
+  .sidebar,
+  .undo-banner,
+  .flash-stack,
+  .report-actions,
+  .page-sub,
+  .page-title { display:none !important; }
+
+  .main { padding:24px 32px !important; max-width:none; }
+
+  /* Show print-only header + footer */
+  .print-only { display:block !important; }
+  .print-header {
+    display:flex !important;
+    justify-content:space-between;
+    align-items:flex-end;
+    border-bottom:1px solid var(--b2);
+    padding-bottom:14px;
+    margin-bottom:22px;
+  }
+  .print-brand {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    color:var(--accent);
+  }
+  .print-mark { width:50px; height:10px; }
+  .print-wordmark {
+    font-family:'Newsreader', serif;
+    font-size:22px;
+    color:var(--t1);
+    letter-spacing:-.01em;
+  }
+  .print-meta { text-align:right; }
+  .print-client {
+    font-family:'Newsreader', serif;
+    font-size:18px;
+    color:var(--t1);
+    margin-bottom:3px;
+  }
+  .print-period {
+    font-size:11px;
+    letter-spacing:.7px;
+    text-transform:uppercase;
+    color:var(--t3);
+  }
+
+  .print-footer {
+    display:flex !important;
+    justify-content:center;
+    gap:10px;
+    margin-top:28px;
+    padding-top:14px;
+    border-top:1px solid var(--border);
+    font-size:10.5px;
+    color:var(--t3);
+    letter-spacing:.5px;
+    text-transform:uppercase;
+  }
+  .print-footer-sep { color:var(--t3); }
+
+  /* Hide the hero (the print header replaces it) */
+  .report-hero { display:none; }
+
+  /* Slim the cards for paper */
+  .card { break-inside:avoid; page-break-inside:avoid; }
+  .chart-wrap-tall { height:200px; }
+  .metrics { gap:12px; }
+  .metric { padding:14px 16px; }
+  .report-grid { gap:14px; }
+
+  /* Force page-break before the funnel grid on shorter A4 layouts
+     so the chart sits on page 1 cleanly. */
+  @page { size: A4; margin: 14mm 14mm 18mm; }
+}
+
 /* ── Mobile ──────────────────────────────────────────── */
 @media (max-width: 768px) {
   body { grid-template-columns:1fr; }

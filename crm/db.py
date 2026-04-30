@@ -1359,3 +1359,430 @@ def update_inbound_status(inbound_id: int, new_status: str) -> dict:
         conn.commit()
     return {'old': old, 'new': new_status,
             'name': row['name'], 'persisted': True}
+
+
+# ── Reports (Step 9) ─────────────────────────────────────────────────
+# Per-client performance reports — what Sammy sends to a paying client.
+# Period: '7d' | '30d' | '90d' (default 30d). All queries scoped to
+# client_id; previous-period delta uses the same window length shifted
+# back by one window.
+
+REPORTS_PERIODS = (
+    ('7d',  'Last 7 days',  7),
+    ('30d', 'Last 30 days', 30),
+    ('90d', 'Last 90 days', 90),
+)
+
+LEAD_GRADES = ('A', 'B', 'C', 'D', 'F')
+
+
+def reports_period_days(period: str) -> int:
+    for slug, _label, days in REPORTS_PERIODS:
+        if slug == period:
+            return days
+    return 30
+
+
+def _reports_use_fixture() -> bool:
+    return not DATABASE_URL
+
+
+# ── Fixture (POC localhost) ───────────────────────────────────────
+# Two clients, three periods, full payloads. Numbers are tuned to look
+# like a healthy mid-tier outbound engagement (ROCA-grade) so the demo
+# reads as a real client report rather than a stress test.
+
+_REPORTS_CLIENTS_FIXTURE: list[dict] = [
+    {'id': 1, 'name': 'Vidora Media',     'industry': 'Content production',
+     'contact_name': 'Adam Bimpson', 'contact_email': 'adam@vidoramedia.com',
+     'pricing_tier': '£3,500',  'monthly_fee': 3500,
+     'onboarded_at': datetime(2025, 11, 12, tzinfo=timezone.utc)},
+    {'id': 2, 'name': 'ROCA Accountants', 'industry': 'Professional services',
+     'contact_name': 'Hannah Cole', 'contact_email': 'hannah@roca.co.uk',
+     'pricing_tier': '£3,500',  'monthly_fee': 3500,
+     'onboarded_at': datetime(2026, 1, 8, tzinfo=timezone.utc)},
+]
+
+
+def _reports_seed(client_id: int, days: int) -> dict:
+    """Deterministic per-(client, period) bundle — same call returns
+    same data so screenshots are stable. Differentiated by client so
+    Vidora and ROCA tell different stories."""
+    base = {
+        # Vidora — content/creator focus, broader top of funnel
+        1: {'leads_per_day': 6.1, 'sends_mult': 2.2, 'reply_rate': 11.8,
+            'open_rate': 47.0, 'meeting_rate': 4.9,
+            'grade_mix': {'A': 0.18, 'B': 0.34, 'C': 0.31, 'D': 0.13, 'F': 0.04}},
+        # ROCA — accountancy, tighter qualification, higher reply rate
+        2: {'leads_per_day': 4.7, 'sends_mult': 2.8, 'reply_rate': 14.2,
+            'open_rate': 51.0, 'meeting_rate': 7.1,
+            'grade_mix': {'A': 0.24, 'B': 0.38, 'C': 0.26, 'D': 0.10, 'F': 0.02}},
+    }.get(client_id, {'leads_per_day': 5.0, 'sends_mult': 2.4,
+                      'reply_rate': 12.0, 'open_rate': 48.0,
+                      'meeting_rate': 5.5,
+                      'grade_mix': {'A': 0.20, 'B': 0.35, 'C': 0.30,
+                                    'D': 0.12, 'F': 0.03}})
+
+    leads_now  = int(round(base['leads_per_day']  * days))
+    leads_prev = int(round(base['leads_per_day']  * days * 0.86))
+    sent_now   = int(round(leads_now  * base['sends_mult']))
+    sent_prev  = int(round(leads_prev * base['sends_mult']))
+    reply_rate_now  = base['reply_rate']
+    reply_rate_prev = round(base['reply_rate'] - 1.4, 1)
+    meetings_now    = int(round(leads_now  * (base['meeting_rate'] / 100)))
+    meetings_prev   = int(round(leads_prev * (base['meeting_rate'] / 100)))
+
+    return {
+        'leads_now': leads_now, 'leads_prev': leads_prev,
+        'sent_now':  sent_now,  'sent_prev':  sent_prev,
+        'reply_rate_now':  reply_rate_now, 'reply_rate_prev': reply_rate_prev,
+        'meetings_now':    meetings_now,   'meetings_prev':   meetings_prev,
+        'open_rate':       base['open_rate'],
+        'grade_mix_pct':   base['grade_mix'],
+    }
+
+
+def _reports_chart_fixture(client_id: int, days: int) -> dict:
+    """Daily sent + replies series for the chart. Uses a deterministic
+    pseudo-random walk seeded by (client_id, days) so screenshots are
+    stable across reloads."""
+    import math
+    s    = _reports_seed(client_id, days)
+    avg_sent_day = s['sent_now'] / days if days else 0
+    labels:  list[str] = []
+    sent:    list[int] = []
+    replies: list[int] = []
+    today = datetime.now(timezone.utc).date()
+    for i in range(days):
+        d = today - timedelta(days=days - 1 - i)
+        labels.append(d.strftime('%-d %b'))
+        # Weekend dip (Sat/Sun = 0.4x), rest 0.85–1.15 wave
+        wkday = d.weekday()
+        wk    = 0.4 if wkday >= 5 else 1.0
+        wave  = 0.92 + 0.18 * math.sin((i + client_id * 3) / 2.7)
+        v     = max(0, int(round(avg_sent_day * wk * wave)))
+        sent.append(v)
+        replies.append(int(round(v * (s['reply_rate_now'] / 100))))
+    return {'labels': labels, 'sent': sent, 'replies': replies}
+
+
+def _reports_funnel_fixture(client_id: int, days: int) -> list[dict]:
+    s        = _reports_seed(client_id, days)
+    leads    = s['leads_now']
+    contacted = int(round(leads * 0.78))
+    replied   = int(round(leads * (s['reply_rate_now'] / 100) * 2.5))
+    meetings  = s['meetings_now']
+    won       = max(1, int(round(meetings * 0.22)))
+    return [
+        {'label': 'Leads sourced',  'value': leads,     'pct_of_prev': None},
+        {'label': 'Contacted',      'value': contacted, 'pct_of_prev': round(contacted/leads*100) if leads else 0},
+        {'label': 'Replied',        'value': replied,   'pct_of_prev': round(replied/contacted*100) if contacted else 0},
+        {'label': 'Meeting booked', 'value': meetings,  'pct_of_prev': round(meetings/replied*100) if replied else 0},
+        {'label': 'Won',            'value': won,       'pct_of_prev': round(won/meetings*100) if meetings else 0},
+    ]
+
+
+def _reports_sequence_fixture(client_id: int, days: int) -> list[dict]:
+    s = _reports_seed(client_id, days)
+    sent_total = s['sent_now']
+    # Distribution Day1 / Day3 / Day7 ≈ 0.40 / 0.36 / 0.24
+    splits = [(1, 'Day 1', 0.40, 1.00, 0.34),
+              (2, 'Day 3', 0.36, 0.92, 0.49),
+              (3, 'Day 7', 0.24, 0.85, 0.65)]
+    base_open  = s['open_rate']
+    base_reply = s['reply_rate_now']
+    out = []
+    for n, label, share, open_mult, reply_mult in splits:
+        sent      = int(round(sent_total * share))
+        opens     = int(round(sent * (base_open  * open_mult) / 100))
+        replies   = int(round(sent * (base_reply * reply_mult) / 100))
+        out.append({
+            'step':       n,
+            'label':      label,
+            'sent':       sent,
+            'opens':      opens,
+            'replies':    replies,
+            'open_rate':  round(opens   / sent * 100, 1) if sent else 0.0,
+            'reply_rate': round(replies / sent * 100, 1) if sent else 0.0,
+        })
+    return out
+
+
+def _reports_grade_mix_fixture(client_id: int, days: int) -> list[dict]:
+    s     = _reports_seed(client_id, days)
+    leads = s['leads_now']
+    out = []
+    for g in LEAD_GRADES:
+        pct = s['grade_mix_pct'].get(g, 0)
+        out.append({
+            'grade': g,
+            'count': int(round(leads * pct)),
+            'pct':   round(pct * 100, 1),
+        })
+    return out
+
+
+# ── Public reports API ───────────────────────────────────────────
+def reports_clients_min() -> list[dict]:
+    """Client picker for the reports header."""
+    if _reports_use_fixture():
+        return [{'id': c['id'], 'name': c['name']}
+                for c in _REPORTS_CLIENTS_FIXTURE]
+    return all_clients_min()
+
+
+def reports_client_summary(client_id: int) -> dict | None:
+    """Header info: name, contact_email (for mailto), tier, since."""
+    if _reports_use_fixture():
+        match = next((c for c in _REPORTS_CLIENTS_FIXTURE
+                      if c['id'] == client_id), None)
+        if not match:
+            return None
+        row = dict(match)
+        row['since'] = row['onboarded_at'].strftime('%b %Y')
+        return row
+    return get_client(client_id)
+
+
+def reports_kpis(client_id: int, days: int) -> dict:
+    """Four headline numbers + deltas vs the previous window."""
+    if _reports_use_fixture():
+        s = _reports_seed(client_id, days)
+        return {
+            'leads':       s['leads_now'],
+            'leads_delta': s['leads_now'] - s['leads_prev'],
+            'sent':        s['sent_now'],
+            'sent_delta':  s['sent_now'] - s['sent_prev'],
+            'reply_rate':       s['reply_rate_now'],
+            'reply_rate_delta': round(s['reply_rate_now'] - s['reply_rate_prev'], 1),
+            'meetings':       s['meetings_now'],
+            'meetings_delta': s['meetings_now'] - s['meetings_prev'],
+        }
+    sql = """
+        with windows as (
+            select
+              now() - interval %(d_now)s  as t_now_start,
+              now()                        as t_now_end,
+              now() - interval %(d_prev)s  as t_prev_start,
+              now() - interval %(d_now)s   as t_prev_end
+        )
+        select
+          (select count(*) from crm.leads, windows
+             where client_id = %(cid)s
+               and created_at >= t_now_start and created_at < t_now_end)            as leads_now,
+          (select count(*) from crm.leads, windows
+             where client_id = %(cid)s
+               and created_at >= t_prev_start and created_at < t_prev_end)          as leads_prev,
+          (select count(*) from crm.emails, windows
+             where client_id = %(cid)s and status = 'sent'
+               and sent_at >= t_now_start and sent_at < t_now_end)                  as sent_now,
+          (select count(*) from crm.emails, windows
+             where client_id = %(cid)s and status = 'sent'
+               and sent_at >= t_prev_start and sent_at < t_prev_end)                as sent_prev,
+          (select count(*) from crm.emails, windows
+             where client_id = %(cid)s and replied_at is not null
+               and replied_at >= t_now_start and replied_at < t_now_end)            as repl_now,
+          (select count(*) from crm.emails, windows
+             where client_id = %(cid)s and replied_at is not null
+               and replied_at >= t_prev_start and replied_at < t_prev_end)          as repl_prev,
+          (select count(*) from crm.leads, windows
+             where client_id = %(cid)s and status = 'meeting'
+               and updated_at >= t_now_start and updated_at < t_now_end)            as mtg_now,
+          (select count(*) from crm.leads, windows
+             where client_id = %(cid)s and status = 'meeting'
+               and updated_at >= t_prev_start and updated_at < t_prev_end)          as mtg_prev
+    """
+    r = fetch_one(sql, {
+        'cid': client_id,
+        'd_now':  f'{days} days',
+        'd_prev': f'{days * 2} days',
+    }) or {}
+    sent_now  = int(r.get('sent_now')  or 0)
+    sent_prev = int(r.get('sent_prev') or 0)
+    repl_now  = int(r.get('repl_now')  or 0)
+    repl_prev = int(r.get('repl_prev') or 0)
+    rr_now    = round(repl_now  / sent_now  * 100, 1) if sent_now  else 0.0
+    rr_prev   = round(repl_prev / sent_prev * 100, 1) if sent_prev else 0.0
+    leads_now    = int(r.get('leads_now')  or 0)
+    leads_prev   = int(r.get('leads_prev') or 0)
+    mtg_now      = int(r.get('mtg_now')    or 0)
+    mtg_prev     = int(r.get('mtg_prev')   or 0)
+    return {
+        'leads':            leads_now,
+        'leads_delta':      leads_now - leads_prev,
+        'sent':             sent_now,
+        'sent_delta':       sent_now - sent_prev,
+        'reply_rate':       rr_now,
+        'reply_rate_delta': round(rr_now - rr_prev, 1),
+        'meetings':         mtg_now,
+        'meetings_delta':   mtg_now - mtg_prev,
+    }
+
+
+def reports_chart_series(client_id: int, days: int) -> dict:
+    """Daily sent + replies for the chart."""
+    if _reports_use_fixture():
+        return _reports_chart_fixture(client_id, days)
+    sql = """
+        with d as (
+          select generate_series(
+            (date_trunc('day', now()) - interval %(span)s)::date,
+            date_trunc('day', now())::date - 1,
+            '1 day'
+          )::date as day
+        )
+        select to_char(d.day, 'FMDD Mon') as label,
+               coalesce((select count(*) from crm.emails
+                          where client_id = %(cid)s and status = 'sent'
+                            and date_trunc('day', sent_at) = d.day), 0)         as sent,
+               coalesce((select count(*) from crm.emails
+                          where client_id = %(cid)s
+                            and replied_at is not null
+                            and date_trunc('day', replied_at) = d.day), 0)      as replies
+          from d order by d.day
+    """
+    rows = fetch_all(sql, {'cid': client_id, 'span': f'{days} days'})
+    return {
+        'labels':  [r['label']        for r in rows],
+        'sent':    [int(r['sent'])    for r in rows],
+        'replies': [int(r['replies']) for r in rows],
+    }
+
+
+def reports_funnel(client_id: int, days: int) -> list[dict]:
+    """5-row funnel: leads → contacted → replied → meeting → won."""
+    if _reports_use_fixture():
+        return _reports_funnel_fixture(client_id, days)
+    sql = """
+        with w as (select now() - interval %(d)s as t_start)
+        select
+          (select count(*) from crm.leads, w
+             where client_id = %(cid)s and created_at >= t_start)               as leads,
+          (select count(*) from crm.leads, w
+             where client_id = %(cid)s and created_at >= t_start
+               and status not in ('new'))                                       as contacted,
+          (select count(*) from crm.leads, w
+             where client_id = %(cid)s and created_at >= t_start
+               and status in ('replied','meeting','won','lost','closed'))       as replied,
+          (select count(*) from crm.leads, w
+             where client_id = %(cid)s and created_at >= t_start
+               and status in ('meeting','won'))                                 as meeting,
+          (select count(*) from crm.leads, w
+             where client_id = %(cid)s and created_at >= t_start
+               and status = 'won')                                              as won
+    """
+    r = fetch_one(sql, {'cid': client_id, 'd': f'{days} days'}) or {}
+    leads     = int(r.get('leads')     or 0)
+    contacted = int(r.get('contacted') or 0)
+    replied   = int(r.get('replied')   or 0)
+    meeting   = int(r.get('meeting')   or 0)
+    won       = int(r.get('won')       or 0)
+
+    def pct(num, den):
+        return round(num / den * 100) if den else 0
+    return [
+        {'label': 'Leads sourced',  'value': leads,     'pct_of_prev': None},
+        {'label': 'Contacted',      'value': contacted, 'pct_of_prev': pct(contacted, leads)},
+        {'label': 'Replied',        'value': replied,   'pct_of_prev': pct(replied, contacted)},
+        {'label': 'Meeting booked', 'value': meeting,   'pct_of_prev': pct(meeting, replied)},
+        {'label': 'Won',            'value': won,       'pct_of_prev': pct(won, meeting)},
+    ]
+
+
+def reports_sequence(client_id: int, days: int) -> list[dict]:
+    """Per-step (Day 1/3/7) sent / open / reply rates."""
+    if _reports_use_fixture():
+        return _reports_sequence_fixture(client_id, days)
+    sql = """
+        with w as (select now() - interval %(d)s as t_start)
+        select email_number,
+               count(*) filter (where status = 'sent')                          as sent,
+               count(*) filter (where opened_at is not null)                    as opens,
+               count(*) filter (where replied_at is not null)                   as replies
+          from crm.emails, w
+         where client_id = %(cid)s
+           and sent_at >= t_start
+         group by email_number
+         order by email_number
+    """
+    rows = fetch_all(sql, {'cid': client_id, 'd': f'{days} days'})
+    out = []
+    for r in rows:
+        sent = int(r.get('sent') or 0)
+        opens = int(r.get('opens') or 0)
+        replies = int(r.get('replies') or 0)
+        n = int(r.get('email_number') or 0)
+        out.append({
+            'step':  n,
+            'label': EMAIL_STEP_LABEL.get(n, f'Step {n}'),
+            'sent':       sent,
+            'opens':      opens,
+            'replies':    replies,
+            'open_rate':  round(opens   / sent * 100, 1) if sent else 0.0,
+            'reply_rate': round(replies / sent * 100, 1) if sent else 0.0,
+        })
+    return out
+
+
+def reports_grade_mix(client_id: int, days: int) -> list[dict]:
+    """Lead-grade distribution for leads sourced in the period."""
+    if _reports_use_fixture():
+        return _reports_grade_mix_fixture(client_id, days)
+    sql = """
+        with w as (select now() - interval %(d)s as t_start)
+        select coalesce(grade, 'F') as grade, count(*) as count
+          from crm.leads, w
+         where client_id = %(cid)s and created_at >= t_start
+         group by coalesce(grade, 'F')
+    """
+    rows  = fetch_all(sql, {'cid': client_id, 'd': f'{days} days'})
+    by_g  = {r['grade']: int(r['count']) for r in rows}
+    total = sum(by_g.values()) or 1
+    return [{'grade': g,
+             'count': by_g.get(g, 0),
+             'pct':   round(by_g.get(g, 0) / total * 100, 1)}
+            for g in LEAD_GRADES]
+
+
+def reports_csv_rows(client_id: int, days: int) -> list[list[str]]:
+    """Flat rows for CSV export — one section per metric block."""
+    client = reports_client_summary(client_id) or {'name': '—'}
+    kpis   = reports_kpis(client_id, days)
+    funnel = reports_funnel(client_id, days)
+    seq    = reports_sequence(client_id, days)
+    grades = reports_grade_mix(client_id, days)
+
+    rows: list[list[str]] = [
+        ['Innovite — Performance Report'],
+        ['Client', client['name']],
+        ['Period', f'Last {days} days'],
+        ['Generated', datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')],
+        [],
+        ['## Headline'],
+        ['Leads sourced',  str(kpis['leads']),       f"{kpis['leads_delta']:+d} vs prev"],
+        ['Emails sent',    str(kpis['sent']),        f"{kpis['sent_delta']:+d} vs prev"],
+        ['Reply rate',     f"{kpis['reply_rate']}%", f"{kpis['reply_rate_delta']:+.1f}pp vs prev"],
+        ['Meetings',       str(kpis['meetings']),    f"{kpis['meetings_delta']:+d} vs prev"],
+        [],
+        ['## Funnel'],
+        ['Stage', 'Count', 'Conv from previous'],
+    ]
+    for f in funnel:
+        rows.append([f['label'], str(f['value']),
+                     f"{f['pct_of_prev']}%" if f['pct_of_prev'] is not None else '—'])
+    rows.append([])
+    rows.append(['## Sequence'])
+    rows.append(['Step', 'Sent', 'Opens', 'Open %', 'Replies', 'Reply %'])
+    for s in seq:
+        rows.append([s['label'], str(s['sent']), str(s['opens']),
+                     f"{s['open_rate']}%", str(s['replies']), f"{s['reply_rate']}%"])
+    rows.append([])
+    rows.append(['## Lead grade mix'])
+    rows.append(['Grade', 'Count', 'Share'])
+    for g in grades:
+        rows.append([g['grade'], str(g['count']), f"{g['pct']}%"])
+    return rows
+
+
+# Make timedelta available for the chart fixture's date math
+from datetime import timedelta

@@ -1,7 +1,310 @@
 {% extends "base.html" %}
 {% block title %}Reports · Innovite CRM{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.js"></script>
+{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Reports</h1>
-<p class="page-sub">Per-client performance reports, exportable.</p>
-<div class="placeholder"><strong>Reports</strong> arrives in Step 9.</div>
+<div class="page-head report-head">
+  <div>
+    <h1 class="page-title">Reports</h1>
+    <p class="page-sub">Per-client performance — share or export.</p>
+  </div>
+  <form class="report-actions" method="get" action="{{ url_for('reports') }}">
+    <select class="filter-select report-select" name="client" onchange="this.form.submit()" aria-label="Client">
+      {% for c in clients_min %}
+        <option value="{{ c.id }}" {% if client and c.id == client.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <select class="filter-select report-select" name="period" onchange="this.form.submit()" aria-label="Period">
+      {% for slug, label, _days in periods %}
+        <option value="{{ slug }}" {% if slug == period %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <a class="btn btn-quiet" href="{{ url_for('reports_csv', client=(client.id if client else ''), period=period) }}">
+      <span class="btn-icon">⇣</span> Export CSV
+    </a>
+    <button type="button" class="btn btn-quiet" id="reportPrintBtn">
+      <span class="btn-icon">⎙</span> Print
+    </button>
+    {% if mailto_url %}
+      <a class="btn btn-primary" href="{{ mailto_url }}">
+        <span class="btn-icon">✉</span> Email to client
+      </a>
+    {% else %}
+      <button class="btn btn-primary" disabled title="Add a contact email to enable">
+        <span class="btn-icon">✉</span> Email to client
+      </button>
+    {% endif %}
+  </form>
+</div>
+
+{# ── Print-only header (hidden on screen) ───────────── #}
+<header class="print-only print-header" aria-hidden="true">
+  <div class="print-brand">
+    <svg class="print-mark" viewBox="0 0 60 12" fill="none" aria-hidden="true">
+      <rect x="0" y="0" width="42" height="12" rx="6" fill="currentColor"/>
+      <circle cx="54" cy="6" r="6" fill="currentColor"/>
+    </svg>
+    <span class="print-wordmark">Innovite</span>
+  </div>
+  <div class="print-meta">
+    {% if client %}<div class="print-client">{{ client.name }}</div>{% endif %}
+    <div class="print-period">
+      Performance report ·
+      {% for slug, label, _d in periods %}{% if slug == period %}{{ label }}{% endif %}{% endfor %}
+    </div>
+  </div>
+</header>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong>
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{% if not client %}
+<div class="empty">No clients yet — onboard a client from the Clients page to start reporting.</div>
+{% else %}
+
+{# ── Hero meta ───────────────────────────────────────── #}
+<div class="report-hero">
+  <div class="report-hero-eyebrow">Performance · {% for slug, label, _d in periods %}{% if slug == period %}{{ label|lower }}{% endif %}{% endfor %}</div>
+  <h2 class="report-hero-title">{{ client.name }}</h2>
+  <div class="report-hero-meta">
+    {% if client.industry %}{{ client.industry }} · {% endif %}
+    {% if client.since %}With Innovite since {{ client.since }}{% endif %}
+    {% if client.pricing_tier %} · {{ client.pricing_tier }}/mo retainer{% endif %}
+  </div>
+</div>
+
+{# ── KPIs ──────────────────────────────────────────── #}
+{% set k = kpis %}
+<div class="metrics">
+  <div class="metric">
+    <div class="metric-label">Leads sourced</div>
+    <div class="metric-value">{{ '{:,}'.format(k.leads) }}</div>
+    <div class="metric-change {% if k.leads_delta > 0 %}up{% elif k.leads_delta < 0 %}down{% else %}flat{% endif %}">
+      {% if k.leads_delta > 0 %}+{{ k.leads_delta }}{% elif k.leads_delta < 0 %}{{ k.leads_delta }}{% else %}±0{% endif %} vs prev
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Emails sent</div>
+    <div class="metric-value">{{ '{:,}'.format(k.sent) }}</div>
+    <div class="metric-change {% if k.sent_delta > 0 %}up{% elif k.sent_delta < 0 %}down{% else %}flat{% endif %}">
+      {% if k.sent_delta > 0 %}+{{ k.sent_delta }}{% elif k.sent_delta < 0 %}{{ k.sent_delta }}{% else %}±0{% endif %} vs prev
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Reply rate</div>
+    <div class="metric-value">{{ k.reply_rate }}%</div>
+    <div class="metric-change {% if k.reply_rate_delta > 0 %}up{% elif k.reply_rate_delta < 0 %}down{% else %}flat{% endif %}">
+      {% if k.reply_rate_delta > 0 %}+{{ k.reply_rate_delta }}pp{% elif k.reply_rate_delta < 0 %}{{ k.reply_rate_delta }}pp{% else %}±0pp{% endif %} vs prev
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Meetings booked</div>
+    <div class="metric-value">{{ k.meetings }}</div>
+    <div class="metric-change {% if k.meetings_delta > 0 %}up{% elif k.meetings_delta < 0 %}down{% else %}flat{% endif %}">
+      {% if k.meetings_delta > 0 %}+{{ k.meetings_delta }}{% elif k.meetings_delta < 0 %}{{ k.meetings_delta }}{% else %}±0{% endif %} vs prev
+    </div>
+  </div>
+</div>
+
+{# ── Trend chart ──────────────────────────────────── #}
+<div class="card chart-card report-chart-card">
+  <div class="card-title">Sent + replies · {{ days }} days</div>
+  <div class="chart-wrap chart-wrap-tall"><canvas id="reportChart"></canvas></div>
+</div>
+
+{# ── Funnel + Sequence + Grades grid ──────────────── #}
+<div class="report-grid">
+
+  <section class="card funnel-card">
+    <div class="card-title">Funnel</div>
+    {% if funnel and funnel[0].value > 0 %}
+      <div class="funnel">
+        {% for f in funnel %}
+          <div class="funnel-row">
+            <div class="funnel-row-head">
+              <span class="funnel-label">{{ f.label }}</span>
+              <span class="funnel-value">{{ '{:,}'.format(f.value) }}</span>
+            </div>
+            {% if f.pct_of_prev is not none %}
+              <div class="funnel-bar-track">
+                <div class="funnel-bar" style="width: {{ f.pct_of_prev }}%;"></div>
+                <span class="funnel-bar-label">{{ f.pct_of_prev }}%</span>
+              </div>
+            {% else %}
+              <div class="funnel-bar-track funnel-bar-track--top">
+                <div class="funnel-bar funnel-bar--full"></div>
+                <span class="funnel-bar-label">top of funnel</span>
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-sm">No leads sourced in this window.</div>
+    {% endif %}
+  </section>
+
+  <div class="report-grid-right">
+    <section class="card sequence-card">
+      <div class="card-title">Sequence performance</div>
+      {% if sequence %}
+        <table class="seq-table">
+          <thead>
+            <tr>
+              <th>Step</th>
+              <th class="num">Sent</th>
+              <th class="num">Open</th>
+              <th class="num">Reply</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in sequence %}
+              <tr>
+                <td><span class="step-pill step-{{ s.step }}">{{ s.label }}</span></td>
+                <td class="num">{{ '{:,}'.format(s.sent) }}</td>
+                <td class="num">{{ s.open_rate }}%</td>
+                <td class="num">{{ s.reply_rate }}%</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty-sm">No sequence data in this window.</div>
+      {% endif %}
+    </section>
+
+    <section class="card grade-card">
+      <div class="card-title">Lead grade mix</div>
+      {% set total = grade_mix|sum(attribute='count') %}
+      {% if total > 0 %}
+        <div class="grade-stack">
+          {% for g in grade_mix %}
+            <div class="grade-row">
+              <span class="grade-letter grade-{{ g.grade }}">{{ g.grade }}</span>
+              <div class="grade-bar-track">
+                <div class="grade-bar grade-bar-{{ g.grade }}" style="width: {{ g.pct }}%;"></div>
+              </div>
+              <span class="grade-count">{{ g.count }}</span>
+              <span class="grade-pct">{{ g.pct }}%</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-sm">No graded leads in this window.</div>
+      {% endif %}
+    </section>
+  </div>
+
+</div>
+
+{# ── Print-only footer ────────────────────────────── #}
+<footer class="print-only print-footer" aria-hidden="true">
+  <span>innoviteai.com</span>
+  <span class="print-footer-sep">·</span>
+  <span>Generated <span id="printTimestamp">—</span></span>
+  <span class="print-footer-sep">·</span>
+  <span>Confidential — for {{ client.name }} only</span>
+</footer>
+
+{% endif %}
+
+<script>
+  // Chart.js — sent (line) + replies (bars) overlay
+  (function () {
+    const labels  = {{ chart.labels|tojson }};
+    const sent    = {{ chart.sent|tojson }};
+    const replies = {{ chart.replies|tojson }};
+    const ctx = document.getElementById('reportChart');
+    if (!ctx || !window.Chart) return;
+    new Chart(ctx, {
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Replies',
+            data: replies,
+            backgroundColor: 'rgba(62,207,142,.55)',
+            borderRadius: 3,
+            maxBarThickness: 12,
+            order: 2,
+          },
+          {
+            type: 'line',
+            label: 'Sent',
+            data: sent,
+            borderColor: '#8FB7FF',
+            backgroundColor: 'rgba(143,183,255,.10)',
+            borderWidth: 2,
+            tension: 0.32,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            fill: true,
+            order: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'top',
+            align: 'end',
+            labels: {
+              color: '#9a9da8',
+              boxWidth: 10,
+              boxHeight: 10,
+              padding: 14,
+              usePointStyle: true,
+              pointStyle: 'rectRounded',
+              font: { family: 'Outfit', size: 12 },
+            },
+          },
+          tooltip: { displayColors: true },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks:  { color: '#5e6069', stepSize: 1, precision: 0 },
+            grid:   { color: 'rgba(255,255,255,.05)', drawBorder: false },
+          },
+          x: {
+            ticks: {
+              color: '#5e6069',
+              autoSkip: true,
+              maxRotation: 0,
+              maxTicksLimit: 10,
+            },
+            grid:  { display: false },
+          },
+        },
+      },
+    });
+  })();
+
+  // Print
+  (function () {
+    const btn = document.getElementById('reportPrintBtn');
+    const ts  = document.getElementById('printTimestamp');
+    if (btn) btn.addEventListener('click', () => {
+      if (ts) {
+        const d = new Date();
+        ts.textContent = d.toLocaleString('en-GB', {
+          day: 'numeric', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        });
+      }
+      window.print();
+    });
+  })();
+</script>
 {% endblock %}
