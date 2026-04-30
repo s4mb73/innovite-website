@@ -1,0 +1,191 @@
+{# Find new leads picker — included on overview.html and outreach.html.
+   Expects a 'finder_clients' list in the page context (see US-018). #}
+<div class="modal-overlay" id="findLeadsOverlay" hidden></div>
+<div class="modal" id="findLeadsModal" hidden role="dialog" aria-labelledby="findLeadsTitle" aria-modal="true">
+  <div class="modal-head">
+    <div>
+      <h2 class="modal-title" id="findLeadsTitle">Find new leads</h2>
+      <p class="modal-sub">
+        Choose which clients to run for. The pipeline finds and scores leads —
+        it does not send anything.
+      </p>
+    </div>
+    <button class="modal-close" id="findLeadsClose" aria-label="Close">×</button>
+  </div>
+
+  <div class="modal-body">
+    <div class="picker-list">
+      {% for c in finder_clients %}
+        <label class="picker-row {% if c.targeting_empty %}is-disabled{% endif %}">
+          <input type="checkbox" class="picker-check" data-client-id="{{ c.id }}"
+                 {% if not c.targeting_empty %}checked{% endif %}
+                 {% if c.targeting_empty %}disabled{% endif %}>
+          <span class="picker-name">{{ c.name }}</span>
+          {% if c.targeting_empty %}
+            <span class="picker-meta">
+              <span class="picker-warn">⚠ Targeting incomplete</span>
+              <a class="picker-link" href="{{ url_for('client_detail', client_id=c.id) }}">
+                Set targeting →
+              </a>
+            </span>
+          {% else %}
+            <span class="picker-meta">
+              Last find {{ c.last_find_relative }}
+              <span class="picker-sep">·</span>
+              {{ c.last_lead_count_label }}
+            </span>
+          {% endif %}
+        </label>
+      {% else %}
+        <div class="picker-empty">No clients yet — add one to start finding leads.</div>
+      {% endfor %}
+    </div>
+
+    <div class="picker-estimate" id="findLeadsEstimate">
+      Estimated: <span id="findLeadsTime">~3–5 minutes</span>
+      <span class="picker-sep">·</span>
+      <span id="findLeadsLookups">~140 Google Maps lookups</span>
+    </div>
+
+    <div class="picker-disclaimer">
+      <strong>POC mode</strong> — confirming below shows the run flow but does not contact
+      any external service yet. Real lead generation lands with the Step 7 backend.
+    </div>
+  </div>
+
+  <div class="modal-foot">
+    <button type="button" class="btn btn-quiet" id="findLeadsCancel">Cancel</button>
+    <button type="button" class="btn btn-primary" id="findLeadsConfirm">
+      Run for <span id="findLeadsCount">0</span> clients
+    </button>
+  </div>
+</div>
+
+{# Progress card — hidden until confirm. Lives at the top of the page. #}
+<div class="progress-card" id="findLeadsProgress" hidden>
+  <div class="progress-card-head">
+    <div>
+      <div class="progress-card-title" id="findLeadsProgressTitle">Finding leads…</div>
+      <div class="progress-card-sub" id="findLeadsProgressSub">Running across selected clients</div>
+    </div>
+    <button type="button" class="btn btn-quiet btn-sm" id="findLeadsProgressDismiss" hidden>Dismiss</button>
+  </div>
+  <div class="progress-rows" id="findLeadsProgressRows"></div>
+</div>
+
+<script>
+  // ── Find new leads modal (US-018) ──────────────────────
+  // POC: open the modal, let the operator tick clients, "run" them with
+  // a fake animation, settle into a completion state. No backend calls.
+  (function () {
+    const overlay  = document.getElementById('findLeadsOverlay');
+    const modal    = document.getElementById('findLeadsModal');
+    const closeBtn = document.getElementById('findLeadsClose');
+    const cancelBtn= document.getElementById('findLeadsCancel');
+    const confirm  = document.getElementById('findLeadsConfirm');
+    const countEl  = document.getElementById('findLeadsCount');
+    const timeEl   = document.getElementById('findLeadsTime');
+    const lookupEl = document.getElementById('findLeadsLookups');
+    const progress = document.getElementById('findLeadsProgress');
+    const progRows = document.getElementById('findLeadsProgressRows');
+    const progTitle= document.getElementById('findLeadsProgressTitle');
+    const progSub  = document.getElementById('findLeadsProgressSub');
+    const progDism = document.getElementById('findLeadsProgressDismiss');
+    if (!modal) return;
+
+    const triggers = document.querySelectorAll('[data-find-leads-trigger]');
+    const checks   = modal.querySelectorAll('.picker-check');
+
+    function recount() {
+      const ticked = Array.from(checks).filter(c => c.checked && !c.disabled);
+      countEl.textContent = ticked.length;
+      confirm.disabled    = ticked.length === 0;
+      // Naive estimate per client — enough to make the modal feel real.
+      const mins   = Math.max(1, Math.round(ticked.length * 2));
+      const mapsN  = ticked.length * 70;
+      timeEl.textContent   = `~${mins}–${mins + 2} minutes`;
+      lookupEl.textContent = `~${mapsN} Google Maps lookups`;
+    }
+
+    function open() {
+      overlay.hidden = false;
+      modal.hidden   = false;
+      requestAnimationFrame(() => {
+        overlay.classList.add('is-open');
+        modal.classList.add('is-open');
+      });
+      closeBtn.focus({preventScroll: true});
+      recount();
+    }
+    function close() {
+      overlay.classList.remove('is-open');
+      modal.classList.remove('is-open');
+      setTimeout(() => { overlay.hidden = true; modal.hidden = true; }, 200);
+    }
+
+    triggers.forEach(t => t.addEventListener('click', e => { e.preventDefault(); open(); }));
+    closeBtn .addEventListener('click', close);
+    overlay  .addEventListener('click', close);
+    cancelBtn.addEventListener('click', close);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !modal.hidden) close();
+    });
+    checks.forEach(c => c.addEventListener('change', recount));
+
+    // Confirm — fake the run flow.
+    confirm.addEventListener('click', () => {
+      const ticked = Array.from(checks).filter(c => c.checked && !c.disabled);
+      if (!ticked.length) return;
+      const targets = ticked.map(c => ({
+        id:    c.dataset.clientId,
+        name:  c.closest('.picker-row').querySelector('.picker-name').textContent.trim(),
+      }));
+      close();
+      runFake(targets);
+    });
+
+    function runFake(targets) {
+      progress.hidden = false;
+      progDism.hidden = true;
+      progTitle.textContent = 'Finding leads…';
+      progSub.textContent   = `Running across ${targets.length} client${targets.length === 1 ? '' : 's'}`;
+      progRows.innerHTML    = '';
+      const rowEls = targets.map((t, i) => {
+        const r = document.createElement('div');
+        r.className = 'progress-row';
+        r.innerHTML = `
+          <span class="progress-row-state state-queued">◌</span>
+          <span class="progress-row-name">${t.name}</span>
+          <span class="progress-row-meta">queued</span>
+        `;
+        progRows.appendChild(r);
+        return r;
+      });
+      // Sequential fake — each client takes ~1.2s. Total fits the demo.
+      let i = 0;
+      function step() {
+        if (i >= rowEls.length) {
+          progTitle.textContent = 'Pipeline finished';
+          progSub.textContent   = `Done — refresh to see new leads (POC mode)`;
+          progDism.hidden       = false;
+          return;
+        }
+        const r = rowEls[i];
+        r.querySelector('.progress-row-state').className = 'progress-row-state state-running';
+        r.querySelector('.progress-row-state').textContent = '⟳';
+        r.querySelector('.progress-row-meta').textContent  = 'finding…';
+        setTimeout(() => {
+          const fakeNew = Math.floor(8 + Math.random() * 18);
+          r.querySelector('.progress-row-state').className = 'progress-row-state state-done';
+          r.querySelector('.progress-row-state').textContent = '✓';
+          r.querySelector('.progress-row-meta').textContent  = `${fakeNew} new leads · POC`;
+          i += 1;
+          step();
+        }, 1200);
+      }
+      step();
+    }
+
+    progDism.addEventListener('click', () => { progress.hidden = true; });
+  })();
+</script>

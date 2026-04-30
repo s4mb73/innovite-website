@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% block title %}New client · Innovite CRM{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('clients') }}" class="back-link">
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <polyline points="15 18 9 12 15 6"/>
+  </svg>
+  Clients
+</a>
+
+<div class="page-head">
+  <div>
+    <h1 class="page-title">New client</h1>
+    <p class="page-sub">Add a client and their targeting profile so the pipeline knows who to look for.</p>
+  </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="settings-flash" aria-live="polite">
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<form class="settings-stack" method="post" action="{{ url_for('client_new') }}" novalidate>
+
+  {# ── Basics ─────────────────────────────────── #}
+  <section class="card settings-card">
+    <div class="settings-card-head">
+      <h2 class="settings-card-title">Basics</h2>
+      <p class="settings-card-sub">Who they are, and who we'll talk to during onboarding.</p>
+    </div>
+
+    <div class="settings-form">
+      <div class="field-row">
+        <label for="cn-name">Name <span class="req">*</span></label>
+        <div class="field-input">
+          <input type="text" id="cn-name" name="name" autocomplete="organization"
+                 value="{{ form.name or '' }}" required
+                 class="{% if errors.name %}is-invalid{% endif %}">
+          {% if errors.name %}<div class="field-err">{{ errors.name }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-industry">Industry</label>
+        <div class="field-input">
+          <input type="text" id="cn-industry" name="industry"
+                 placeholder="e.g. Accountancy, Content production"
+                 value="{{ form.industry or '' }}">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-contact-name">Contact name</label>
+        <div class="field-input">
+          <input type="text" id="cn-contact-name" name="contact_name" autocomplete="name"
+                 value="{{ form.contact_name or '' }}">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-contact-email">Contact email</label>
+        <div class="field-input">
+          <input type="email" id="cn-contact-email" name="contact_email" autocomplete="email"
+                 value="{{ form.contact_email or '' }}"
+                 class="{% if errors.contact_email %}is-invalid{% endif %}">
+          {% if errors.contact_email %}<div class="field-err">{{ errors.contact_email }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# ── Targeting ──────────────────────────────── #}
+  <section class="card settings-card">
+    <div class="settings-card-head">
+      <h2 class="settings-card-title">Targeting</h2>
+      <p class="settings-card-sub">What kind of leads should the pipeline look for?</p>
+    </div>
+
+    <div class="settings-form">
+      <div class="field-row">
+        <label for="cn-industries-input">Target industries <span class="req">*</span></label>
+        <div class="field-input">
+          <div class="chip-input {% if errors.target_industries %}is-invalid{% endif %}"
+               data-chip-input
+               data-initial="{{ form.target_industries or '' }}">
+            <input type="hidden" name="target_industries" value="{{ form.target_industries or '' }}">
+            <div class="chip-input-bag" aria-live="polite"></div>
+            <input type="text" id="cn-industries-input" class="chip-input-entry"
+                   placeholder="Construction, Property dev…"
+                   autocomplete="off">
+          </div>
+          <div class="field-hint">Press Enter or comma to add. Free text — typeahead comes later.</div>
+          {% if errors.target_industries %}<div class="field-err">{{ errors.target_industries }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-locations-input">Target locations <span class="req">*</span></label>
+        <div class="field-input">
+          <div class="chip-input {% if errors.target_locations %}is-invalid{% endif %}"
+               data-chip-input
+               data-initial="{{ form.target_locations or '' }}">
+            <input type="hidden" name="target_locations" value="{{ form.target_locations or '' }}">
+            <div class="chip-input-bag" aria-live="polite"></div>
+            <input type="text" id="cn-locations-input" class="chip-input-entry"
+                   placeholder="Manchester, Leeds, North West…"
+                   autocomplete="off">
+          </div>
+          <div class="field-hint">UK cities or regions. Postcode targeting comes later.</div>
+          {% if errors.target_locations %}<div class="field-err">{{ errors.target_locations }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-min-age">Minimum company age</label>
+        <div class="field-input field-input-inline">
+          <input type="number" id="cn-min-age" name="min_company_age"
+                 min="0" max="200" value="{{ form.min_company_age or '' }}"
+                 class="{% if errors.min_company_age %}is-invalid{% endif %}">
+          <span class="field-suffix">years</span>
+          <span class="field-hint field-hint-inline">Filters out new incorporations. Optional.</span>
+          {% if errors.min_company_age %}<div class="field-err">{{ errors.min_company_age }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label>Employee size bands</label>
+        <div class="field-input">
+          <div class="band-group" role="group" aria-label="Employee size bands">
+            {% for band in employee_bands %}
+              {% set on = band in (form.employee_bands or []) %}
+              <label class="band-chip {% if on %}is-on{% endif %}">
+                <input type="checkbox" name="employee_bands" value="{{ band }}"
+                       {% if on %}checked{% endif %}>
+                <span>{{ band }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <div class="field-hint">Multi-select. Leave empty to allow any size.</div>
+        </div>
+      </div>
+
+      <div class="field-row field-row-checkbox">
+        <label class="checkbox">
+          <input type="checkbox" name="active_filing_only"
+                 {% if form.active_filing_only %}checked{% endif %}>
+          <span>Active filing only — exclude dormant or dissolved companies (Companies House)</span>
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-exclusions-input">Exclusion list</label>
+        <div class="field-input">
+          <div class="chip-input"
+               data-chip-input
+               data-initial="{{ form.exclusion_list or '' }}">
+            <input type="hidden" name="exclusion_list" value="{{ form.exclusion_list or '' }}">
+            <div class="chip-input-bag" aria-live="polite"></div>
+            <input type="text" id="cn-exclusions-input" class="chip-input-entry"
+                   placeholder="acme.co.uk, Acme Ltd…"
+                   autocomplete="off">
+          </div>
+          <div class="field-hint">
+            Domains and company names this client must never contact — their existing customers,
+            competitors, anyone they've already pitched. Optional.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="settings-card-sub form-foot-hint">
+    Status will be set to <strong>Active</strong>. No pipeline runs automatically — trigger
+    the first <strong>Find new leads</strong> from the client detail page when ready.
+  </p>
+
+  <div class="settings-form-foot client-new-foot">
+    <a class="btn btn-quiet" href="{{ url_for('clients') }}">Cancel</a>
+    <button type="submit" class="btn btn-primary">Create client</button>
+  </div>
+</form>
+
+<script>
+  // ── Chip input ─────────────────────────────────────────
+  // Comma-joined hidden input is the source of truth for form submit.
+  // Type + Enter or comma → add. Backspace on empty entry → remove last.
+  // Click × on a chip → remove that chip.
+  (function () {
+    function init(root) {
+      const hidden = root.querySelector('input[type="hidden"]');
+      const bag    = root.querySelector('.chip-input-bag');
+      const entry  = root.querySelector('.chip-input-entry');
+      if (!hidden || !bag || !entry) return;
+
+      let chips = (root.dataset.initial || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+
+      function sync() {
+        hidden.value = chips.join(',');
+        render();
+      }
+
+      function render() {
+        bag.innerHTML = '';
+        chips.forEach((c, i) => {
+          const el = document.createElement('span');
+          el.className = 'chip';
+          const txt = document.createElement('span');
+          txt.textContent = c;
+          const x = document.createElement('button');
+          x.type = 'button';
+          x.className = 'chip-x';
+          x.setAttribute('aria-label', 'Remove ' + c);
+          x.textContent = '×';
+          x.addEventListener('click', () => {
+            chips.splice(i, 1);
+            sync();
+            entry.focus();
+          });
+          el.appendChild(txt);
+          el.appendChild(x);
+          bag.appendChild(el);
+        });
+      }
+
+      function add(raw) {
+        const v = (raw || '').trim();
+        if (!v) return;
+        const lower = v.toLowerCase();
+        if (chips.some(c => c.toLowerCase() === lower)) return;
+        chips.push(v);
+        sync();
+      }
+
+      entry.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ',') {
+          e.preventDefault();
+          add(entry.value);
+          entry.value = '';
+        } else if (e.key === 'Backspace' && entry.value === '' && chips.length) {
+          chips.pop();
+          sync();
+        }
+      });
+      entry.addEventListener('blur', () => {
+        if (entry.value.trim()) {
+          add(entry.value);
+          entry.value = '';
+        }
+      });
+      // Click anywhere on the shell focuses the entry — feels like one big input.
+      root.addEventListener('click', e => {
+        if (e.target === root || e.target === bag) entry.focus();
+      });
+      // Clear is-invalid state once the user adds a chip.
+      root.addEventListener('input', () => root.classList.remove('is-invalid'));
+
+      render();
+    }
+    document.querySelectorAll('[data-chip-input]').forEach(init);
+  })();
+
+  // ── Band toggles ───────────────────────────────────────
+  (function () {
+    document.querySelectorAll('.band-chip input[type="checkbox"]').forEach(input => {
+      const sync = () => input.closest('.band-chip').classList.toggle('is-on', input.checked);
+      input.addEventListener('change', sync);
+    });
+  })();
+</script>
+{% endblock %}

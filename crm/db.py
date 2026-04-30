@@ -166,10 +166,21 @@ def relative_time(dt: datetime) -> str:
 
 # ── Clients page (Step 4) ────────────────────────────────────────────
 def list_clients() -> list[dict]:
-    """All clients with embedded 7-day metrics + change vs prior 7d."""
+    """All clients with embedded 7-day metrics + operational state.
+
+    Operational signals (US-019) — used to render a contextual third column
+    instead of retainer / pricing tier:
+      pending_today      — emails queued for today
+      last_lead_added    — most recent lead.created_at (any lead, lifetime)
+      outreach_paused    — campaign-level kill switch
+      target_locations   — preserved to render under the client name as a
+                           "is targeting still right?" sanity check
+      targeting_empty    — derived: true if industries OR locations is null/[]
+    """
     sql = """
         select
           c.id, c.name, c.industry, c.contact_name, c.contact_email,
+          c.target_industries, c.target_locations, c.outreach_paused,
           c.monthly_fee, c.pricing_tier, c.status, c.created_at, c.onboarded_at,
           (select count(*) from crm.leads l
              where l.client_id = c.id and l.created_at >= now() - interval '7 days')          as leads_7d,
@@ -189,13 +200,19 @@ def list_clients() -> list[dict]:
           (select count(*) from crm.emails e
              where e.client_id = c.id and e.replied_at is not null
                                       and e.replied_at >= now() - interval '14 days'
-                                      and e.replied_at <  now() - interval '7 days')         as replied_7d_prev
+                                      and e.replied_at <  now() - interval '7 days')         as replied_7d_prev,
+          (select count(*) from crm.emails e
+             where e.client_id = c.id and e.status = 'scheduled'
+                                      and e.scheduled_at::date = current_date)               as pending_today,
+          (select max(l.created_at) from crm.leads l
+             where l.client_id = c.id)                                                       as last_lead_added
         from crm.clients c
-        order by
-          case c.status when 'active' then 0 when 'paused' then 1 else 2 end,
-          c.created_at desc
     """
+    # Note: ORDER BY is applied in Python after op_state is computed below,
+    # so the surface-problems-first sort can use the derived state directly
+    # without redoing the same logic in SQL.
     rows = fetch_all(sql)
+    now  = datetime.now(timezone.utc)
     for r in rows:
         sent       = r.get('sent_7d', 0) or 0
         replied    = r.get('replied_7d', 0) or 0
@@ -207,6 +224,65 @@ def list_clients() -> list[dict]:
         r['leads_7d_delta']   = (r.get('leads_7d') or 0) - (r.get('leads_7d_prev') or 0)
         since_dt              = r.get('onboarded_at') or r.get('created_at')
         r['since']            = since_dt.strftime('%b %Y') if since_dt else ''
+
+        # Operational state for the contextual third column.
+        industries = r.get('target_industries') or []
+        locations  = r.get('target_locations')  or []
+        r['targeting_empty'] = not industries or not locations
+        # Show first 2 locations on the meta line; UI handles the "+N more".
+        r['locations_preview'] = locations[:2] if isinstance(locations, list) else []
+        r['locations_extra']   = max(0, (len(locations) - 2)) if isinstance(locations, list) else 0
+
+        last = r.get('last_lead_added')
+        if last is not None:
+            secs = max(0, int((now - last).total_seconds()))
+            r['last_find_relative'] = (
+                f'{secs // 3600}h ago' if secs >= 3600
+                else f'{max(1, secs // 60)}m ago' if secs >= 60
+                else 'just now'
+            )
+            r['last_find_days'] = secs // 86400
+        else:
+            r['last_find_relative'] = None
+            r['last_find_days']     = None
+
+        # Single derived state slug — drives both the third-column copy and
+        # the left-border colour. Order matters: more-specific first.
+        created_at = r.get('created_at')
+        age_secs   = int((now - created_at).total_seconds()) if created_at else 0
+        if r['targeting_empty']:
+            state = 'needs_targeting'
+        elif r.get('outreach_paused'):
+            state = 'paused'
+        elif age_secs < 86400 and (r.get('leads_7d') or 0) == 0:
+            state = 'just_added'
+        elif r['last_find_days'] is not None and r['last_find_days'] >= 7:
+            state = 'stale'
+        else:
+            state = 'healthy'
+        r['op_state'] = state
+
+    # Surface problems first, healthy last — the whole point of the
+    # left-border colour-coding is wasted if you have to scan past 12
+    # green rows to find the one amber. Ordering rules:
+    #   1. Lifecycle status — active above paused above churned
+    #   2. Within active: needs_targeting > paused > stale > just_added > healthy
+    #   3. Within state: most-stale or most-recently-created first
+    op_priority = {
+        'needs_targeting': 0,
+        'paused':          1,
+        'stale':           2,
+        'just_added':      3,
+        'healthy':         4,
+    }
+    lifecycle_priority = {'active': 0, 'paused': 1, 'churned': 2}
+    rows.sort(key=lambda r: (
+        lifecycle_priority.get(r.get('status'), 9),
+        op_priority.get(r.get('op_state'), 9),
+        # Most-stale first within stale; newest first for everything else.
+        -(r.get('last_find_days') or 0) if r.get('op_state') == 'stale'
+            else -((r.get('created_at').timestamp()) if r.get('created_at') else 0),
+    ))
     return rows
 
 
@@ -744,6 +820,109 @@ def outreach_clients_panel() -> list[dict]:
         order by c.name
     """
     return fetch_all(sql)
+
+
+EMPLOYEE_BANDS = ('1-10', '11-50', '51-200', '200+')
+
+
+def clients_for_finder() -> list[dict]:
+    """Picker rows for the Find new leads modal (US-018).
+    Returns one row per non-churned client with:
+      id, name, last_find_relative, last_lead_count_label, targeting_empty.
+    Disabled rows (targeting_empty == True) render as a Set-targeting CTA
+    instead of a checkable row.
+    """
+    sql = """
+        select
+          c.id, c.name, c.target_industries, c.target_locations,
+          (select max(l.created_at) from crm.leads l
+             where l.client_id = c.id)                         as last_lead_added,
+          (select count(*)         from crm.leads l
+             where l.client_id = c.id
+               and l.created_at >= now() - interval '7 days')  as leads_7d
+        from crm.clients c
+        where c.status != 'churned'
+        order by c.name
+    """
+    rows = fetch_all(sql)
+    now = datetime.now(timezone.utc)
+    for r in rows:
+        industries = r.get('target_industries') or []
+        locations  = r.get('target_locations')  or []
+        r['targeting_empty'] = not industries or not locations
+        last = r.get('last_lead_added')
+        if last is not None:
+            secs = max(0, int((now - last).total_seconds()))
+            r['last_find_relative'] = (
+                f'{secs // 86400}d ago' if secs >= 86400
+                else f'{secs // 3600}h ago' if secs >= 3600
+                else f'{max(1, secs // 60)}m ago' if secs >= 60
+                else 'just now'
+            )
+        else:
+            r['last_find_relative'] = 'never'
+        r['last_lead_count_label'] = (
+            f"{r.get('leads_7d', 0)} found · 7d" if r.get('leads_7d')
+            else 'no leads yet'
+        )
+    return rows
+
+
+def create_client(
+    *,
+    name: str,
+    industry: str | None,
+    contact_name: str | None,
+    contact_email: str | None,
+    target_industries: list[str],
+    target_locations: list[str],
+    targeting_filters: dict,
+) -> int:
+    """Insert a new client + targeting profile, return the new id.
+
+    Status is fixed to 'active' so the client appears immediately on the
+    Clients roster (US-019 surfaces fresh clients via the 'just_added'
+    op_state when leads_7d == 0). The schema CHECK constraint only allows
+    ('active','paused','churned') — there is no 'onboarding' status.
+
+    Raises psycopg.errors.UniqueViolation if `name` already exists.
+    Caller translates that to an inline form error.
+    """
+    import json
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                insert into crm.clients
+                  (name, industry, contact_name, contact_email,
+                   target_industries, target_locations, targeting_filters,
+                   status, onboarded_at)
+                values (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb,
+                        'active', now())
+                returning id
+                """,
+                (
+                    name,
+                    industry or None,
+                    contact_name or None,
+                    contact_email or None,
+                    json.dumps(target_industries),
+                    json.dumps(target_locations),
+                    json.dumps(targeting_filters),
+                ),
+            )
+            new_id = cur.fetchone()['id']
+            cur.execute(
+                "insert into crm.activity_log (client_id, action, detail)"
+                " values (%s, 'client_created', %s)",
+                (
+                    new_id,
+                    f"{name} — added with {len(target_industries)} "
+                    f"industry/industries, {len(target_locations)} location(s)",
+                ),
+            )
+        conn.commit()
+    return new_id
 
 
 def set_client_outreach_paused(client_id: int, paused: bool) -> dict:

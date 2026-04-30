@@ -2,14 +2,15 @@
 {% block title %}Outreach · Innovite CRM{% endblock %}
 
 {% block content %}
+{% include "_find_leads_modal.html" %}
 <div class="page-head">
   <div>
     <h1 class="page-title">Outreach</h1>
     <p class="page-sub">Email queue, sends, follow-ups, and bounces.</p>
   </div>
   <div class="page-actions">
-    <button class="btn" disabled title="Available once Step 7 backend lands">
-      <span class="btn-icon">⟳</span> Run pipeline
+    <button class="btn" type="button" data-find-leads-trigger>
+      <span class="btn-icon">⟳</span> Find new leads
     </button>
   </div>
 </div>

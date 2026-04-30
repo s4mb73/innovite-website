@@ -8,6 +8,7 @@ import io
 import os
 import time
 from flask import Flask, Response, abort, flash, redirect, render_template, request, session, url_for
+from psycopg import errors as psycopg_errors
 
 import db
 
@@ -29,10 +30,12 @@ def overview():
     chart_labels: list[str] = []
     chart_values: list[int] = []
     activity: list[dict] = []
+    finder_clients: list[dict] = []
     try:
         metrics = db.dashboard_metrics()
         chart_labels, chart_values = db.leads_per_day(7)
         activity = db.recent_activity(20)
+        finder_clients = db.clients_for_finder()
     except Exception as e:
         # Don't 500 the page on a DB blip — render the empty state with a banner.
         db_error = str(e).splitlines()[0][:240]
@@ -43,6 +46,7 @@ def overview():
         chart_labels=chart_labels,
         chart_values=chart_values,
         activity=activity,
+        finder_clients=finder_clients,
         db_error=db_error,
     )
 
@@ -56,6 +60,116 @@ def clients():
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
     return render_template('clients.html', active='clients', clients=rows, db_error=db_error)
+
+
+def _split_chips(raw: str) -> list[str]:
+    """Chip inputs serialise as comma-joined strings. Split, strip, dedupe
+    while preserving order. Used for target_industries, target_locations,
+    and the exclusion_list on the new-client form."""
+    if not raw:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for piece in raw.split(','):
+        v = piece.strip()
+        if v and v.lower() not in seen:
+            seen.add(v.lower())
+            out.append(v)
+    return out
+
+
+@app.route('/clients/new', methods=['GET', 'POST'])
+def client_new():
+    """New-client form (US-017). GET renders empty; POST validates,
+    inserts, and redirects to the new client's detail page on success.
+    Validation errors re-render the form with the entered data preserved
+    and inline messages on the affected fields."""
+    if request.method == 'GET':
+        return render_template(
+            'client_new.html',
+            active='clients',
+            employee_bands=db.EMPLOYEE_BANDS,
+            form={'active_filing_only': True},  # Default checkbox ON
+            errors={},
+        )
+
+    form_in = {
+        'name':               (request.form.get('name')          or '').strip(),
+        'industry':           (request.form.get('industry')      or '').strip(),
+        'contact_name':       (request.form.get('contact_name')  or '').strip(),
+        'contact_email':      (request.form.get('contact_email') or '').strip(),
+        'target_industries':  (request.form.get('target_industries') or '').strip(),
+        'target_locations':   (request.form.get('target_locations')  or '').strip(),
+        'min_company_age':    (request.form.get('min_company_age')   or '').strip(),
+        'employee_bands':     request.form.getlist('employee_bands'),
+        'active_filing_only': _truthy_form('active_filing_only'),
+        'exclusion_list':     (request.form.get('exclusion_list') or '').strip(),
+    }
+    industries = _split_chips(form_in['target_industries'])
+    locations  = _split_chips(form_in['target_locations'])
+    exclusions = _split_chips(form_in['exclusion_list'])
+    age_raw    = form_in['min_company_age']
+    age        = int(age_raw) if age_raw.isdigit() else None
+    bands      = [b for b in form_in['employee_bands'] if b in db.EMPLOYEE_BANDS]
+
+    errors: dict[str, str] = {}
+    if not form_in['name']:
+        errors['name'] = 'Name is required.'
+    if not industries:
+        errors['target_industries'] = 'Add at least one target industry.'
+    if not locations:
+        errors['target_locations'] = 'Add at least one target location.'
+    if form_in['contact_email'] and '@' not in form_in['contact_email']:
+        errors['contact_email'] = "That doesn't look like an email address."
+    if age is not None and (age < 0 or age > 200):
+        errors['min_company_age'] = 'Pick a value between 0 and 200.'
+
+    if errors:
+        return render_template(
+            'client_new.html',
+            active='clients',
+            employee_bands=db.EMPLOYEE_BANDS,
+            form=form_in,
+            errors=errors,
+        ), 400
+
+    targeting_filters = {
+        'min_company_age_years': age,
+        'employee_bands':        bands,
+        'active_filing_only':    form_in['active_filing_only'],
+        'exclusion_list':        exclusions,
+    }
+    try:
+        new_id = db.create_client(
+            name=form_in['name'],
+            industry=form_in['industry'],
+            contact_name=form_in['contact_name'],
+            contact_email=form_in['contact_email'],
+            target_industries=industries,
+            target_locations=locations,
+            targeting_filters=targeting_filters,
+        )
+    except psycopg_errors.UniqueViolation:
+        errors['name'] = 'A client with this name already exists.'
+        return render_template(
+            'client_new.html',
+            active='clients',
+            employee_bands=db.EMPLOYEE_BANDS,
+            form=form_in,
+            errors=errors,
+        ), 400
+    except Exception as e:
+        flash(f'Could not create client: {e}', 'error')
+        return render_template(
+            'client_new.html',
+            active='clients',
+            employee_bands=db.EMPLOYEE_BANDS,
+            form=form_in,
+            errors=errors,
+        ), 500
+
+    flash(f"{form_in['name']} added. Run Find new leads when you're ready.", 'success')
+    return redirect(url_for('client_detail', client_id=new_id))
 
 
 @app.route('/clients/<int:client_id>')
@@ -316,6 +430,7 @@ def outreach():
     counts = {k: 0 for k in db.OUTREACH_TABS}
     clients_panel: list[dict] = []
     clients_min: list[dict] = []
+    finder_clients: list[dict] = []
     rows: list[dict] = []
 
     try:
@@ -323,6 +438,7 @@ def outreach():
         counts        = db.outreach_tab_counts(client_id=client_id)
         clients_panel = db.outreach_clients_panel()
         clients_min   = db.all_clients_min()
+        finder_clients= db.clients_for_finder()
         if   tab == 'today':     rows = db.outreach_today(client_id, search)
         elif tab == 'sent':      rows = db.outreach_sent(client_id, search)
         elif tab == 'followups': rows = db.outreach_followups(client_id, search)
@@ -338,6 +454,7 @@ def outreach():
         counts=counts,
         clients_panel=clients_panel,
         clients_min=clients_min,
+        finder_clients=finder_clients,
         rows=rows,
         f={'client_id': client_id, 'search': search},
         db_error=db_error,

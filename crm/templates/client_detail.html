@@ -25,6 +25,7 @@
       {% if client.industry %}{{ client.industry }}{% else %}—{% endif %}
       {% if client.since %} · since {{ client.since }}{% endif %}
       {% if client.contact_name %} · {{ client.contact_name }}{% endif %}
+      {% if client.contact_email %} · <a class="meta-mail" href="mailto:{{ client.contact_email }}">{{ client.contact_email }}</a>{% endif %}
       <span class="meta-status status-{{ client.status }}">
         <span class="status-dot" aria-hidden="true"></span>{{ client.status|capitalize }}
       </span>
@@ -32,7 +33,7 @@
   </div>
   <div class="page-actions">
     <button class="btn" disabled title="Available from Step 7">
-      <span class="btn-icon">⟳</span> Run pipeline
+      <span class="btn-icon">⟳</span> Find new leads
     </button>
     <button class="btn" disabled title="Available from Step 9">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"

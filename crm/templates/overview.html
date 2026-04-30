@@ -6,6 +6,7 @@
 {% endblock %}
 
 {% block content %}
+{% include "_find_leads_modal.html" %}
 {% if db_error %}
 <div class="banner banner-err">
   <strong>Database unavailable.</strong> Showing zeroes — the page will recover automatically once the connection is back.
@@ -19,10 +20,10 @@
     <p class="page-sub">High-level state of every client's pipeline.</p>
   </div>
   <div class="page-actions">
-    <button class="btn" disabled title="Available from Step 7">
-      <span class="btn-icon">⟳</span> Run pipeline
+    <button class="btn" type="button" data-find-leads-trigger>
+      <span class="btn-icon">⟳</span> Find new leads
     </button>
-    <button class="btn btn-primary">+ New client</button>
+    <a class="btn btn-primary" href="{{ url_for('client_new') }}">+ New client</a>
   </div>
 </div>
 

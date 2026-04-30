@@ -132,7 +132,19 @@ mock_client = {'id': 1, 'name': 'ROCA', 'industry': 'Pro services',
                'since': 'Jan 2026',
                # ↓ fields list_clients() decorates each row with
                'leads_7d': 5, 'leads_7d_delta': 2,
-               'reply_rate': 12.4, 'reply_rate_delta': 1.8}
+               'reply_rate': 12.4, 'reply_rate_delta': 1.8,
+               # ↓ operational state added in US-019
+               'target_industries': ['Construction', 'Property dev'],
+               'target_locations':  ['Manchester', 'Leeds'],
+               'outreach_paused': False,
+               'pending_today': 3,
+               'last_lead_added': now(),
+               'targeting_empty': False,
+               'locations_preview': ['Manchester', 'Leeds'],
+               'locations_extra': 0,
+               'last_find_relative': '14h ago',
+               'last_find_days': 0,
+               'op_state': 'healthy'}
 mock_lead = {**{c: None for c in [
     'id','business_name','address','city','phone','email','website',
     'google_rating','google_review_count','google_maps_url',
@@ -158,9 +170,17 @@ mock_result = {'rows': [], 'total': 0,
                           'meeting':0,'won':0,'lost':0,'closed':0},
                'page':1,'pages':1,'page_size':50,'page_start':0,'page_end':0}
 
+mock_finder_client = {
+    'id': 1, 'name': 'ROCA Accountants',
+    'targeting_empty': False,
+    'last_find_relative': '14h ago',
+    'last_lead_count_label': '12 found · 7d',
+}
+
 renders = [
     ('overview.html',     {'active':'overview','metrics':mock_metrics,
                             'chart_labels':[],'chart_values':[],'activity':[],
+                            'finder_clients':[mock_finder_client],
                             'db_error':None}),
     ('clients.html',      {'active':'clients','clients':[mock_client],
                             'db_error':None}),
@@ -169,6 +189,10 @@ renders = [
                                      'reply_rate':12.4,'reply_rate_delta':0.5,
                                      'meetings_month':3,'meetings_month_delta':-1},
                             'leads':[],'db_error':None}),
+    ('client_new.html',   {'active':'clients',
+                            'employee_bands':('1-10','11-50','51-200','200+'),
+                            'form':{'active_filing_only': True},
+                            'errors':{}}),
     ('leads.html',        {'active':'leads','result':mock_result,
                             'clients_min':[{'id':1,'name':'ROCA'}],
                             'f':{'status':None,'client_id':None,'search':None,
@@ -182,6 +206,7 @@ renders = [
                                     'reply_rate':0.0,'bounce_rate':0.0},
                             'counts':{'today':0,'sent':0,'followups':0,'bounces':0},
                             'clients_panel':[],'clients_min':[{'id':1,'name':'ROCA'}],
+                            'finder_clients':[mock_finder_client],
                             'rows':[],'f':{'client_id':None,'search':None},
                             'db_error':None}),
 ]

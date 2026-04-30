@@ -5,17 +5,17 @@
 <div class="page-head">
   <div>
     <h1 class="page-title">Clients</h1>
-    <p class="page-sub">Active client roster.</p>
+    <p class="page-sub">Active client roster — at a glance, who needs your attention today.</p>
   </div>
   <div class="page-actions">
-    <button class="btn btn-primary" disabled title="Onboarding flow ships next">
+    <a class="btn btn-primary" href="{{ url_for('client_new') }}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
         <line x1="12" y1="5" x2="12" y2="19"/>
         <line x1="5" y1="12" x2="19" y2="12"/>
       </svg>
       Add client
-    </button>
+    </a>
   </div>
 </div>
 
@@ -30,7 +30,7 @@
 <div class="client-list" role="list">
   {% for c in clients %}
     <a href="{{ url_for('client_detail', client_id=c.id) }}"
-       class="client-row is-{{ c.status }}"
+       class="client-row is-{{ c.status }} op-{{ c.op_state }}"
        role="listitem">
       <div class="client-row-head">
         <div class="client-row-name">{{ c.name }}</div>
@@ -42,7 +42,9 @@
       <div class="client-row-meta">
         {% if c.industry %}{{ c.industry }}{% else %}—{% endif %}
         {% if c.since %} · since {{ c.since }}{% endif %}
-        {% if c.contact_name %} · {{ c.contact_name }}{% endif %}
+        {% if c.locations_preview %}
+           · {{ c.locations_preview|join(', ') }}{% if c.locations_extra %} +{{ c.locations_extra }}{% endif %}
+        {% endif %}
       </div>
 
       <div class="client-row-divider" aria-hidden="true"></div>
@@ -68,13 +70,31 @@
           </div>
         </div>
 
-        <div class="cstat cstat-fee">
-          <div class="cstat-v">
-            {% if c.monthly_fee %}£{{ '{:,.0f}'.format(c.monthly_fee) }}<span class="cstat-mo">/mo</span>
-            {% else %}—{% endif %}
-          </div>
-          <div class="cstat-l">retainer</div>
-          <div class="cstat-d flat">{{ c.pricing_tier or '' }}</div>
+        {# ── Contextual third column — replaces retainer (US-019) ─── #}
+        <div class="cstat cstat-op cstat-op-{{ c.op_state }}">
+          {% if c.op_state == 'needs_targeting' %}
+            <div class="cstat-v cstat-v-tag">Needs setup</div>
+            <div class="cstat-l">targeting incomplete</div>
+            <div class="cstat-d cstat-d-link">Set targeting →</div>
+          {% elif c.op_state == 'paused' %}
+            <div class="cstat-v cstat-v-tag">Paused</div>
+            <div class="cstat-l">outbound on hold</div>
+            <div class="cstat-d flat">resume from outreach</div>
+          {% elif c.op_state == 'just_added' %}
+            <div class="cstat-v cstat-v-tag">Just added</div>
+            <div class="cstat-l">no leads yet</div>
+            <div class="cstat-d cstat-d-link">Find new leads →</div>
+          {% elif c.op_state == 'stale' %}
+            <div class="cstat-v cstat-v-tag">Stale · {{ c.last_find_days }}d</div>
+            <div class="cstat-l">no new leads recently</div>
+            <div class="cstat-d cstat-d-link">Find new leads →</div>
+          {% else %}{# healthy #}
+            <div class="cstat-v">{{ c.pending_today or 0 }}</div>
+            <div class="cstat-l">pending today</div>
+            <div class="cstat-d flat">
+              {% if c.last_find_relative %}last find {{ c.last_find_relative }}{% else %}no finds yet{% endif %}
+            </div>
+          {% endif %}
         </div>
       </div>
     </a>
