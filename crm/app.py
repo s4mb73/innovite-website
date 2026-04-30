@@ -342,7 +342,69 @@ def outreach_toggle_pause(client_id: int):
 
 @app.route('/inbound')
 def inbound():
-    return render_template('inbound.html', active='inbound')
+    db_error = None
+    tab    = (request.args.get('tab')   or 'all').lower()
+    if tab not in db.INBOUND_TABS:
+        tab = 'all'
+    score  = (request.args.get('score') or '').lower() or None
+    if score not in db.INBOUND_SCORES:
+        score = None
+    search = (request.args.get('q') or '').strip() or None
+
+    kpis = {'new_7d': 0, 'new_7d_delta': 0, 'hot_count': 0, 'hot_pct': 0,
+            'avg_response': '—', 'avg_response_s': 0, 'book_rate': 0.0}
+    counts = {k: 0 for k in db.INBOUND_TABS}
+    needs_response: list[dict] = []
+    rows: list[dict] = []
+
+    try:
+        kpis           = db.inbound_kpis()
+        counts         = db.inbound_tab_counts()
+        needs_response = db.inbound_needs_response()
+        rows           = db.inbound_list(tab=tab, score=score, search=search)
+    except Exception as e:
+        db_error = str(e).splitlines()[0][:240]
+
+    return render_template(
+        'inbound.html',
+        active='inbound',
+        tab=tab,
+        kpis=kpis,
+        counts=counts,
+        needs_response=needs_response,
+        rows=rows,
+        f={'score': score, 'search': search},
+        db_error=db_error,
+    )
+
+
+@app.get('/inbound/<int:inbound_id>.json')
+def inbound_detail_json(inbound_id: int):
+    """JSON used by the slide-out drawer on the inbound page."""
+    row = db.inbound_get(inbound_id)
+    if not row:
+        return {'error': 'not_found'}, 404
+    # ISO-format datetimes for JSON
+    out = {**row}
+    for k in ('created_at', 'auto_response_sent_at'):
+        v = out.get(k)
+        if v is not None:
+            out[k] = v.isoformat()
+    return out
+
+
+@app.post('/inbound/<int:inbound_id>/status')
+def inbound_set_status(inbound_id: int):
+    new_status = (request.form.get('status') or '').strip().lower()
+    try:
+        result = db.update_inbound_status(inbound_id, new_status)
+    except ValueError:
+        return {'ok': False, 'error': 'invalid_status'}, 400
+    except LookupError:
+        return {'ok': False, 'error': 'not_found'}, 404
+    except Exception as e:
+        return {'ok': False, 'error': str(e)[:200]}, 500
+    return {'ok': True, **result}
 
 
 @app.route('/reports')

@@ -860,3 +860,502 @@ def leads_for_csv(
          where {' and '.join(where)}
          order by l.created_at desc
     """, params)
+
+
+# ── Inbound (Step 8) ─────────────────────────────────────────────────
+# Pipeline state model:
+#   score   ∈ {hot, warm, cold}             — qualifier verdict from form
+#   status  ∈ {new, contacted, called,      — manual triage state
+#              proposal, won, lost}
+# Tab mapping (UI → SQL):
+#   all       → no filter
+#   hot       → score = 'hot'
+#   new       → status = 'new'
+#   progress  → status in (contacted, called, proposal)
+#   closed    → status in (won, lost)
+
+INBOUND_TABS         = ('all', 'hot', 'new', 'progress', 'closed')
+INBOUND_SCORES       = ('hot', 'warm', 'cold')
+INBOUND_STATUSES     = ('new', 'contacted', 'called', 'proposal', 'won', 'lost')
+INBOUND_STATUS_LABEL = {
+    'new':       'New',
+    'contacted': 'Contacted',
+    'called':    'Booked',
+    'proposal':  'Proposal',
+    'won':       'Won',
+    'lost':      'Lost',
+}
+# Statuses that count as "in motion" (not new, not closed)
+INBOUND_PROGRESS_STATUSES = ('contacted', 'called', 'proposal')
+INBOUND_CLOSED_STATUSES   = ('won', 'lost')
+
+
+def _inbound_local_fixture() -> list[dict]:
+    """Mirror of migrations/0004 — used when DATABASE_URL is unset so the
+    POC localhost demo renders without a Supabase connection. Order
+    matters: row #1 is the most recent, #14 the oldest. The seed SQL
+    inserts the same set in the same order with `now() - interval`,
+    so the production page (with the migration applied) renders the
+    same content with real timestamps.
+    """
+    now  = datetime.now(timezone.utc)
+    h    = lambda hours:   now - _td(hours=hours)
+    d    = lambda days:    now - _td(days=days)
+    return [
+        # ── Hot ──
+        dict(id=1,  name='Marcus Webb',    company='Webb & Co Solicitors',
+             email='marcus.webb@webbco.uk',     phone='+44 20 7946 0312',
+             industry='Legal services',         deal_value='£5-10k',
+             current_method='Word of mouth and a referral partner — ad hoc, no system.',
+             clients_wanted='4-6 a month',
+             score='hot',  status='new',
+             auto_response_sent=True,  auto_response_sent_at=h(3) + _td(seconds=11),
+             notes='[demo] Read ROCA case study before submitting.',
+             created_at=h(3)),
+        dict(id=2,  name='Sarah Patel',    company='Verde Strategy',
+             email='sarah@verde-strategy.co.uk', phone='+44 161 408 2210',
+             industry='Strategy consulting',     deal_value='£2-5k',
+             current_method='LinkedIn outbound by hand, ~30 messages a week, low conversion.',
+             clients_wanted='3 a month',
+             score='hot',  status='new',
+             auto_response_sent=True,  auto_response_sent_at=h(5) + _td(seconds=14),
+             notes='[demo]',
+             created_at=h(5)),
+        dict(id=3,  name='David Kim',      company='Kim Architects',
+             email='david@kimarch.co.uk',       phone='+44 117 902 4456',
+             industry='Architecture',            deal_value='£2-5k',
+             current_method='Cold calls + Architects Journal directory listings.',
+             clients_wanted='2 a month',
+             score='hot',  status='contacted',
+             auto_response_sent=True,  auto_response_sent_at=h(18) + _td(seconds=9),
+             notes='[demo] Replied with a meeting request — booking pending.',
+             created_at=h(18)),
+        dict(id=4,  name='Olivia Bennett', company='Bennett & Cole Accountants',
+             email='olivia@bennettcole.co.uk',  phone='+44 113 555 8821',
+             industry='Accountancy',             deal_value='£2-5k',
+             current_method='Referrals plus paid Google ads — CPL is climbing.',
+             clients_wanted='5 a month',
+             score='hot',  status='called',
+             auto_response_sent=True,  auto_response_sent_at=d(2) + _td(seconds=13),
+             notes='[demo] Discovery call done — fits ROCA mould.',
+             created_at=d(2)),
+        # ── Warm ──
+        dict(id=5,  name='Rachel Hughes',  company='Hughes Recruitment',
+             email='rachel@hughesrecruit.co.uk', phone='+44 151 408 7733',
+             industry='Recruitment',             deal_value='£2-5k',
+             current_method='LinkedIn Recruiter + cold email on Apollo.',
+             clients_wanted='6-8 a month',
+             score='warm', status='proposal',
+             auto_response_sent=True,  auto_response_sent_at=d(6) + _td(seconds=10),
+             notes='[demo] Proposal sent — chasing for sign-off this week.',
+             created_at=d(6)),
+        dict(id=6,  name='James Whitfield',company='Whitfield Wealth Advisors',
+             email='james@whitfieldwealth.co.uk',phone='+44 131 558 4490',
+             industry='Financial advisory',      deal_value='£5-10k',
+             current_method='Print ads in The Scotsman + a quarterly seminar.',
+             clients_wanted='2 a month',
+             score='warm', status='won',
+             auto_response_sent=True,  auto_response_sent_at=d(12) + _td(seconds=17),
+             notes='[demo] Signed £3.5k retainer — Sammy is lead.',
+             created_at=d(12)),
+        dict(id=7,  name="Daniel O'Brien", company="O'Brien & Murphy LLP",
+             email='daniel@obrienmurphy.co.uk', phone='+44 20 7100 5544',
+             industry='Legal services',          deal_value='£5-10k',
+             current_method='Repeat clients only — zero outbound.',
+             clients_wanted='3 a month',
+             score='warm', status='contacted',
+             auto_response_sent=True,  auto_response_sent_at=d(3) + _td(seconds=12),
+             notes='[demo] Sent the legal-vertical case study.',
+             created_at=d(3)),
+        dict(id=8,  name='Hannah Wright',  company='Wright Bookkeeping',
+             email='hannah@wrightbooks.co.uk',  phone='+44 29 2055 1190',
+             industry='Accountancy / bookkeeping', deal_value='£1-2k',
+             current_method='Yell + Facebook page, mostly local search.',
+             clients_wanted='3 a month',
+             score='warm', status='new',
+             auto_response_sent=True,  auto_response_sent_at=h(9) + _td(seconds=15),
+             notes='[demo]',
+             created_at=h(9)),
+        dict(id=9,  name='Liam Foster',    company='Foster Marketing',
+             email='liam@fostermarketing.co.uk',phone='+44 114 282 9905',
+             industry='Marketing agency',        deal_value='£2-5k',
+             current_method='Inbound from existing portfolio + LinkedIn content.',
+             clients_wanted='4 a month',
+             score='warm', status='contacted',
+             auto_response_sent=True,  auto_response_sent_at=d(4) + _td(seconds=8),
+             notes='[demo] Slightly cautious — competitor in our stack.',
+             created_at=d(4)),
+        dict(id=10, name='Charlotte Reed', company='Reed & Park Insurance Brokers',
+             email='charlotte@reedpark.co.uk',  phone='+44 161 408 2188',
+             industry='Insurance brokerage',     deal_value='£5-10k',
+             current_method='Networking + a paid SEO retainer.',
+             clients_wanted='5 a month',
+             score='warm', status='called',
+             auto_response_sent=True,  auto_response_sent_at=d(5) + _td(seconds=11),
+             notes='[demo] Discovery call done — sending proposal Monday.',
+             created_at=d(5)),
+        dict(id=11, name='Amara Okonkwo',  company='Okonkwo Cardiology',
+             email='amara@okonkwocardio.co.uk', phone='+44 20 7946 8842',
+             industry='Private healthcare',      deal_value='£5-10k',
+             current_method='GP referrals + a small Google Ads budget.',
+             clients_wanted='2-3 a month',
+             score='warm', status='new',
+             auto_response_sent=True,  auto_response_sent_at=h(11) + _td(seconds=12),
+             notes='[demo]',
+             created_at=h(11)),
+        # ── Cold ──
+        dict(id=12, name='Tom Davies',     company='Solo IT',
+             email='tom@soloit.uk',             phone='+44 121 555 0099',
+             industry='IT support (1-person)',   deal_value='<£1k',
+             current_method='Word of mouth — looking for £500/mo packages.',
+             clients_wanted='1 a month',
+             score='cold', status='lost',
+             auto_response_sent=True,  auto_response_sent_at=d(8) + _td(seconds=14),
+             notes='[demo] DQ — budget below floor.',
+             created_at=d(8)),
+        dict(id=13, name='Priya Nair',     company='Nair Design Studio',
+             email='priya@nairdesign.co.uk',    phone='+44 20 7946 1133',
+             industry='Design agency',           deal_value='£1-2k',
+             current_method='Behance + Dribbble + referrals.',
+             clients_wanted='2 a month',
+             score='cold', status='lost',
+             auto_response_sent=False, auto_response_sent_at=None,
+             notes='[demo] DQ — wrong segment, no auto-reply triggered.',
+             created_at=d(14)),
+        dict(id=14, name='Ben Holloway',   company='Holloway Construction',
+             email='ben@hollowayconstruct.uk', phone='+44 191 408 5566',
+             industry='Construction',            deal_value='£2-5k',
+             current_method='Trade press + tender platforms.',
+             clients_wanted='1 a month',
+             score='cold', status='new',
+             auto_response_sent=False, auto_response_sent_at=None,
+             notes='[demo] No auto-reply triggered — qualifier flagged segment.',
+             created_at=h(6)),
+    ]
+
+
+# datetime helpers used only by the fixture above
+from datetime import timedelta as _td
+
+
+def _inbound_use_fixture() -> bool:
+    """True when no DATABASE_URL — POC local demo uses in-memory rows."""
+    return not DATABASE_URL
+
+
+def _inbound_decorate(row: dict) -> dict:
+    """Add UI-derived fields to an inbound row in place: relative time,
+    short timestamp, status label, auto-reply preview, why-this-grade."""
+    if not row:
+        return row
+    created = row.get('created_at')
+    if created:
+        row['relative']      = relative_time(created)
+        row['created_short'] = created.strftime('%-d %b · %H:%M')
+    else:
+        row['relative'] = '—'
+        row['created_short'] = '—'
+    row['status_label']    = INBOUND_STATUS_LABEL.get(row.get('status') or '', '—')
+    auto_at = row.get('auto_response_sent_at')
+    if auto_at and created:
+        delta_s = max(0, int((auto_at - created).total_seconds()))
+        row['auto_reply_lag'] = f'{delta_s}s after submission'
+    else:
+        row['auto_reply_lag'] = ''
+    return row
+
+
+def _inbound_compose_auto_reply(row: dict) -> str:
+    """Synthesize the AI auto-reply preview shown in the drawer.
+    Real production replies come from the marketing site's Anthropic
+    call (see api/submit.js); here we render a faithful template so
+    the demo reads like the real thing without round-tripping the API."""
+    first = (row.get('name') or '').split(' ', 1)[0] or 'there'
+    deal  = row.get('deal_value') or 'the range you mentioned'
+    return (
+        f"Hi {first}, thanks for the detail — really useful context.\n\n"
+        f"Based on what you've shared (currently: {row.get('current_method') or 'your existing approach'}), "
+        f"and a target of {row.get('clients_wanted') or 'a steady pipeline'}, I think we can help. "
+        f"Our system runs three pillars in parallel — outbound, content, and paid — "
+        f"so the pipeline isn't dependent on any one channel.\n\n"
+        f"For the {deal} range, the closest live engagement is ROCA (3× pipeline in 60 days). "
+        f"I'd suggest a 25-min call this week to walk through how we'd shape it for "
+        f"{row.get('company') or 'your business'}. Calendar link below — pick what works.\n\n"
+        f"— Sammy"
+    )
+
+
+def _inbound_why_grade(row: dict) -> list[str]:
+    """One-line bullets explaining the score, shown in the drawer."""
+    score   = row.get('score')
+    deal    = row.get('deal_value') or '—'
+    method  = row.get('current_method') or '—'
+    wanted  = row.get('clients_wanted') or '—'
+    sector  = row.get('industry') or '—'
+    head = {
+        'hot':  'Hot — high-intent, in-bracket budget, qualified sector',
+        'warm': 'Warm — solid fit but lower urgency or smaller deal',
+        'cold': 'Cold — segment or budget below qualification floor',
+    }.get(score or '', 'Unscored')
+    return [
+        head,
+        f'Deal range: {deal}',
+        f'Sector: {sector}',
+        f'Currently: {method}',
+        f'Target volume: {wanted}',
+    ]
+
+
+def _inbound_filter_tab(rows: list[dict], tab: str) -> list[dict]:
+    if tab == 'hot':
+        return [r for r in rows if r.get('score') == 'hot']
+    if tab == 'new':
+        return [r for r in rows if r.get('status') == 'new']
+    if tab == 'progress':
+        return [r for r in rows if r.get('status') in INBOUND_PROGRESS_STATUSES]
+    if tab == 'closed':
+        return [r for r in rows if r.get('status') in INBOUND_CLOSED_STATUSES]
+    return list(rows)
+
+
+def _inbound_filter_extras(rows: list[dict], score: str | None,
+                           search: str | None) -> list[dict]:
+    out = rows
+    if score in INBOUND_SCORES:
+        out = [r for r in out if r.get('score') == score]
+    if search:
+        q = search.lower()
+        out = [r for r in out
+               if q in (r.get('name') or '').lower()
+               or q in (r.get('company') or '').lower()]
+    return out
+
+
+def inbound_kpis() -> dict:
+    """Four headline numbers for the Inbound page."""
+    if _inbound_use_fixture():
+        rows = _inbound_local_fixture()
+        now  = datetime.now(timezone.utc)
+        new_7d  = sum(1 for r in rows if (now - r['created_at']).days < 7)
+        new_prev = sum(1 for r in rows if 7 <= (now - r['created_at']).days < 14)
+        hot_7d  = sum(1 for r in rows if r['score'] == 'hot'
+                                       and (now - r['created_at']).days < 7)
+        # Avg first-response = auto_response lag in seconds (POC proxy)
+        lags = [(r['auto_response_sent_at'] - r['created_at']).total_seconds()
+                for r in rows
+                if r.get('auto_response_sent') and r.get('auto_response_sent_at')]
+        avg_lag_s = int(sum(lags) / len(lags)) if lags else 0
+        # Book rate = (status in called/proposal/won) / total — last 30d
+        last_30 = [r for r in rows if (now - r['created_at']).days < 30]
+        booked  = sum(1 for r in last_30
+                      if r['status'] in ('called', 'proposal', 'won'))
+        book_rate = round(booked / len(last_30) * 100, 1) if last_30 else 0.0
+        return {
+            'new_7d':         new_7d,
+            'new_7d_delta':   new_7d - new_prev,
+            'hot_count':      hot_7d,
+            'hot_pct':        round(hot_7d / new_7d * 100) if new_7d else 0,
+            'avg_response':   _format_response_lag(avg_lag_s),
+            'avg_response_s': avg_lag_s,
+            'book_rate':      book_rate,
+        }
+
+    sql = """
+        select
+          (select count(*) from crm.inbound_leads
+             where created_at >= now() - interval '7 days')                     as new_7d,
+          (select count(*) from crm.inbound_leads
+             where created_at >= now() - interval '14 days'
+               and created_at <  now() - interval '7 days')                     as new_prev,
+          (select count(*) from crm.inbound_leads
+             where score = 'hot' and created_at >= now() - interval '7 days')   as hot_7d,
+          coalesce((select extract(epoch from avg(auto_response_sent_at - created_at))
+             from crm.inbound_leads
+             where auto_response_sent is true
+               and auto_response_sent_at is not null), 0)                       as avg_lag_s,
+          (select count(*) from crm.inbound_leads
+             where status in ('called','proposal','won')
+               and created_at >= now() - interval '30 days')                    as booked_30,
+          (select count(*) from crm.inbound_leads
+             where created_at >= now() - interval '30 days')                    as total_30
+    """
+    r = fetch_one(sql) or {}
+    new_7d   = int(r.get('new_7d') or 0)
+    new_prev = int(r.get('new_prev') or 0)
+    hot_7d   = int(r.get('hot_7d') or 0)
+    booked   = int(r.get('booked_30') or 0)
+    total_30 = int(r.get('total_30') or 0)
+    avg_lag_s = int(r.get('avg_lag_s') or 0)
+    return {
+        'new_7d':         new_7d,
+        'new_7d_delta':   new_7d - new_prev,
+        'hot_count':      hot_7d,
+        'hot_pct':        round(hot_7d / new_7d * 100) if new_7d else 0,
+        'avg_response':   _format_response_lag(avg_lag_s),
+        'avg_response_s': avg_lag_s,
+        'book_rate':      round(booked / total_30 * 100, 1) if total_30 else 0.0,
+    }
+
+
+def _format_response_lag(seconds: int) -> str:
+    if seconds <= 0:    return '—'
+    if seconds < 60:    return f'{seconds}s'
+    if seconds < 3600:  return f'{seconds // 60}m {seconds % 60:02d}s'
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    return f'{h}h {m:02d}m'
+
+
+def inbound_tab_counts() -> dict:
+    """Counts per tab — drives the tab pills."""
+    if _inbound_use_fixture():
+        rows = _inbound_local_fixture()
+        return {
+            'all':      len(rows),
+            'hot':      sum(1 for r in rows if r['score']  == 'hot'),
+            'new':      sum(1 for r in rows if r['status'] == 'new'),
+            'progress': sum(1 for r in rows if r['status'] in INBOUND_PROGRESS_STATUSES),
+            'closed':   sum(1 for r in rows if r['status'] in INBOUND_CLOSED_STATUSES),
+        }
+    r = fetch_one("""
+        select
+          count(*)                                                       as all_count,
+          count(*) filter (where score = 'hot')                          as hot_count,
+          count(*) filter (where status = 'new')                         as new_count,
+          count(*) filter (where status in ('contacted','called','proposal'))
+                                                                         as progress_count,
+          count(*) filter (where status in ('won','lost'))               as closed_count
+        from crm.inbound_leads
+    """) or {}
+    return {
+        'all':      int(r.get('all_count')      or 0),
+        'hot':      int(r.get('hot_count')      or 0),
+        'new':      int(r.get('new_count')      or 0),
+        'progress': int(r.get('progress_count') or 0),
+        'closed':   int(r.get('closed_count')   or 0),
+    }
+
+
+def inbound_needs_response(limit: int = 5) -> list[dict]:
+    """Hot/warm submissions still in 'new' — the priority strip."""
+    if _inbound_use_fixture():
+        rows = [r for r in _inbound_local_fixture()
+                if r['status'] == 'new' and r['score'] in ('hot', 'warm')]
+        rows.sort(key=lambda r: ({'hot': 0, 'warm': 1}.get(r['score'], 2),
+                                 r['created_at']))
+        return [_inbound_decorate(dict(r)) for r in rows[:limit]]
+    rows = fetch_all("""
+        select id, name, company, score, status, deal_value, created_at,
+               auto_response_sent, auto_response_sent_at
+          from crm.inbound_leads
+         where status = 'new' and score in ('hot', 'warm')
+         order by case score when 'hot' then 0 when 'warm' then 1 else 2 end,
+                  created_at asc
+         limit %(lim)s
+    """, {'lim': limit})
+    return [_inbound_decorate(r) for r in rows]
+
+
+def inbound_list(*, tab: str = 'all', score: str | None = None,
+                 search: str | None = None, limit: int = 200) -> list[dict]:
+    """Main inbound table query — filtered by tab + facet filters."""
+    if tab not in INBOUND_TABS:
+        tab = 'all'
+    if _inbound_use_fixture():
+        rows = _inbound_local_fixture()
+        rows = _inbound_filter_tab(rows, tab)
+        rows = _inbound_filter_extras(rows, score, search)
+        rows.sort(key=lambda r: r['created_at'], reverse=True)
+        return [_inbound_decorate(dict(r)) for r in rows[:limit]]
+
+    where: list[str] = ['1=1']
+    params: dict = {'lim': limit}
+    if tab == 'hot':
+        where.append("score = 'hot'")
+    elif tab == 'new':
+        where.append("status = 'new'")
+    elif tab == 'progress':
+        where.append("status in ('contacted','called','proposal')")
+    elif tab == 'closed':
+        where.append("status in ('won','lost')")
+    if score in INBOUND_SCORES:
+        where.append('score = %(score)s'); params['score'] = score
+    if search:
+        where.append('(name ilike %(q)s or company ilike %(q)s)')
+        params['q'] = f'%{search}%'
+    rows = fetch_all(f"""
+        select id, name, company, email, phone, industry, deal_value,
+               current_method, clients_wanted,
+               score, status, auto_response_sent, auto_response_sent_at,
+               notes, created_at
+          from crm.inbound_leads
+         where {' and '.join(where)}
+         order by created_at desc
+         limit %(lim)s
+    """, params)
+    return [_inbound_decorate(r) for r in rows]
+
+
+def inbound_get(inbound_id: int) -> dict | None:
+    """One inbound lead with derived fields (auto-reply preview + why-grade)."""
+    if _inbound_use_fixture():
+        match = next((r for r in _inbound_local_fixture()
+                      if r['id'] == inbound_id), None)
+        if not match:
+            return None
+        row = dict(match)
+    else:
+        row = fetch_one("""
+            select id, name, company, email, phone, industry, deal_value,
+                   current_method, clients_wanted,
+                   score, status, auto_response_sent, auto_response_sent_at,
+                   notes, created_at
+              from crm.inbound_leads
+             where id = %s
+        """, (inbound_id,))
+        if not row:
+            return None
+    _inbound_decorate(row)
+    row['auto_reply_text'] = _inbound_compose_auto_reply(row)
+    row['why_grade']       = _inbound_why_grade(row)
+    return row
+
+
+def update_inbound_status(inbound_id: int, new_status: str) -> dict:
+    """Change one inbound lead's status. Returns {old, new, name} or raises."""
+    if new_status not in INBOUND_STATUSES:
+        raise ValueError(f'Invalid status: {new_status}')
+    if _inbound_use_fixture():
+        # No persistence in fixture mode — just echo the requested change so
+        # the UI can confirm the action visually. Production hits the DB.
+        row = next((r for r in _inbound_local_fixture()
+                    if r['id'] == inbound_id), None)
+        if not row:
+            raise LookupError(f'No inbound lead {inbound_id}')
+        return {'old': row['status'], 'new': new_status,
+                'name': row['name'], 'persisted': False}
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                'select id, name, status from crm.inbound_leads where id = %s',
+                (inbound_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise LookupError(f'No inbound lead {inbound_id}')
+            old = row['status']
+            if old == new_status:
+                return {'old': old, 'new': new_status,
+                        'name': row['name'], 'persisted': False}
+            cur.execute(
+                'update crm.inbound_leads set status = %s where id = %s',
+                (new_status, inbound_id),
+            )
+            cur.execute(
+                'insert into crm.activity_log (action, detail) values (%s, %s)',
+                ('inbound_status_change',
+                 f"{row['name']} — inbound status {old} → {new_status}"),
+            )
+        conn.commit()
+    return {'old': old, 'new': new_status,
+            'name': row['name'], 'persisted': True}

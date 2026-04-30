@@ -1,7 +1,411 @@
 {% extends "base.html" %}
 {% block title %}Inbound · Innovite CRM{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Inbound</h1>
-<p class="page-sub">innovite.io form submissions, scored and tracked.</p>
-<div class="placeholder"><strong>Inbound</strong> arrives in Step 8.</div>
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Inbound</h1>
+    <p class="page-sub">Form submissions from innoviteai.com — scored, triaged, replied.</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn" disabled title="Available once Step 8 backend lands">
+      <span class="btn-icon">⇣</span> Export CSV
+    </button>
+  </div>
+</div>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong>
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{# ── KPIs ─────────────────────────────────────────────── #}
+{% set k = kpis %}
+<div class="metrics">
+  <div class="metric">
+    <div class="metric-label">New · 7d</div>
+    <div class="metric-value">{{ k.new_7d }}</div>
+    <div class="metric-change {% if k.new_7d_delta > 0 %}up{% elif k.new_7d_delta < 0 %}down{% else %}flat{% endif %}">
+      {% if k.new_7d_delta > 0 %}+{{ k.new_7d_delta }}{% elif k.new_7d_delta < 0 %}{{ k.new_7d_delta }}{% else %}±0{% endif %} vs prev 7d
+    </div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Hot</div>
+    <div class="metric-value">{{ k.hot_count }}</div>
+    <div class="metric-change flat">{{ k.hot_pct }}% of new · 7d</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Avg time-to-response</div>
+    <div class="metric-value">{{ k.avg_response }}</div>
+    <div class="metric-change flat">AI auto-reply latency</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Book rate · 30d</div>
+    <div class="metric-value">{{ k.book_rate }}%</div>
+    <div class="metric-change flat">submissions reaching call</div>
+  </div>
+</div>
+
+{# ── Needs response ─────────────────────────────────── #}
+<div class="send-panel">
+  <div class="send-panel-head">
+    <div class="card-title" style="margin-bottom:0;">Needs your response</div>
+    <div class="send-panel-hint">
+      {% if needs_response %}
+        {{ needs_response|length }} hot/warm submission{{ '' if needs_response|length == 1 else 's' }} still in &lsquo;new&rsquo;.
+      {% else %}
+        All current submissions have been triaged.
+      {% endif %}
+    </div>
+  </div>
+  {% if needs_response %}
+    <div class="send-rows">
+      {% for r in needs_response %}
+        <button type="button"
+                class="send-row inbound-priority-row"
+                data-inbound-id="{{ r.id }}">
+          <div class="send-row-status">
+            <span class="score-pill score-{{ r.score }}">
+              {{ 'Hot' if r.score=='hot' else ('Warm' if r.score=='warm' else 'Cold') }}
+            </span>
+          </div>
+          <div class="send-row-name">
+            {{ r.name }}
+            <span class="send-row-co">· {{ r.company or '—' }}</span>
+          </div>
+          <div class="send-row-meta">
+            <span class="send-num">{{ r.deal_value or '—' }}</span>
+            <span class="send-sep">·</span>
+            <span>{{ r.relative }}</span>
+          </div>
+          <div class="send-row-action">
+            <span class="row-chevron" aria-hidden="true">→</span>
+          </div>
+        </button>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-sm">Nothing waiting.</div>
+  {% endif %}
+</div>
+
+{# ── Tabs ─────────────────────────────────────────────── #}
+{% set qs = request.args.to_dict() %}
+{% set _ = qs.pop('tab', None) %}
+{% set tabs = [
+  ('all',      'All',         counts.all),
+  ('hot',      'Hot',         counts.hot),
+  ('new',      'New',         counts.new),
+  ('progress', 'In progress', counts.progress),
+  ('closed',   'Closed',      counts.closed),
+] %}
+<div class="tabbar" role="tablist" aria-label="Inbound view">
+  {% for slug, label, count in tabs %}
+    {% set this_qs = qs.copy() %}
+    {% set _ = this_qs.update({'tab': slug}) %}
+    <a class="tab {% if tab == slug %}is-active{% endif %}"
+       href="{{ url_for('inbound', **this_qs) }}"
+       role="tab"
+       aria-selected="{{ 'true' if tab == slug else 'false' }}">
+      {{ label }} <span class="tab-count">{{ count }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+{# ── Filter row ──────────────────────────────────────── #}
+<form class="leads-toolbar" method="get" action="{{ url_for('inbound') }}">
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <select class="filter-select" name="score" onchange="this.form.submit()">
+    <option value="">All scores</option>
+    <option value="hot"  {% if f.score=='hot'  %}selected{% endif %}>Hot</option>
+    <option value="warm" {% if f.score=='warm' %}selected{% endif %}>Warm</option>
+    <option value="cold" {% if f.score=='cold' %}selected{% endif %}>Cold</option>
+  </select>
+
+  <label class="search-wrap">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"/>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input type="search" name="q" placeholder="Search name or company…"
+           value="{{ f.search or '' }}" autocomplete="off" data-debounce-search>
+  </label>
+</form>
+
+{# ── Table ──────────────────────────────────────────── #}
+{% if rows %}
+<div class="leads-table-wrap">
+  <table class="leads-table inbound-table" aria-label="Inbound · {{ tab }}">
+    <thead>
+      <tr>
+        <th class="col-score">Score</th>
+        <th>Contact</th>
+        <th class="col-co">Company</th>
+        <th class="col-deal">Deal</th>
+        <th class="col-industry">Industry</th>
+        <th class="col-status">Status</th>
+        <th class="col-when">Submitted</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+        <tr class="lead-tr inbound-tr" data-inbound-id="{{ r.id }}" tabindex="0">
+          <td class="col-score">
+            <span class="score-pill score-{{ r.score }}">
+              {{ 'Hot' if r.score=='hot' else ('Warm' if r.score=='warm' else 'Cold') }}
+            </span>
+          </td>
+          <td><span class="lead-name-link">{{ r.name }}</span></td>
+          <td class="col-co">{{ r.company or '—' }}</td>
+          <td class="col-deal">{{ r.deal_value or '—' }}</td>
+          <td class="col-industry">{{ r.industry or '—' }}</td>
+          <td class="col-status">
+            <span class="status-pill status-{{ r.status }}">{{ r.status_label }}</span>
+            {% if r.auto_response_sent %}
+              <span class="auto-flag" title="AI auto-reply sent">↺</span>
+            {% endif %}
+          </td>
+          <td class="col-when" title="{{ r.created_at.isoformat() if r.created_at else '' }}">
+            <span class="when-rel">{{ r.relative }}</span>
+            <span class="when-abs">{{ r.created_short }}</span>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+  <div class="empty">
+    {% if f.search or f.score %}
+      No matches for the current filters.
+      <a href="{{ url_for('inbound', tab=tab) }}" class="card-link">Clear filters →</a>
+    {% else %}
+      No submissions yet — this populates the moment a prospect submits the contact form on innoviteai.com.
+    {% endif %}
+  </div>
+{% endif %}
+
+{# ── Drawer (hidden by default) ────────────────────── #}
+<div class="drawer-overlay" id="inboundDrawerOverlay" hidden></div>
+<aside class="drawer" id="inboundDrawer" hidden aria-labelledby="drawerTitle" role="dialog" aria-modal="false">
+  <div class="drawer-head">
+    <div class="drawer-head-titles">
+      <div class="drawer-eyebrow"><span id="drawerScorePill" class="score-pill score-warm">—</span></div>
+      <h2 class="drawer-title" id="drawerTitle">—</h2>
+      <div class="drawer-sub" id="drawerCompany">—</div>
+    </div>
+    <button class="drawer-close" id="drawerCloseBtn" aria-label="Close drawer">×</button>
+  </div>
+
+  <div class="drawer-body" id="drawerBody">
+    <section class="drawer-section">
+      <div class="drawer-section-label">Contact</div>
+      <dl class="drawer-dl">
+        <div><dt>Email</dt><dd id="drawerEmail">—</dd></div>
+        <div><dt>Phone</dt><dd id="drawerPhone">—</dd></div>
+        <div><dt>Submitted</dt><dd id="drawerWhen">—</dd></div>
+        <div><dt>Industry</dt><dd id="drawerIndustry">—</dd></div>
+        <div><dt>Deal range</dt><dd id="drawerDeal">—</dd></div>
+        <div><dt>Target volume</dt><dd id="drawerTarget">—</dd></div>
+      </dl>
+    </section>
+
+    <section class="drawer-section">
+      <div class="drawer-section-label">Their current process</div>
+      <p class="drawer-quote" id="drawerMethod">—</p>
+    </section>
+
+    <section class="drawer-section drawer-section--grade">
+      <div class="drawer-section-label">Why this score</div>
+      <ul class="drawer-grade-list" id="drawerWhyGrade"></ul>
+    </section>
+
+    <section class="drawer-section drawer-section--reply" id="drawerReplySection">
+      <div class="drawer-section-label">
+        AI auto-reply
+        <span class="drawer-pill drawer-pill--ok" id="drawerReplyMeta">sent</span>
+      </div>
+      <pre class="drawer-reply" id="drawerReplyText">—</pre>
+    </section>
+  </div>
+
+  <div class="drawer-foot">
+    <div class="drawer-actions">
+      <button type="button" class="btn btn-quiet" data-action="contacted">Mark contacted</button>
+      <button type="button" class="btn btn-quiet" data-action="called">Booked</button>
+      <button type="button" class="btn btn-quiet" data-action="lost">Disqualify</button>
+    </div>
+    <a class="card-link" id="drawerOpenFull" href="#">Open full lead →</a>
+  </div>
+</aside>
+
+{# ── Flash messages ───────────────────────────────── #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-stack" aria-live="polite">
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<script>
+  // Debounced search — submit form after 250ms (matches outreach/leads)
+  (function () {
+    const input = document.querySelector('[data-debounce-search]');
+    if (!input) return;
+    let t;
+    input.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => input.form.submit(), 250);
+    });
+  })();
+
+  // ── Drawer ───────────────────────────────────────
+  (function () {
+    const drawer  = document.getElementById('inboundDrawer');
+    const overlay = document.getElementById('inboundDrawerOverlay');
+    if (!drawer) return;
+
+    const els = {
+      title:    document.getElementById('drawerTitle'),
+      company:  document.getElementById('drawerCompany'),
+      score:    document.getElementById('drawerScorePill'),
+      email:    document.getElementById('drawerEmail'),
+      phone:    document.getElementById('drawerPhone'),
+      when:     document.getElementById('drawerWhen'),
+      industry: document.getElementById('drawerIndustry'),
+      deal:     document.getElementById('drawerDeal'),
+      target:   document.getElementById('drawerTarget'),
+      method:   document.getElementById('drawerMethod'),
+      whyGrade: document.getElementById('drawerWhyGrade'),
+      replySec: document.getElementById('drawerReplySection'),
+      replyMeta:document.getElementById('drawerReplyMeta'),
+      replyTxt: document.getElementById('drawerReplyText'),
+      openFull: document.getElementById('drawerOpenFull'),
+      closeBtn: document.getElementById('drawerCloseBtn'),
+    };
+
+    let currentId = null;
+    let lastTrigger = null;
+
+    const SCORE_LABEL = { hot: 'Hot', warm: 'Warm', cold: 'Cold' };
+
+    function open(id, trigger) {
+      currentId   = id;
+      lastTrigger = trigger || null;
+      fetch(`/inbound/${id}.json`, {headers: {'Accept': 'application/json'}})
+        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then(populate)
+        .catch(err => console.error('drawer fetch failed', err));
+      drawer.hidden  = false;
+      overlay.hidden = false;
+      requestAnimationFrame(() => {
+        drawer.classList.add('is-open');
+        overlay.classList.add('is-open');
+      });
+      els.closeBtn.focus({preventScroll: true});
+    }
+
+    function close() {
+      drawer.classList.remove('is-open');
+      overlay.classList.remove('is-open');
+      setTimeout(() => { drawer.hidden = true; overlay.hidden = true; }, 220);
+      if (lastTrigger) lastTrigger.focus({preventScroll: true});
+      currentId = null;
+    }
+
+    function populate(d) {
+      els.title.textContent    = d.name || '—';
+      els.company.textContent  = (d.company || '') +
+        (d.industry ? ' · ' + d.industry : '');
+      els.score.textContent    = SCORE_LABEL[d.score] || '—';
+      els.score.className      = 'score-pill score-' + (d.score || 'warm');
+      els.email.textContent    = d.email || '—';
+      els.phone.textContent    = d.phone || '—';
+      els.when.textContent     = (d.created_short || '—') +
+        (d.relative ? ' · ' + d.relative : '');
+      els.industry.textContent = d.industry || '—';
+      els.deal.textContent     = d.deal_value || '—';
+      els.target.textContent   = d.clients_wanted || '—';
+      els.method.textContent   = d.current_method || '—';
+      els.whyGrade.innerHTML   = '';
+      (d.why_grade || []).forEach(line => {
+        const li = document.createElement('li');
+        li.textContent = line;
+        els.whyGrade.appendChild(li);
+      });
+      if (d.auto_response_sent) {
+        els.replySec.hidden = false;
+        els.replyMeta.textContent = 'sent ' + (d.auto_reply_lag || '');
+        els.replyMeta.className   = 'drawer-pill drawer-pill--ok';
+        els.replyTxt.textContent  = d.auto_reply_text || '';
+      } else {
+        els.replySec.hidden = false;
+        els.replyMeta.textContent = 'not triggered';
+        els.replyMeta.className   = 'drawer-pill drawer-pill--muted';
+        els.replyTxt.textContent  = 'Auto-reply was suppressed by the qualifier — manual follow-up only.';
+      }
+      // Open-full link aims at the leads detail page using ?inbound=<id>
+      // for now (Step 8 doesn't have a dedicated detail page yet).
+      els.openFull.setAttribute('href', `/leads?inbound=${d.id}`);
+    }
+
+    function setStatus(action) {
+      if (!currentId) return;
+      const fd = new FormData();
+      fd.append('status', action);
+      fetch(`/inbound/${currentId}/status`, {method: 'POST', body: fd})
+        .then(r => r.json())
+        .then(res => {
+          if (!res.ok) return;
+          // Update the row's status pill in the table
+          const row = document.querySelector(`.inbound-tr[data-inbound-id="${currentId}"]`);
+          if (row) {
+            const pill = row.querySelector('.status-pill');
+            if (pill) {
+              pill.className = 'status-pill status-' + res.new;
+              pill.textContent = ({
+                new: 'New', contacted: 'Contacted', called: 'Booked',
+                proposal: 'Proposal', won: 'Won', lost: 'Lost',
+              })[res.new] || res.new;
+            }
+          }
+          close();
+        });
+    }
+
+    // Wire up rows
+    document.querySelectorAll('.inbound-tr, .inbound-priority-row').forEach(el => {
+      el.addEventListener('click', e => {
+        const id = el.dataset.inboundId;
+        if (!id) return;
+        open(parseInt(id, 10), el);
+      });
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          const id = el.dataset.inboundId;
+          if (id) open(parseInt(id, 10), el);
+        }
+      });
+    });
+
+    // Action buttons
+    drawer.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', () => setStatus(btn.dataset.action));
+    });
+
+    // Close interactions
+    els.closeBtn.addEventListener('click', close);
+    overlay.addEventListener('click', close);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !drawer.hidden) close();
+    });
+  })();
+</script>
 {% endblock %}
