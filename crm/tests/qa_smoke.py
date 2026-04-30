@@ -7,7 +7,7 @@ import sys
 import traceback
 from pathlib import Path
 
-CRM = Path('/home/user/innovite-website/crm')
+CRM = Path(__file__).resolve().parent.parent
 results: list[tuple[str, str, str]] = []   # (suite, test, status_or_msg)
 
 
@@ -103,6 +103,7 @@ try:
         'outreach', 'inbound', 'reports', 'settings', 'healthz',
         'favicon', 'leads_csv', 'leads_bulk_status', 'leads_undo',
         'update_lead_status_route', 'update_lead_notes_route',
+        'outreach_toggle_pause',
     }
     actual = {r.endpoint for r in rules}
     missing = expected - actual
@@ -176,6 +177,13 @@ renders = [
     ('lead_detail.html',  {'active':'leads','lead':mock_lead,'timeline':[],
                             'activity':[],'statuses':['new','contacted','replied',
                                 'meeting','won','lost','closed'],'db_error':None}),
+    ('outreach.html',     {'active':'outreach','tab':'today',
+                            'kpis':{'pending_today':0,'sent_7d':0,
+                                    'reply_rate':0.0,'bounce_rate':0.0},
+                            'counts':{'today':0,'sent':0,'followups':0,'bounces':0},
+                            'clients_panel':[],'clients_min':[{'id':1,'name':'ROCA'}],
+                            'rows':[],'f':{'client_id':None,'search':None},
+                            'db_error':None}),
 ]
 
 if 'crm_app' in dir():
