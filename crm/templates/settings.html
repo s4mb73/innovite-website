@@ -1,7 +1,262 @@
 {% extends "base.html" %}
 {% block title %}Settings · Innovite CRM{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Settings</h1>
-<p class="page-sub">Email config, system status, API keys.</p>
-<div class="placeholder"><strong>Settings</strong> arrives in Step 10.</div>
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Settings</h1>
+    <p class="page-sub">System configuration and integrations.</p>
+  </div>
+</div>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong>
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{# Flash banner — pinned at top of cards stack so saves are obvious #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="settings-flash" aria-live="polite">
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<div class="settings-stack">
+
+  {# ── Profile ─────────────────────────────────── #}
+  <section class="card settings-card" id="profile">
+    <div class="settings-card-head">
+      <h2 class="settings-card-title">Profile</h2>
+      <p class="settings-card-sub">How you appear on outbound and reports.</p>
+    </div>
+    <form class="settings-form" method="post" action="{{ url_for('settings_save_profile') }}">
+      <div class="field-row">
+        <label for="profile-name">Name</label>
+        <input type="text" id="profile-name" name="name" value="{{ s.profile.name or '' }}" autocomplete="name">
+      </div>
+      <div class="field-row">
+        <label for="profile-email">Email</label>
+        <input type="email" id="profile-email" name="email" value="{{ s.profile.email or '' }}" autocomplete="email">
+      </div>
+      <div class="field-row">
+        <label for="profile-booking">Booking link</label>
+        <input type="url" id="profile-booking" name="booking_url" value="{{ s.profile.booking_url or '' }}" placeholder="https://cal.com/…">
+      </div>
+      <div class="field-row">
+        <label for="profile-sig">Email signature</label>
+        <input type="text" id="profile-sig" name="signature" value="{{ s.profile.signature or '' }}">
+      </div>
+      <div class="settings-form-foot">
+        <button type="submit" class="btn btn-primary">Save changes</button>
+      </div>
+    </form>
+  </section>
+
+  {# ── Sending email ─────────────────────────────── #}
+  <section class="card settings-card" id="email">
+    <div class="settings-card-head">
+      <h2 class="settings-card-title">Sending email · Zoho</h2>
+      <p class="settings-card-sub">Mailbox connection, daily cap, sending hours.</p>
+    </div>
+
+    <div class="settings-readonly">
+      <div class="readonly-row">
+        <span class="readonly-label">SMTP host</span>
+        <span class="readonly-value">{{ s.sending_email.smtp_host }} : {{ s.sending_email.smtp_port }}</span>
+        <span class="status-tag state-healthy"><span class="status-dot"></span> Connected</span>
+      </div>
+      <div class="readonly-row">
+        <span class="readonly-label">IMAP host</span>
+        <span class="readonly-value">{{ s.sending_email.imap_host }} : {{ s.sending_email.imap_port }}</span>
+        <span class="status-tag state-healthy"><span class="status-dot"></span> Connected</span>
+      </div>
+      <div class="readonly-row">
+        <span class="readonly-label">From address</span>
+        <span class="readonly-value">{{ s.sending_email.from_address }}</span>
+        <span class="status-tag state-muted">verified</span>
+      </div>
+    </div>
+
+    <form class="settings-form" method="post" action="{{ url_for('settings_save_email') }}">
+      <div class="field-row">
+        <label for="cap">Daily send cap (per client)</label>
+        <input type="number" id="cap" name="daily_send_cap" min="0" max="2000" value="{{ s.daily_send_cap }}">
+      </div>
+      <div class="field-row field-row-split">
+        <label>Sending hours · Europe/London</label>
+        <div class="field-split">
+          <input type="time" name="hours_start" value="{{ s.sending_hours.start }}" aria-label="Start time">
+          <span class="field-split-sep">to</span>
+          <input type="time" name="hours_end"   value="{{ s.sending_hours.end }}"   aria-label="End time">
+        </div>
+      </div>
+      <div class="field-row field-row-checkbox">
+        <label class="checkbox">
+          <input type="checkbox" name="skip_weekends" {% if s.sending_hours.skip_weekends %}checked{% endif %}>
+          <span>Skip weekends</span>
+        </label>
+      </div>
+      <div class="settings-form-foot">
+        <button type="submit" class="btn btn-primary">Save sending settings</button>
+        <button type="button" class="btn btn-quiet" disabled title="Test once SMTP send lands">Send test email</button>
+      </div>
+    </form>
+  </section>
+
+  {# ── Cadence ──────────────────────────────────── #}
+  <section class="card settings-card" id="cadence">
+    <div class="settings-card-head">
+      <h2 class="settings-card-title">Sequence cadence</h2>
+      <p class="settings-card-sub">Default Innovite cadence: Day 1 → Day 3 → Day 7. Per-lead overrides live on the lead detail page.</p>
+    </div>
+
+    <div class="cadence-flow" aria-hidden="true">
+      <div class="cadence-step {% if s.cadence.day1_enabled %}is-on{% endif %}">
+        <span class="cadence-step-num">Day 1</span>
+        <span class="cadence-step-label">Initial</span>
+      </div>
+      <span class="cadence-arrow">→</span>
+      <div class="cadence-step {% if s.cadence.day3_enabled %}is-on{% endif %}">
+        <span class="cadence-step-num">Day 3</span>
+        <span class="cadence-step-label">First follow-up</span>
+      </div>
+      <span class="cadence-arrow">→</span>
+      <div class="cadence-step {% if s.cadence.day7_enabled %}is-on{% endif %}">
+        <span class="cadence-step-num">Day 7</span>
+        <span class="cadence-step-label">Final follow-up</span>
+      </div>
+    </div>
+
+    <form class="settings-form" method="post" action="{{ url_for('settings_save_cadence') }}">
+      <div class="field-row field-row-checkbox">
+        <label class="checkbox">
+          <input type="checkbox" name="day1_enabled" {% if s.cadence.day1_enabled %}checked{% endif %}>
+          <span>Day 1 send</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" name="day3_enabled" {% if s.cadence.day3_enabled %}checked{% endif %}>
+          <span>Day 3 follow-up</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" name="day7_enabled" {% if s.cadence.day7_enabled %}checked{% endif %}>
+          <span>Day 7 follow-up</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" name="cadence_skip_weekends" {% if s.cadence.skip_weekends %}checked{% endif %}>
+          <span>Skip weekends</span>
+        </label>
+      </div>
+      <div class="settings-form-foot">
+        <button type="submit" class="btn btn-primary">Save cadence</button>
+      </div>
+    </form>
+  </section>
+
+  {# ── Integrations ─────────────────────────────── #}
+  <section class="card settings-card" id="integrations">
+    <div class="settings-card-head">
+      <h2 class="settings-card-title">Integrations &amp; API keys</h2>
+      <p class="settings-card-sub">Keys are read from environment variables. Masked here — last four characters only.</p>
+    </div>
+
+    <div class="integrations">
+      {% for it in integrations %}
+        <div class="integration-row">
+          <div class="integration-label">{{ it.label }}</div>
+          <div class="integration-host">{{ it.host }}</div>
+          <div class="integration-key" title="{{ it.detail }}">{{ it.masked }}</div>
+          <div class="integration-status">
+            <span class="status-tag state-{{ it.state }}">
+              <span class="status-dot"></span>
+              {% if it.state == 'healthy' %}Active
+              {% elif it.state == 'idle' %}Idle
+              {% elif it.state == 'down' %}Down
+              {% else %}{{ it.state|capitalize }}{% endif %}
+            </span>
+          </div>
+          <div class="integration-action">
+            {% if it.env_name %}
+              <button type="button" class="btn btn-quiet" disabled title="Rotation lands with the secrets manager">Rotate</button>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ── System status ──────────────────────────── #}
+  <section class="card settings-card" id="system">
+    <div class="settings-card-head">
+      <h2 class="settings-card-title">System status</h2>
+      <p class="settings-card-sub">Read-only — refreshes on page load.</p>
+    </div>
+    <div class="status-grid">
+      {% for label, key in [
+          ('Web service',      'web_service'),
+          ('Database',         'database'),
+          ('Background worker','worker'),
+          ('Email queue',      'email_queue'),
+          ('Build',            'build'),
+          ('App version',      'app_version'),
+        ] %}
+        {% set st = status.get(key) or {'state':'idle','detail':'—'} %}
+        <div class="status-row">
+          <div class="status-row-label">{{ label }}</div>
+          <div class="status-row-state">
+            <span class="status-tag state-{{ st.state }}">
+              <span class="status-dot"></span>
+              {% if st.state == 'healthy' %}OK
+              {% elif st.state == 'idle' %}Idle
+              {% elif st.state == 'warn' %}Warn
+              {% elif st.state == 'down' %}Down
+              {% else %}{{ st.state|capitalize }}{% endif %}
+            </span>
+          </div>
+          <div class="status-row-detail">{{ st.detail }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ── Danger zone ──────────────────────────────── #}
+  <section class="card settings-card danger-card" id="danger">
+    <div class="settings-card-head">
+      <h2 class="settings-card-title">Danger zone</h2>
+      <p class="settings-card-sub">Irreversible — confirm carefully.</p>
+    </div>
+
+    <div class="danger-row">
+      <div class="danger-row-text">
+        <div class="danger-row-title">Pause all outreach</div>
+        <div class="danger-row-sub">
+          Halts every client's outbound queue immediately. Reporting and inbound keep running.
+          {% if s.system_outreach_paused %}
+            <strong class="state-paused-tag">Currently paused.</strong>
+          {% endif %}
+        </div>
+      </div>
+      <form method="post" action="{{ url_for('settings_pause_all') }}">
+        <input type="hidden" name="paused" value="{{ 'false' if s.system_outreach_paused else 'true' }}">
+        <button type="submit" class="btn {% if s.system_outreach_paused %}btn-primary{% else %}btn-danger{% endif %}">
+          {% if s.system_outreach_paused %}Resume sends{% else %}Pause all sends{% endif %}
+        </button>
+      </form>
+    </div>
+
+    <div class="danger-row">
+      <div class="danger-row-text">
+        <div class="danger-row-title">Wipe demo seed data</div>
+        <div class="danger-row-sub">Drops all demo leads / emails / replies / inbound rows. Clients are kept. Coming soon.</div>
+      </div>
+      <button type="button" class="btn btn-quiet" disabled>Wipe demo data</button>
+    </div>
+  </section>
+
+</div>
 {% endblock %}

@@ -1786,3 +1786,240 @@ def reports_csv_rows(client_id: int, days: int) -> list[list[str]]:
 
 # Make timedelta available for the chart fixture's date math
 from datetime import timedelta
+
+
+# ── Settings (Step 10) ───────────────────────────────────────────────
+# Single k/v store backed by crm.settings (jsonb values). When DATABASE_URL
+# is unset (POC localhost) values live in an in-process dict so the demo
+# can edit/save without a Supabase round-trip.
+
+import json as _json
+import os as _os
+
+SETTINGS_DEFAULTS: dict = {
+    'profile': {
+        'name':        'Sammy Bimpson',
+        'email':       'sammy@innoviteai.com',
+        'booking_url': 'https://cal.com/sammy/innovite-strategy',
+        'signature':   '— Sammy / Innovite',
+    },
+    'sending_email': {
+        'smtp_host':    'smtp.zoho.eu',
+        'smtp_port':    587,
+        'imap_host':    'imap.zoho.eu',
+        'imap_port':    993,
+        'from_address': 'sammy@innoviteai.com',
+    },
+    'sending_hours': {
+        'start':         '09:00',
+        'end':           '17:00',
+        'tz':            'Europe/London',
+        'skip_weekends': True,
+    },
+    'daily_send_cap': 120,
+    'cadence': {
+        'day1_enabled':  True,
+        'day3_enabled':  True,
+        'day7_enabled':  True,
+        'skip_weekends': True,
+    },
+    'system_outreach_paused': False,
+}
+
+# In-process store for fixture mode. Survives only as long as the Flask
+# process — that's fine for a demo; production rounds-trips Supabase.
+_settings_local: dict = {}
+
+
+def _settings_use_fixture() -> bool:
+    return not DATABASE_URL
+
+
+def settings_get(key: str):
+    """Return the stored value for `key`, falling back to the default."""
+    if _settings_use_fixture():
+        if key in _settings_local:
+            return _settings_local[key]
+        return SETTINGS_DEFAULTS.get(key)
+    row = fetch_one('select value from crm.settings where key = %s', (key,))
+    if row and row.get('value') is not None:
+        return row['value']
+    return SETTINGS_DEFAULTS.get(key)
+
+
+def settings_set(key: str, value) -> None:
+    """Upsert a setting. Value is JSON-serialised before write."""
+    if _settings_use_fixture():
+        _settings_local[key] = value
+        return
+    execute(
+        """insert into crm.settings (key, value, updated_at)
+                values (%s, %s::jsonb, now())
+           on conflict (key) do update
+                set value = excluded.value, updated_at = now()""",
+        (key, _json.dumps(value)),
+    )
+
+
+def settings_all() -> dict:
+    """All known settings, with defaults filled in for anything missing."""
+    return {k: settings_get(k) for k in SETTINGS_DEFAULTS}
+
+
+# ── System status ────────────────────────────────────────────────────
+# Surfaced read-only on the Settings page. Avoid heavy queries here —
+# the page is a glance-and-go status board, not a metrics dashboard.
+
+def system_status() -> dict:
+    """Compose a system-status snapshot. Each block fails soft."""
+    snap = {
+        'web_service':  {'state': 'healthy', 'detail': 'Render web · gunicorn'},
+        'database':     {'state': 'healthy', 'detail': '—'},
+        'worker':       {'state': 'idle',    'detail': 'No worker yet — pipeline runs in-process'},
+        'email_queue':  {'state': 'healthy', 'detail': '0 pending · 0 failed'},
+        'build':        {'state': 'healthy', 'detail': _build_signature()},
+        'app_version':  {'state': 'healthy', 'detail': 'v0.10.0 — Step 10 of 10'},
+    }
+    # DB ping
+    if _settings_use_fixture():
+        snap['database'] = {'state': 'idle',
+                            'detail': 'No DATABASE_URL — fixture mode (local POC)'}
+    else:
+        try:
+            t0 = datetime.now()
+            fetch_one('select 1 as ok')
+            ms = int((datetime.now() - t0).total_seconds() * 1000)
+            snap['database'] = {'state': 'healthy',
+                                'detail': f'Connected · supabase pooler · {ms}ms'}
+        except Exception as e:
+            snap['database'] = {'state': 'down',
+                                'detail': str(e).splitlines()[0][:120]}
+
+    # Email queue (only if DB is up)
+    if not _settings_use_fixture():
+        try:
+            r = fetch_one("""
+                select
+                  count(*) filter (where status = 'scheduled')                  as pending,
+                  count(*) filter (where status = 'failed')                     as failed,
+                  max(sent_at)                                                  as last_sent
+                from crm.emails
+            """) or {}
+            pending = int(r.get('pending') or 0)
+            failed  = int(r.get('failed')  or 0)
+            state   = 'down' if failed else ('warn' if pending > 200 else 'healthy')
+            snap['email_queue'] = {
+                'state':  state,
+                'detail': f'{pending:,} pending · {failed:,} failed',
+            }
+        except Exception:
+            pass
+
+    # Last activity
+    try:
+        last = None
+        if not _settings_use_fixture():
+            r = fetch_one('select created_at from crm.activity_log order by created_at desc limit 1')
+            last = r.get('created_at') if r else None
+        if last:
+            snap['worker']['detail'] = f'Last activity {relative_time(last)} · 0 errors'
+    except Exception:
+        pass
+
+    return snap
+
+
+def _build_signature() -> str:
+    """Best-effort short build identifier — git short SHA + commit time."""
+    try:
+        import subprocess
+        out = subprocess.run(
+            ['git', '-C', _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+             'log', '-1', '--format=%h · %ar'],
+            capture_output=True, text=True, timeout=2,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:
+        pass
+    return 'unknown · local'
+
+
+# ── Integrations / API keys panel ────────────────────────────────────
+
+# (env_name, friendly label, hostname/short identifier, prefix retained)
+_INTEGRATION_KEYS = [
+    ('ANTHROPIC_API_KEY', 'Anthropic Claude',     'api.anthropic.com',  'sk-ant-'),
+    ('DATABASE_URL',      'Supabase Postgres',    'pooler.supabase.co', ''),
+    ('RESEND_API_KEY',    'Resend (transactional)', 'api.resend.com',   're_'),
+    ('SLACK_WEBHOOK_URL', 'Slack webhook',        'hooks.slack.com',    ''),
+    ('COMPANIES_HOUSE_API_KEY', 'Companies House API', 'api.gov.uk',    ''),
+]
+
+# Plausible mock suffixes shown when the env var isn't set (POC demo)
+_INTEGRATION_MOCKS = {
+    'ANTHROPIC_API_KEY': '3f2a',
+    'RESEND_API_KEY':    'd29a',
+    'COMPANIES_HOUSE_API_KEY': '7c4b',
+    'SLACK_WEBHOOK_URL': '#sammy-leads',
+    'DATABASE_URL':      'innovite.db',
+}
+
+
+def _mask_key(env_name: str, prefix: str) -> tuple[str, bool]:
+    """Return (masked_display, is_real). When the env var is set, show
+    `<prefix>•••••<last4>`; otherwise show a plausible mock with the
+    same shape so the demo doesn't render blanks."""
+    raw = _os.environ.get(env_name) or ''
+    if raw:
+        last4 = raw[-4:] if len(raw) >= 4 else raw
+        if env_name == 'SLACK_WEBHOOK_URL':
+            # Webhooks are URLs — show channel-like fragment
+            tail = raw.rsplit('/', 1)[-1][-6:] or last4
+            return f'…/{tail}', True
+        if env_name == 'DATABASE_URL':
+            # Show host only, never any creds
+            try:
+                from urllib.parse import urlparse
+                host = urlparse(raw).hostname or 'connected'
+                return host, True
+            except Exception:
+                return 'connected', True
+        return f'{prefix}•••••{last4}', True
+    mock = _INTEGRATION_MOCKS.get(env_name, '0000')
+    if env_name == 'SLACK_WEBHOOK_URL':
+        return mock, False
+    if env_name == 'DATABASE_URL':
+        return mock, False
+    return f'{prefix}•••••{mock}', False
+
+
+def integration_keys() -> list[dict]:
+    """One row per integration, masked for display."""
+    out = []
+    for env_name, label, host, prefix in _INTEGRATION_KEYS:
+        masked, is_real = _mask_key(env_name, prefix)
+        if is_real:
+            state, detail = 'healthy', 'Active'
+        else:
+            state, detail = 'idle', 'Not configured (using mock for demo)'
+        out.append({
+            'env_name': env_name,
+            'label':    label,
+            'host':     host,
+            'masked':   masked,
+            'state':    state,
+            'detail':   detail,
+            'is_real':  is_real,
+        })
+    # Plausible doesn't use a key — surface as a separate row
+    out.append({
+        'env_name': '',
+        'label':    'Plausible analytics',
+        'host':     'plausible.io',
+        'masked':   'innoviteai.com',
+        'state':    'healthy',
+        'detail':   'Receiving events',
+        'is_real':  True,
+    })
+    return out

@@ -515,7 +515,91 @@ def reports_csv():
 
 @app.route('/settings')
 def settings():
-    return render_template('settings.html', active='settings')
+    db_error = None
+    settings_data = {k: v for k, v in db.SETTINGS_DEFAULTS.items()}
+    integrations: list[dict] = []
+    status: dict = {}
+    try:
+        settings_data = db.settings_all()
+        integrations  = db.integration_keys()
+        status        = db.system_status()
+    except Exception as e:
+        db_error = str(e).splitlines()[0][:240]
+    return render_template(
+        'settings.html',
+        active='settings',
+        s=settings_data,
+        integrations=integrations,
+        status=status,
+        db_error=db_error,
+    )
+
+
+def _truthy_form(name: str) -> bool:
+    """Checkbox values arrive as 'on' or absent; coerce."""
+    v = (request.form.get(name) or '').strip().lower()
+    return v in ('on', '1', 'true', 'yes')
+
+
+@app.post('/settings/profile')
+def settings_save_profile():
+    try:
+        db.settings_set('profile', {
+            'name':        (request.form.get('name')        or '').strip(),
+            'email':       (request.form.get('email')       or '').strip(),
+            'booking_url': (request.form.get('booking_url') or '').strip(),
+            'signature':   (request.form.get('signature')   or '').strip(),
+        })
+        flash('Profile saved.', 'success')
+    except Exception as e:
+        flash(f'Could not save profile: {e}', 'error')
+    return redirect(url_for('settings') + '#profile')
+
+
+@app.post('/settings/email')
+def settings_save_email():
+    try:
+        # daily_send_cap and sending_hours are the two real persisted values.
+        cap_raw = (request.form.get('daily_send_cap') or '').strip()
+        cap     = int(cap_raw) if cap_raw.isdigit() else 120
+        db.settings_set('daily_send_cap', cap)
+        db.settings_set('sending_hours', {
+            'start':         (request.form.get('hours_start') or '09:00').strip(),
+            'end':           (request.form.get('hours_end')   or '17:00').strip(),
+            'tz':            'Europe/London',
+            'skip_weekends': _truthy_form('skip_weekends'),
+        })
+        flash('Sending settings saved.', 'success')
+    except Exception as e:
+        flash(f'Could not save sending settings: {e}', 'error')
+    return redirect(url_for('settings') + '#email')
+
+
+@app.post('/settings/cadence')
+def settings_save_cadence():
+    try:
+        db.settings_set('cadence', {
+            'day1_enabled':  _truthy_form('day1_enabled'),
+            'day3_enabled':  _truthy_form('day3_enabled'),
+            'day7_enabled':  _truthy_form('day7_enabled'),
+            'skip_weekends': _truthy_form('cadence_skip_weekends'),
+        })
+        flash('Cadence saved.', 'success')
+    except Exception as e:
+        flash(f'Could not save cadence: {e}', 'error')
+    return redirect(url_for('settings') + '#cadence')
+
+
+@app.post('/settings/pause-all')
+def settings_pause_all():
+    paused = (request.form.get('paused') or '').lower() == 'true'
+    try:
+        db.settings_set('system_outreach_paused', paused)
+        verb = 'paused globally' if paused else 'resumed'
+        flash(f'Outreach {verb}.', 'success')
+    except Exception as e:
+        flash(f'Could not update pause: {e}', 'error')
+    return redirect(url_for('settings') + '#danger')
 
 
 @app.route('/healthz')
