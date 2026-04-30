@@ -1314,6 +1314,151 @@ def _inbound_use_fixture() -> bool:
     return not DATABASE_URL
 
 
+# ── Inbox (Epic 9 / US-022) ───────────────────────────────────────────
+# One page that answers "did anything come back?" — unifies outbound
+# replies (crm.replies) and inbound form submissions (crm.inbound_leads)
+# into a single shape. Drafts tab is stubbed — AI auto-reply generation
+# is a separate story when the backend lands.
+INBOX_TABS = ('needs_you', 'drafts', 'done')
+
+
+def _inbox_snippet(text: str | None, limit: int = 140) -> str:
+    if not text:
+        return ''
+    s = ' '.join(text.split())
+    return s if len(s) <= limit else s[:limit - 1].rstrip() + '…'
+
+
+def _reply_to_inbox_item(r: dict) -> dict:
+    """Normalise a crm.replies + parent lead/client row into the inbox shape."""
+    sentiment = r.get('sentiment') or 'neutral'
+    return {
+        'kind':         'reply',
+        'id':           f"r:{r['id']}",
+        'href':         f"/leads/{r.get('lead_id')}",
+        'display_name': r.get('decision_maker_name') or r.get('business_name') or 'Unknown',
+        'company':      r.get('business_name') or '',
+        'subject':      r.get('subject') or '',
+        'snippet':      _inbox_snippet(r.get('body')),
+        'received_at':  r.get('detected_at'),
+        'relative':     relative_time(r['detected_at']) if r.get('detected_at') else '—',
+        'signal_label': sentiment.capitalize(),
+        'signal_class': sentiment,            # positive / neutral / negative
+        'client_name':  r.get('client_name') or '',
+        'lead_status':  r.get('lead_status') or '',
+    }
+
+
+def _form_to_inbox_item(r: dict) -> dict:
+    """Normalise a crm.inbound_leads row into the inbox shape."""
+    score = r.get('score') or 'cold'
+    msg   = r.get('current_method') or r.get('notes') or 'Form submission from innoviteai.com'
+    return {
+        'kind':         'form',
+        'id':           f"f:{r['id']}",
+        'href':         f"/inbox#form-{r['id']}",
+        'display_name': r.get('name') or 'Anonymous',
+        'company':      r.get('company') or '',
+        'subject':      'Submitted via innoviteai.com',
+        'snippet':      _inbox_snippet(msg),
+        'received_at':  r.get('created_at'),
+        'relative':     relative_time(r['created_at']) if r.get('created_at') else '—',
+        'signal_label': score.capitalize(),
+        'signal_class': score,                # hot / warm / cold
+        'client_name':  '',
+        'inbound_id':   r.get('id'),
+    }
+
+
+def inbox_tab_counts() -> dict:
+    """Counts for the three Inbox tabs. Drafts is always 0 in POC mode."""
+    counts = {'needs_you': 0, 'drafts': 0, 'done': 0}
+    if _inbound_use_fixture():
+        forms = _inbound_local_fixture()
+        counts['needs_you'] = sum(1 for r in forms if r.get('status') == 'new')
+        counts['done']      = sum(1 for r in forms if r.get('status') != 'new')
+        return counts
+    try:
+        rep = fetch_one("""
+            select
+              count(*) filter (where l.status = 'replied')                       as needs_you,
+              count(*) filter (where l.status in ('meeting','won','lost'))       as done
+              from crm.replies r
+              join crm.leads   l on l.id = r.lead_id
+        """) or {}
+        forms = fetch_one("""
+            select
+              count(*) filter (where status = 'new')                             as needs_you,
+              count(*) filter (where status in ('contacted','called','proposal','won','lost'))
+                                                                                  as done
+              from crm.inbound_leads
+        """) or {}
+        counts['needs_you'] = int(rep.get('needs_you') or 0) + int(forms.get('needs_you') or 0)
+        counts['done']      = int(rep.get('done')      or 0) + int(forms.get('done')      or 0)
+    except Exception:
+        # Schema gap during early POC — fall back to forms-only.
+        pass
+    return counts
+
+
+def inbox_items(*, tab: str = 'needs_you', limit: int = 200) -> list[dict]:
+    """Unified inbox: replies + form submissions. Drafts tab returns []
+    until AI auto-reply generation lands (Epic 9 follow-up)."""
+    if tab not in INBOX_TABS:
+        tab = 'needs_you'
+    if tab == 'drafts':
+        return []
+    if _inbound_use_fixture():
+        rows = _inbound_local_fixture()
+        if tab == 'needs_you':
+            rows = [r for r in rows if r.get('status') == 'new']
+        else:
+            rows = [r for r in rows if r.get('status') != 'new']
+        rows.sort(key=lambda r: r.get('created_at') or datetime.min, reverse=True)
+        return [_form_to_inbox_item(_inbound_decorate(dict(r))) for r in rows[:limit]]
+
+    # Replies — join through to lead + client.
+    if tab == 'needs_you':
+        reply_where = "l.status = 'replied'"
+        form_where  = "status = 'new'"
+    else:  # done
+        reply_where = "l.status in ('meeting','won','lost')"
+        form_where  = "status in ('contacted','called','proposal','won','lost')"
+
+    items: list[dict] = []
+    try:
+        replies = fetch_all(f"""
+            select r.id, r.lead_id, r.subject, r.body, r.sentiment, r.detected_at,
+                   l.business_name, l.decision_maker_name, l.status as lead_status,
+                   l.client_id, c.name as client_name
+              from crm.replies r
+              join crm.leads   l on l.id = r.lead_id
+              join crm.clients c on c.id = l.client_id
+             where {reply_where}
+             order by r.detected_at desc
+             limit %(lim)s
+        """, {'lim': limit})
+        items.extend(_reply_to_inbox_item(r) for r in replies)
+    except Exception:
+        pass
+
+    try:
+        forms = fetch_all(f"""
+            select id, name, company, email, score, status, current_method,
+                   notes, created_at
+              from crm.inbound_leads
+             where {form_where}
+             order by created_at desc
+             limit %(lim)s
+        """, {'lim': limit})
+        items.extend(_form_to_inbox_item(r) for r in forms)
+    except Exception:
+        pass
+
+    items.sort(key=lambda x: x.get('received_at') or datetime.min, reverse=True)
+    return items[:limit]
+
+
 def _inbound_decorate(row: dict) -> dict:
     """Add UI-derived fields to an inbound row in place: relative time,
     short timestamp, status label, auto-reply preview, why-this-grade."""

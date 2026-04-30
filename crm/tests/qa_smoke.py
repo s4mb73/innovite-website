@@ -100,7 +100,7 @@ try:
     add('flask-routes', 'count', f'{len(rules)} registered')
     expected = {
         'overview', 'clients', 'client_detail', 'leads', 'lead_detail',
-        'outreach', 'inbound', 'reports', 'settings', 'healthz',
+        'outreach', 'inbox', 'reports', 'settings', 'healthz',
         'favicon', 'leads_csv', 'leads_bulk_status', 'leads_undo',
         'update_lead_status_route', 'update_lead_notes_route',
         'outreach_toggle_pause',
@@ -222,6 +222,25 @@ renders = [
                             'clients_panel':[],'clients_min':[{'id':1,'name':'ROCA'}],
                             'finder_clients':[mock_finder_client],
                             'rows':[],'f':{'client_id':None,'search':None},
+                            'db_error':None}),
+    ('inbox.html',        {'active':'inbox','tab':'needs_you',
+                            'counts':{'needs_you':2,'drafts':0,'done':5},
+                            'items':[
+                                {'kind':'reply','id':'r:1','href':'/leads/1',
+                                 'display_name':'James Whitfield','company':'Pinnacle Construction',
+                                 'subject':'Re: A quick thought on Pinnacle Construction',
+                                 'snippet':'Could you send a bit more info on what you had in mind?',
+                                 'received_at': now(),'relative':'4h ago',
+                                 'signal_label':'Neutral','signal_class':'neutral',
+                                 'client_name':'ROCA Accountants','lead_status':'replied'},
+                                {'kind':'form','id':'f:1','href':'/inbox#form-1',
+                                 'display_name':'Hannah Patel','company':'Patel Property',
+                                 'subject':'Submitted via innoviteai.com',
+                                 'snippet':'Currently doing outbound manually — looking for a system.',
+                                 'received_at': now(),'relative':'2h ago',
+                                 'signal_label':'Hot','signal_class':'hot',
+                                 'client_name':'','inbound_id':1},
+                            ],
                             'db_error':None}),
 ]
 

@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Inbox · Innovite CRM{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Inbox</h1>
+    <p class="page-sub">Replies and form submissions waiting on you. One queue, one place.</p>
+  </div>
+</div>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong>
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{# ── Tabs ─────────────────────────────────────────────── #}
+{% set tabs = [
+  ('needs_you', 'Needs you', counts.needs_you),
+  ('drafts',    'Drafts',    counts.drafts),
+  ('done',      'Done',      counts.done),
+] %}
+<div class="tabbar" role="tablist" aria-label="Inbox view">
+  {% for slug, label, count in tabs %}
+    <a class="tab {% if tab == slug %}is-active{% endif %}"
+       href="{{ url_for('inbox', tab=slug) }}"
+       role="tab"
+       aria-selected="{{ 'true' if tab == slug else 'false' }}">
+      {{ label }} <span class="tab-count">{{ count }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+{# ── Drafts tab — stub until AI auto-reply lands ─────── #}
+{% if tab == 'drafts' %}
+  <div class="empty">
+    <strong>No drafts yet.</strong>
+    AI auto-replies will appear here for one-click approve once the backend lands.
+    Until then, replies are handled directly from the lead detail page.
+  </div>
+
+{# ── Needs you / Done — unified inbox feed ───────────── #}
+{% elif items %}
+  <div class="inbox-list">
+    {% for it in items %}
+      <a class="inbox-row inbox-kind-{{ it.kind }}"
+         {% if it.kind == 'form' %}data-inbound-id="{{ it.inbound_id }}" href="#"
+         {% else %}href="{{ it.href }}"
+         {% endif %}
+         role="listitem">
+        <span class="inbox-signal signal-{{ it.signal_class }}">
+          {{ it.signal_label }}
+        </span>
+        <div class="inbox-body">
+          <div class="inbox-head">
+            <span class="inbox-name">{{ it.display_name }}</span>
+            {% if it.company %}<span class="inbox-co">· {{ it.company }}</span>{% endif %}
+            {% if it.client_name %}<span class="inbox-client">via {{ it.client_name }}</span>{% endif %}
+          </div>
+          {% if it.subject %}<div class="inbox-subject">{{ it.subject }}</div>{% endif %}
+          <div class="inbox-snippet">{{ it.snippet }}</div>
+        </div>
+        <div class="inbox-meta">
+          <span class="inbox-kind-tag inbox-kind-tag-{{ it.kind }}">
+            {{ 'Reply' if it.kind == 'reply' else 'Form' }}
+          </span>
+          <span class="inbox-time">{{ it.relative }}</span>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+
+{% else %}
+  {% if tab == 'needs_you' %}
+    <div class="empty">
+      <strong>Inbox zero.</strong>
+      Nothing waiting on you. New replies and form submissions will land here.
+    </div>
+  {% else %}
+    <div class="empty">No handled items in the audit trail yet.</div>
+  {% endif %}
+{% endif %}
+
+{# Drawer + scripts only needed when there are form-kind rows in the feed.
+   Reuses the existing /inbound/<id>.json + /inbound/<id>/status endpoints. #}
+{% if tab != 'drafts' and items %}
+  {# Drawer shell — copied verbatim from the old inbound page so the form
+     submission detail UX is unchanged. #}
+  <div class="drawer-overlay" id="inboundDrawerOverlay" hidden></div>
+  <aside class="drawer" id="inboundDrawer" hidden aria-labelledby="drawerTitle" role="dialog" aria-modal="false">
+    <div class="drawer-head">
+      <div class="drawer-head-titles">
+        <div class="drawer-eyebrow"><span id="drawerScorePill" class="score-pill score-warm">—</span></div>
+        <h2 class="drawer-title" id="drawerTitle">—</h2>
+        <div class="drawer-sub" id="drawerCompany">—</div>
+      </div>
+      <button class="drawer-close" id="drawerCloseBtn" aria-label="Close drawer">×</button>
+    </div>
+
+    <div class="drawer-body" id="drawerBody">
+      <section class="drawer-section">
+        <div class="drawer-section-label">Contact</div>
+        <dl class="drawer-dl">
+          <div><dt>Email</dt><dd id="drawerEmail">—</dd></div>
+          <div><dt>Phone</dt><dd id="drawerPhone">—</dd></div>
+          <div><dt>Submitted</dt><dd id="drawerWhen">—</dd></div>
+          <div><dt>Industry</dt><dd id="drawerIndustry">—</dd></div>
+          <div><dt>Deal range</dt><dd id="drawerDeal">—</dd></div>
+          <div><dt>Target volume</dt><dd id="drawerTarget">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="drawer-section">
+        <div class="drawer-section-label">Their current process</div>
+        <p class="drawer-quote" id="drawerMethod">—</p>
+      </section>
+
+      <section class="drawer-section drawer-section--reply" id="drawerReplySection">
+        <div class="drawer-section-label">
+          AI auto-reply
+          <span class="drawer-pill drawer-pill--ok" id="drawerReplyMeta">sent</span>
+        </div>
+        <pre class="drawer-reply" id="drawerReplyText">—</pre>
+      </section>
+    </div>
+
+    <div class="drawer-foot">
+      <div class="drawer-actions">
+        <button type="button" class="btn btn-quiet" data-action="contacted">Mark contacted</button>
+        <button type="button" class="btn btn-quiet" data-action="called">Booked</button>
+        <button type="button" class="btn btn-quiet" data-action="lost">Disqualify</button>
+      </div>
+    </div>
+  </aside>
+
+  <script>
+    // Form-row drawer interaction. Reply rows just navigate to the lead
+    // detail page (no drawer) so the operator can change lead status there.
+    (function () {
+      const drawer  = document.getElementById('inboundDrawer');
+      const overlay = document.getElementById('inboundDrawerOverlay');
+      if (!drawer) return;
+
+      const els = {
+        title:    document.getElementById('drawerTitle'),
+        company:  document.getElementById('drawerCompany'),
+        score:    document.getElementById('drawerScorePill'),
+        email:    document.getElementById('drawerEmail'),
+        phone:    document.getElementById('drawerPhone'),
+        when:     document.getElementById('drawerWhen'),
+        industry: document.getElementById('drawerIndustry'),
+        deal:     document.getElementById('drawerDeal'),
+        target:   document.getElementById('drawerTarget'),
+        method:   document.getElementById('drawerMethod'),
+        replySec: document.getElementById('drawerReplySection'),
+        replyMeta:document.getElementById('drawerReplyMeta'),
+        replyTxt: document.getElementById('drawerReplyText'),
+        closeBtn: document.getElementById('drawerCloseBtn'),
+      };
+      const SCORE = { hot: 'Hot', warm: 'Warm', cold: 'Cold' };
+      let currentId = null;
+      let lastTrigger = null;
+
+      function open(id, trigger) {
+        currentId = id;
+        lastTrigger = trigger || null;
+        fetch(`/inbound/${id}.json`, {headers: {'Accept': 'application/json'}})
+          .then(r => r.ok ? r.json() : Promise.reject(r.status))
+          .then(populate)
+          .catch(err => console.error('drawer fetch failed', err));
+        drawer.hidden = false;
+        overlay.hidden = false;
+        requestAnimationFrame(() => {
+          drawer.classList.add('is-open');
+          overlay.classList.add('is-open');
+        });
+        els.closeBtn.focus({preventScroll: true});
+      }
+      function close() {
+        drawer.classList.remove('is-open');
+        overlay.classList.remove('is-open');
+        setTimeout(() => { drawer.hidden = true; overlay.hidden = true; }, 220);
+        if (lastTrigger) lastTrigger.focus({preventScroll: true});
+        currentId = null;
+      }
+      function populate(d) {
+        els.title.textContent    = d.name || '—';
+        els.company.textContent  = (d.company || '') + (d.industry ? ' · ' + d.industry : '');
+        els.score.textContent    = SCORE[d.score] || '—';
+        els.score.className      = 'score-pill score-' + (d.score || 'warm');
+        els.email.textContent    = d.email || '—';
+        els.phone.textContent    = d.phone || '—';
+        els.when.textContent     = (d.created_short || '—') + (d.relative ? ' · ' + d.relative : '');
+        els.industry.textContent = d.industry || '—';
+        els.deal.textContent     = d.deal_value || '—';
+        els.target.textContent   = d.clients_wanted || '—';
+        els.method.textContent   = d.current_method || '—';
+        if (d.auto_response_sent) {
+          els.replySec.hidden = false;
+          els.replyMeta.textContent = 'sent ' + (d.auto_reply_lag || '');
+          els.replyMeta.className   = 'drawer-pill drawer-pill--ok';
+          els.replyTxt.textContent  = d.auto_reply_text || '';
+        } else {
+          els.replySec.hidden = false;
+          els.replyMeta.textContent = 'not triggered';
+          els.replyMeta.className   = 'drawer-pill drawer-pill--muted';
+          els.replyTxt.textContent  = 'Auto-reply was suppressed by the qualifier — manual follow-up only.';
+        }
+      }
+      function setStatus(action) {
+        if (!currentId) return;
+        const fd = new FormData(); fd.append('status', action);
+        fetch(`/inbound/${currentId}/status`, {method: 'POST', body: fd})
+          .then(r => r.json()).then(res => { if (res.ok) close(); window.location.reload(); });
+      }
+
+      // Wire form rows to the drawer.
+      document.querySelectorAll('.inbox-kind-form[data-inbound-id]').forEach(el => {
+        el.addEventListener('click', e => {
+          e.preventDefault();
+          const id = el.dataset.inboundId;
+          if (id) open(parseInt(id, 10), el);
+        });
+      });
+      drawer.querySelectorAll('[data-action]').forEach(btn =>
+        btn.addEventListener('click', () => setStatus(btn.dataset.action)));
+      els.closeBtn.addEventListener('click', close);
+      overlay.addEventListener('click', close);
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && !drawer.hidden) close();
+      });
+    })();
+  </script>
+{% endif %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-stack" aria-live="polite">
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+{% endblock %}

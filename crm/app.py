@@ -478,44 +478,43 @@ def outreach_toggle_pause(client_id: int):
     return redirect(request.referrer or url_for('outreach'))
 
 
-@app.route('/inbound')
-def inbound():
+@app.route('/inbox')
+def inbox():
+    """Unified Inbox — replies + form submissions awaiting operator action.
+    Renamed from /inbound. Three tabs (needs_you / drafts / done).
+    Drafts is stubbed until AI auto-reply generation lands."""
     db_error = None
-    tab    = (request.args.get('tab')   or 'all').lower()
-    if tab not in db.INBOUND_TABS:
-        tab = 'all'
-    score  = (request.args.get('score') or '').lower() or None
-    if score not in db.INBOUND_SCORES:
-        score = None
-    search = (request.args.get('q') or '').strip() or None
+    tab = (request.args.get('tab') or 'needs_you').lower()
+    if tab not in db.INBOX_TABS:
+        tab = 'needs_you'
 
-    kpis = {'new_7d': 0, 'new_7d_delta': 0, 'hot_count': 0, 'hot_pct': 0,
-            'avg_response': '—', 'avg_response_s': 0, 'book_rate': 0.0}
-    counts = {k: 0 for k in db.INBOUND_TABS}
-    needs_response: list[dict] = []
-    rows: list[dict] = []
-
+    counts = {k: 0 for k in db.INBOX_TABS}
+    items: list[dict] = []
     try:
-        kpis           = db.inbound_kpis()
-        counts         = db.inbound_tab_counts()
-        needs_response = db.inbound_needs_response()
-        rows           = db.inbound_list(tab=tab, score=score, search=search)
+        counts = db.inbox_tab_counts()
+        items  = db.inbox_items(tab=tab)
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
 
     return render_template(
-        'inbound.html',
-        active='inbound',
+        'inbox.html',
+        active='inbox',
         tab=tab,
-        kpis=kpis,
         counts=counts,
-        needs_response=needs_response,
-        rows=rows,
-        f={'score': score, 'search': search},
+        items=items,
         db_error=db_error,
     )
 
 
+# /inbound → /inbox 301 redirect for legacy bookmarks (Epic 9).
+@app.route('/inbound')
+def inbound_legacy():
+    return redirect(url_for('inbox', **request.args.to_dict()), code=301)
+
+
+# Per-form drawer endpoints below stay on /inbound/<id> — those are
+# stable internal IDs referenced from the form drawer JS, not browseable
+# URLs. Renaming them would just churn API surface for no gain.
 @app.get('/inbound/<int:inbound_id>.json')
 def inbound_detail_json(inbound_id: int):
     """JSON used by the slide-out drawer on the inbound page."""

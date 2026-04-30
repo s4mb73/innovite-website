@@ -503,6 +503,55 @@ Source UI: `templates/leads.html` — the row layout, status tabs (line 56–77)
 
 ---
 
+## Epic 9 — Inbox
+
+Source UI: `templates/inbox.html` — replaces the old Inbound page. The morning question "did anything come back?" was previously split between the Inbound page (form submissions) and the reply-rate KPI on Outreach. One operator, one queue.
+
+The Outreach page keeps its identity as the **sends-side** dashboard (Today / Sent / Follow-ups / Bounces). The Inbox is the **responses-side** dashboard. That's the cut.
+
+### US-022 · Unified Inbox replaces Inbound
+
+**As** an operator
+**I want to** open Inbox in the morning and see every reply + every form submission still waiting on me, in one queue
+**So that** I never wonder "did I check Inbound? did I check Outreach?" again — there's one place
+
+**Priority:** P0
+**Status:** Draft
+**Acceptance criteria**
+- [ ] `/inbound` route renamed to `/inbox`. Sidebar nav reads "Inbox". Old `/inbound` URL 301-redirects to `/inbox` so any bookmarks survive.
+- [ ] Three tabs:
+  - **Needs you** — `crm.replies` joined to `crm.leads` where lead status = `replied` (not yet triaged) + `crm.inbound_leads` where status = `new`
+  - **Drafts** — empty state for now (AI auto-reply generation is US-023)
+  - **Done** — reply parent-leads moved past `replied` (meeting / won / lost) + inbound forms past `new`
+- [ ] Reply rows link to the lead detail page (operator changes lead status there). Form rows open the existing slide-out drawer (no JSON contract change — drawer hits `/inbound/<id>.json` and `/inbound/<id>/status` per stable internal IDs).
+- [ ] Each row shows: signal pill (sentiment for replies, score for forms), name + company, subject, body snippet, kind tag (Reply / Form), and relative time.
+- [ ] Sort: most recent first across both kinds, sorted by `received_at`.
+- [ ] No new schema. Reuses `crm.replies`, `crm.leads`, `crm.clients`, `crm.inbound_leads`. The `crm.inbound_leads` vs `public.leads` reconciliation stays deferred — Inbox queries whichever the inbound page currently uses.
+
+**Notes** — Old `templates/inbound.html` deleted in this build. The supporting `inbound_kpis()` / `inbound_tab_counts()` / `inbound_needs_response()` / `inbound_list()` functions in `db.py` are dead code and should be removed in a follow-up cleanup; left in place this build to keep the diff focused on the page rename + new query layer.
+
+---
+
+### US-023 · AI auto-reply drafts (deferred — UI stub only this build)
+
+**As** an operator
+**I want to** have AI draft a personalised reply for every inbound reply within ~60s of detection, queued in the Drafts tab for one-click approve / edit
+**So that** I can handle 50 replies/day in five minutes instead of an hour, without sending generic-feeling responses
+
+**Priority:** P0 (deferred — biggest leverage feature once the backend lands)
+**Status:** Draft
+**Acceptance criteria** — placeholder, to be filled when scoping
+- [ ] A reply detected via IMAP triggers an Anthropic call that drafts a reply tailored to: the reply text + sentiment + intent, the original outbound, the lead's enrichment profile, and the client's voice
+- [ ] Draft appears in Inbox > Drafts tab within 60s of detection
+- [ ] Operator can: **Approve & send** (one click), **Edit & send** (modal), or **Discard** (mark reply as needing manual handling)
+- [ ] Approve writes to `crm.emails`, sets the lead's status to `meeting` or keeps `replied` based on intent, and writes a `draft_approved` row to `crm.activity_log`
+- [ ] Discard rate per draft is tracked per client so we can spot when the AI is consistently off-tone for a particular voice
+- [ ] Drafts older than 24h are auto-archived (operator missed them — not a blocker, the lead detail page is still the fallback)
+
+**Notes** — Single biggest leverage feature for the agency model. Defer until: (a) IMAP reply detection (US-008) is wired, (b) we have ~30 real replies to use as training data for the prompt's tone-matching examples.
+
+---
+
 ## Out of scope for this draft
 
 These belong in later epics or separate docs — recording here so we don't lose them:
