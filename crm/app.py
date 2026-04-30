@@ -216,9 +216,9 @@ def _lead_filters_from_request():
     client_raw = args.get('client')
     client_id = int(client_raw) if (client_raw or '').isdigit() else None
     search = (args.get('q') or '').strip() or None
-    sort = args.get('sort') or 'recent'
+    sort = args.get('sort') or 'triage'
     if sort not in db.SORT_SQL:
-        sort = 'recent'
+        sort = 'triage'
     page = int(args.get('page') or 1)
     return {'status': status, 'client_id': client_id, 'search': search, 'sort': sort, 'page': page}
 

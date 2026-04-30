@@ -444,6 +444,65 @@ Source UI: `templates/clients.html` — the row layout currently shows leads · 
 
 ---
 
+## Epic 8 — Lead lifecycle
+
+Source UI: `templates/leads.html` — the row layout, status tabs (line 56–77), and bulk-action dropdown (line 102–112). The schema CHECK constraint on `crm.leads.status` allows seven values today (`new`, `contacted`, `replied`, `meeting`, `won`, `lost`, `closed`), but only six have defined meanings — `closed` exists in the bulk dropdown without a tab and without documented purpose. Until the lifecycle is locked down, the Leads page can't be a triage view because the ranking of "what needs me" isn't defined.
+
+### US-020 · Define the canonical lead lifecycle
+
+**As** an operator
+**I want to** know exactly what each lead status means, who sets it, and what comes next
+**So that** I trust the status I'm looking at, automation moves leads when it should, and reporting reflects reality
+
+**Priority:** P0
+**Status:** Draft
+**Acceptance criteria — six canonical statuses**
+
+| Status | Meaning | Set by | Exits to |
+|---|---|---|---|
+| `new` | Pipeline found and graded the business. No outbound has been sent. | Auto (Find new leads / US-001) | `contacted`, `lost` |
+| `contacted` | At least one outbound email has been sent. Lead is in or post cadence, awaiting reply. | Auto (US-004 send) | `replied`, `lost`, `meeting` (rare direct) |
+| `replied` | Reply detected via IMAP (US-008). Sequence auto-stopped (US-009). Awaiting operator triage. | Auto | `meeting`, `won`, `lost` |
+| `meeting` | Discovery / sales call booked. Calendar event exists. | Operator | `won`, `lost` |
+| `won` | Became a paying customer. Deal closed. | Operator | (terminal) |
+| `lost` | Declined, ghosted post-cadence, or operator disqualified. | Operator or auto (sequence + 14d cooling, see below) | (terminal) |
+
+- [ ] `closed` is dropped from operator-facing UI (status tabs, bulk-action dropdown, `LEAD_STATUSES` constant). Schema CHECK constraint left as-is to avoid a destructive migration; a follow-up cleanup migration can remove it once we confirm zero rows use it.
+- [ ] **Auto-transition `contacted` → `lost`** fires when a lead has been in `contacted` past Day 7 + 14 days with no reply detected. Operator can revert. Without this, `contacted` grows unbounded and the page becomes useless.
+- [ ] **Auto-transitions write to `crm.activity_log`** with the trigger reason (e.g. `auto_lost_no_reply`).
+- [ ] Operators can move any non-terminal lead to any other status manually (jump from `new` straight to `meeting` is allowed — sometimes inbound prospects skip outbound entirely).
+- [ ] Terminal statuses (`won`, `lost`) can still be reverted by the operator if mis-clicked, but no automation moves them.
+
+**Notes — `meeting` granularity** — kept as one state for v1. If reporting needs show-rate, add a `meeting_held_at` timestamp later rather than splitting into `meeting-booked` / `meeting-held` / `meeting-no-show`.
+
+---
+
+### US-021 · Leads page as morning triage view
+
+**As** an operator
+**I want to** open the Leads page and immediately see what needs my action — replies waiting, meetings booked — without scanning every row
+**So that** the page is the right "morning triage" view for the lead funnel, not just a paginated dump
+
+**Priority:** P0
+**Status:** Draft
+**Acceptance criteria**
+- [ ] **Drop the Client column** — page is always scoped to one client, so showing the same name on every row is noise
+- [ ] **Drop the Decision-maker column** — frequently empty, not actionable at the list level. Move under the business name as a subline (`Manchester · Sarah Cole`)
+- [ ] **Add a Stage time column** — how long the lead has been in its current status (e.g. `Replied · 6h`, `Contacted · 14d`, `New · 3h`). Tells you whether something is hot or going cold without clicking in.
+- [ ] **3px coloured left border per row** — driven by lifecycle status (US-020), not grade (since scoring is deferred):
+  - **Amber** — `replied` (needs response from operator)
+  - **Green** — `meeting` (booked, in motion)
+  - **Grey** — `new` (just discovered, no action yet) or `won`/`lost` (terminal, dimmed)
+  - **No border** — `contacted` (in active cadence, normal flow)
+- [ ] **Default sort: needs-attention first** — replied → contacted (newest in cadence) → new (newest first) → meeting → won → lost. The existing "Sort · Recent / Grade / Score" dropdown stays as a manual override.
+- [ ] **Needs-attention banner** above the table when relevant: e.g. `3 replies waiting · 2 meetings booked` with click-through to filtered views. Renders only when there's at least one item.
+- [ ] **Grade pill stays** — renders when `lead.grade` is set, `—` when null. The page does not depend on grade for any op-state logic, so it works whether or not scoring is in.
+- [ ] No new schema columns. `stage_time_label` and `op_state` are computed in `db.leads_search()` from existing fields (`status`, `updated_at`, `created_at`).
+
+**Notes — scoring is deliberately deferred** — see "Out of scope for this draft" below. The page is built to absorb a `grade` value when scoring lands later, with no UI changes required.
+
+---
+
 ## Out of scope for this draft
 
 These belong in later epics or separate docs — recording here so we don't lose them:
@@ -452,3 +511,4 @@ These belong in later epics or separate docs — recording here so we don't lose
 - **Auth** — POC has no auth (per `crm/CLAUDE.md` open items); single-password gate planned before public link-out.
 - **`crm.inbound_leads` vs `public.leads` reconciliation** — affects Epic 4 acceptance; needs a schema decision before US-011 is scoped.
 - **Background worker service on Render** — Epics 1, 2, 3 all assume a worker process. The decision on one-vs-two services should land before any of these are built.
+- **Lead scoring rubric** — the schema already has `grade` (A/B/C/D/F) and `overall_score` columns, but the rubric for assigning them isn't specced yet. Three pillars sketched (Viability, Reachability, Buying signal) but the per-client weights need real conversion data to tune. Revisit after ~30 contacted leads have real reply data (smallest sample to start tuning weights). Until then the Leads page (US-021) treats grade as decoration — present if set, dash if null, never load-bearing for the op-state logic.

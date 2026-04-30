@@ -163,12 +163,24 @@ mock_lead = {**{c: None for c in [
     'pdf_path','source','notes','client_name'
 ]}, 'id': 1, 'business_name': 'Apex Financial', 'grade_colour':'green',
    'status_colour':'green', 'status':'replied', 'created_at': now(), 'updated_at': now(),
-   'client_id': 1, 'client_name':'ROCA'}
+   'client_id': 1, 'client_name':'ROCA',
+   # ↓ triage fields added in US-021
+   'stage_time_label': '6h', 'op_state': 'replied', 'relative': '6h ago'}
 
-mock_result = {'rows': [], 'total': 0,
-               'counts': {'all':0,'new':0,'contacted':0,'replied':0,
-                          'meeting':0,'won':0,'lost':0,'closed':0},
-               'page':1,'pages':1,'page_size':50,'page_start':0,'page_end':0}
+# A second mock with a different op_state so the rendered table exercises
+# at least two of the lead-op-* class branches.
+mock_lead_meeting = {**mock_lead,
+                     'id': 2, 'business_name': 'Greenfield Property',
+                     'status': 'meeting', 'op_state': 'meeting',
+                     'stage_time_label': '2d', 'grade': 'A',
+                     'grade_colour': 'green', 'status_colour': 'green',
+                     'city': 'Leeds', 'decision_maker_name': 'Sarah Cole',
+                     'decision_maker_title': 'MD'}
+
+mock_result = {'rows': [mock_lead, mock_lead_meeting], 'total': 2,
+               'counts': {'all':2,'new':0,'contacted':0,'replied':1,
+                          'meeting':1,'won':0,'lost':0},
+               'page':1,'pages':1,'page_size':50,'page_start':1,'page_end':2}
 
 mock_finder_client = {
     'id': 1, 'name': 'ROCA Accountants',
@@ -195,12 +207,14 @@ renders = [
                             'errors':{}}),
     ('leads.html',        {'active':'leads','result':mock_result,
                             'clients_min':[{'id':1,'name':'ROCA'}],
-                            'f':{'status':None,'client_id':None,'search':None,
-                                 'sort':'recent','page':1},
+                            'client_tabs':[{'id':1,'name':'ROCA','count':2}],
+                            'active_client':{'id':1,'name':'ROCA'},
+                            'f':{'status':None,'client_id':1,'search':None,
+                                 'sort':'triage','page':1},
                             'active_status':'all','db_error':None}),
     ('lead_detail.html',  {'active':'leads','lead':mock_lead,'timeline':[],
                             'activity':[],'statuses':['new','contacted','replied',
-                                'meeting','won','lost','closed'],'db_error':None}),
+                                'meeting','won','lost'],'db_error':None}),
     ('outreach.html',     {'active':'outreach','tab':'today',
                             'kpis':{'pending_today':0,'sent_7d':0,
                                     'reply_rate':0.0,'bounce_rate':0.0},

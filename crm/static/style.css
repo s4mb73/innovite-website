@@ -1104,6 +1104,82 @@ a { color:inherit; text-decoration:none; }
   accent-color:var(--accent);
 }
 
+/* ── Leads triage view (US-021) ─────────────────────────
+   Op-state per row, driven by lead.status. The first cell carries the
+   3px coloured stripe via a left-border on the row's first td — same
+   visual idiom as the Clients roster, but applied per-row inside the
+   shared table container. */
+.leads-table-triage tbody tr.lead-tr td:first-child {
+  border-left:3px solid transparent;
+}
+.lead-op-replied   td:first-child { border-left-color:var(--amber) !important; }
+.lead-op-meeting   td:first-child { border-left-color:var(--green) !important; }
+.lead-op-new       td:first-child { border-left-color:var(--t3)    !important; }
+.lead-op-won       td:first-child { border-left-color:var(--green) !important; }
+.lead-op-lost      td:first-child { border-left-color:var(--t3)    !important; }
+/* contacted = no border */
+
+.lead-op-won, .lead-op-lost { opacity:.78; }
+
+.lead-sub {
+  margin-top:2px;
+  font-size:11.5px;
+  color:var(--t3);
+  font-weight:300;
+}
+.lead-cta {
+  display:inline-block;
+  margin-left:8px;
+  font-size:11px;
+  color:var(--amber);
+  font-weight:500;
+  text-transform:uppercase;
+  letter-spacing:.6px;
+}
+
+.col-stage {
+  font-size:12.5px;
+  color:var(--t2);
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  width:90px;
+}
+
+/* Needs-attention banner */
+.leads-attn {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:10px 14px;
+  margin-bottom:14px;
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-left:3px solid var(--amber);
+  border-radius:var(--r-sm);
+  font-size:12.5px;
+}
+.leads-attn-icon {
+  font-size:14px;
+  line-height:1;
+}
+.leads-attn-text {
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  color:var(--t2);
+}
+.leads-attn-link {
+  color:var(--t1);
+  text-decoration:none;
+  border-bottom:1px dotted var(--border);
+  transition:border-color .14s var(--ease), color .14s var(--ease);
+}
+.leads-attn-link strong { font-weight:600; }
+.leads-attn-link-amber { color:var(--amber); }
+.leads-attn-link-green { color:var(--green); }
+.leads-attn-link:hover { border-bottom-color:currentColor; }
+.leads-attn-sep { color:var(--t3); }
+
 .pagination {
   display:flex;
   justify-content:space-between;

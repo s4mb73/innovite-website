@@ -387,13 +387,59 @@ def client_recent_leads(client_id: int, limit: int = 10) -> list[dict]:
 
 
 # ── Leads list (Step 5) ──────────────────────────────────────────────
-LEAD_STATUSES = ['new', 'contacted', 'replied', 'meeting', 'won', 'lost', 'closed']
+# Operator-facing statuses (US-020). 'closed' is dropped from the UI but
+# stays in the schema CHECK constraint to avoid a destructive migration.
+LEAD_STATUSES = ['new', 'contacted', 'replied', 'meeting', 'won', 'lost']
 
 SORT_SQL = {
+    # Default — needs-attention first (US-021). 'replied' on top because
+    # it's the operator's morning action queue; in-cadence and fresh after,
+    # terminal at the bottom. Stable secondary sort by updated_at so the
+    # most recently moved leads appear first within each bucket.
+    'triage': """
+        case l.status
+          when 'replied'   then 1
+          when 'contacted' then 2
+          when 'new'       then 3
+          when 'meeting'   then 4
+          when 'won'       then 5
+          when 'lost'      then 6
+          else 7
+        end,
+        coalesce(l.updated_at, l.created_at) desc
+    """,
     'recent': 'l.created_at desc',
     'grade':  "case l.grade when 'A' then 1 when 'B' then 2 when 'C' then 3 when 'D' then 4 when 'F' then 5 else 6 end, l.created_at desc",
     'score':  'coalesce(l.overall_score, 0) desc, l.created_at desc',
 }
+
+# Maps lead.status → row-border colour slug used by the Leads page.
+# Mirrors the op-state idiom from the Clients roster (US-019). Only
+# 'replied' (needs response) and 'meeting' (booked, in motion) get a
+# coloured stripe; everything else is muted or borderless.
+LEAD_OP_STATE = {
+    'replied':   'replied',    # amber — needs response
+    'meeting':   'meeting',    # green — in motion
+    'new':       'new',        # grey  — fresh, no action yet
+    'contacted': 'contacted',  # no border — in active cadence
+    'won':       'won',        # grey dim — terminal positive
+    'lost':      'lost',       # grey dim — terminal negative
+}
+
+
+def _stage_time_label(stage_started: datetime | None, now: datetime | None = None) -> str:
+    """How long the lead has been in its current status. Rough magnitude
+    only — 'just now' / 'Xm' / 'Xh' / 'Xd'. Fed by updated_at, which is
+    'last touched' (not strictly 'last status change'), but close enough
+    in practice — most writes are status updates."""
+    if not stage_started:
+        return '—'
+    now = now or datetime.now(timezone.utc)
+    secs = max(0, int((now - stage_started).total_seconds()))
+    if secs < 60:    return 'just now'
+    if secs < 3600:  return f'{secs // 60}m'
+    if secs < 86400: return f'{secs // 3600}h'
+    return f'{secs // 86400}d'
 
 
 def leads_search(
@@ -422,7 +468,7 @@ def leads_search(
         params['q'] = f'%{search}%'
 
     where_sql = ' and '.join(where)
-    order_sql = SORT_SQL.get(sort, SORT_SQL['recent'])
+    order_sql = SORT_SQL.get(sort, SORT_SQL['triage'])
     page = max(1, page)
     offset = (page - 1) * page_size
     params['limit'] = page_size
@@ -430,7 +476,9 @@ def leads_search(
 
     rows = fetch_all(f"""
         select l.id, l.business_name, l.grade, l.status, l.overall_score,
-               l.decision_maker_name, l.google_review_count, l.created_at,
+               l.decision_maker_name, l.decision_maker_title,
+               l.city, l.google_review_count,
+               l.created_at, l.updated_at,
                c.id as client_id, c.name as client_name
           from crm.leads l
           left join crm.clients c on c.id = l.client_id
@@ -439,10 +487,15 @@ def leads_search(
          limit %(limit)s offset %(offset)s
     """, params)
 
+    now = datetime.now(timezone.utc)
     for r in rows:
         r['grade_colour']  = GRADE_COLOUR.get(r.get('grade') or '', 'grey')
         r['status_colour'] = STATUS_COLOUR.get(r.get('status') or '', 'grey')
         r['relative']      = relative_time(r['created_at'])
+        # US-021 — triage row decoration.
+        stage_started = r.get('updated_at') or r.get('created_at')
+        r['stage_time_label'] = _stage_time_label(stage_started, now)
+        r['op_state']         = LEAD_OP_STATE.get(r.get('status') or '', 'new')
 
     total_row = fetch_one(f"""
         select count(*) as total
