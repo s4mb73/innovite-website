@@ -282,7 +282,62 @@ def update_lead_notes_route(lead_id: int):
 
 @app.route('/outreach')
 def outreach():
-    return render_template('outreach.html', active='outreach')
+    db_error = None
+    tab = (request.args.get('tab') or 'today').lower()
+    if tab not in db.OUTREACH_TABS:
+        tab = 'today'
+
+    client_raw = request.args.get('client')
+    client_id  = int(client_raw) if (client_raw or '').isdigit() else None
+    search     = (request.args.get('q') or '').strip() or None
+
+    kpis = {'pending_today': 0, 'sent_7d': 0, 'reply_rate': 0.0, 'bounce_rate': 0.0}
+    counts = {k: 0 for k in db.OUTREACH_TABS}
+    clients_panel: list[dict] = []
+    clients_min: list[dict] = []
+    rows: list[dict] = []
+
+    try:
+        kpis          = db.outreach_kpis()
+        counts        = db.outreach_tab_counts(client_id=client_id)
+        clients_panel = db.outreach_clients_panel()
+        clients_min   = db.all_clients_min()
+        if   tab == 'today':     rows = db.outreach_today(client_id, search)
+        elif tab == 'sent':      rows = db.outreach_sent(client_id, search)
+        elif tab == 'followups': rows = db.outreach_followups(client_id, search)
+        else:                    rows = db.outreach_bounces(client_id, search)
+    except Exception as e:
+        db_error = str(e).splitlines()[0][:240]
+
+    return render_template(
+        'outreach.html',
+        active='outreach',
+        tab=tab,
+        kpis=kpis,
+        counts=counts,
+        clients_panel=clients_panel,
+        clients_min=clients_min,
+        rows=rows,
+        f={'client_id': client_id, 'search': search},
+        db_error=db_error,
+    )
+
+
+@app.post('/outreach/clients/<int:client_id>/pause')
+def outreach_toggle_pause(client_id: int):
+    paused = (request.form.get('paused') or '').lower() == 'true'
+    try:
+        result = db.set_client_outreach_paused(client_id, paused)
+        if not result['changed']:
+            flash(f"{result['name']} was already {'paused' if paused else 'sending'}.", 'info')
+        else:
+            verb = 'paused' if paused else 'resumed'
+            flash(f"{result['name']} outreach {verb}.", 'success')
+    except LookupError:
+        flash('Client not found.', 'error')
+    except Exception as e:
+        flash(f'Could not update pause state: {e}', 'error')
+    return redirect(request.referrer or url_for('outreach'))
 
 
 @app.route('/inbound')

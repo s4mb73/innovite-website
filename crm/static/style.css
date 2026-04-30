@@ -1088,6 +1088,178 @@ a { color:inherit; text-decoration:none; }
   .search-wrap { max-width:none; }
 }
 
+/* ── Outreach (Step 7) ───────────────────────────────── */
+.send-panel {
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  padding:18px 20px 14px;
+  margin-bottom:24px;
+}
+.send-panel-head {
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  gap:14px;
+  margin-bottom:10px;
+}
+.send-panel-hint {
+  font-size:11.5px;
+  color:var(--t3);
+  font-weight:300;
+}
+.send-rows { display:flex; flex-direction:column; }
+.send-row {
+  display:grid;
+  grid-template-columns: 1.4fr auto 1.6fr auto;
+  gap:18px;
+  align-items:center;
+  padding:11px 0;
+  border-top:1px solid var(--border);
+  font-size:13px;
+}
+.send-row:first-child { border-top:none; }
+.send-row.is-paused { opacity:.78; }
+.send-row-name { color:var(--t1); font-weight:500; }
+.send-row-meta {
+  font-size:12.5px;
+  color:var(--t3);
+  font-variant-numeric:tabular-nums;
+}
+.send-num { color:var(--t2); font-weight:500; }
+.send-sep { margin:0 6px; color:var(--t3); }
+.send-row-action { margin:0; }
+
+.send-state {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  font-size:11.5px;
+  font-weight:600;
+  letter-spacing:1px;
+  text-transform:uppercase;
+}
+.send-state .status-dot {
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:currentColor;
+  flex-shrink:0;
+}
+.state-sending { color:var(--green); }
+.state-paused  { color:var(--amber); }
+
+@media (max-width: 720px) {
+  .send-row {
+    grid-template-columns: 1fr auto;
+    gap:10px;
+  }
+  .send-row-status { grid-column:2; grid-row:1; justify-self:end; }
+  .send-row-meta   { grid-column:1 / -1; }
+  .send-row-action { grid-column:1 / -1; justify-self:end; }
+}
+
+/* Outreach table — inherits .leads-table; just adds step + flag cells. */
+.outreach-table .col-step    { width:74px; }
+.outreach-table .col-flag    { width:64px; text-align:center; }
+.outreach-table .col-action  { width:110px; text-align:right; }
+.outreach-table .col-subject {
+  color:var(--t2);
+  max-width:380px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.outreach-table .col-addr {
+  color:var(--t2);
+  font-size:12.5px;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  max-width:240px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.outreach-table .col-reason {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:12.5px;
+  color:var(--t2);
+}
+
+.step-pill {
+  display:inline-flex;
+  align-items:center;
+  padding:2px 8px;
+  border-radius:100px;
+  font-size:10.5px;
+  font-weight:600;
+  letter-spacing:.6px;
+  text-transform:uppercase;
+  background:var(--s3);
+  color:var(--t2);
+  white-space:nowrap;
+}
+.step-pill.step-1 { background:var(--accent-bg);  color:var(--accent); }
+.step-pill.step-2 { background:var(--accent-bg2); color:var(--accent); }
+.step-pill.step-3 { background:var(--s3);         color:var(--t2); }
+
+.dot-flag {
+  display:inline-block;
+  width:8px;
+  height:8px;
+  border-radius:50%;
+}
+.dot-flag.dot-blue  { background:var(--accent); }
+.dot-flag.dot-green { background:var(--green); }
+.dot-flag.dot-empty {
+  width:8px;
+  height:8px;
+  border:1px solid var(--b2);
+  background:transparent;
+}
+
+.bounce-pill {
+  display:inline-flex;
+  align-items:center;
+  padding:2px 8px;
+  border-radius:100px;
+  font-size:10.5px;
+  font-weight:600;
+  letter-spacing:.6px;
+  text-transform:uppercase;
+  white-space:nowrap;
+  flex-shrink:0;
+}
+.bounce-hard    { background:rgba(239,68,68,.10); color:#fca5a5; }
+.bounce-soft    { background:var(--amber-bg);     color:var(--amber); }
+.bounce-unknown { background:var(--s3);           color:var(--t3); }
+.bounce-detail  {
+  color:var(--t3);
+  font-size:12px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.btn.btn-quiet {
+  background:transparent;
+  border-color:var(--border);
+  color:var(--t3);
+}
+.btn.btn-quiet:hover:not(:disabled) {
+  border-color:var(--b2);
+  color:var(--t1);
+}
+
+@media (max-width: 720px) {
+  .outreach-table .col-client,
+  .outreach-table .col-flag,
+  .outreach-table .col-action,
+  .outreach-table .col-addr { display:none; }
+  .outreach-table .col-subject { max-width:none; }
+}
+
 /* ── Mobile ──────────────────────────────────────────── */
 @media (max-width: 768px) {
   body { grid-template-columns:1fr; }

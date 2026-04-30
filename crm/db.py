@@ -141,6 +141,9 @@ ACTION_LABEL = {
     'lead_lost':            'Lead lost',
     'lead_status_changed':  'Status changed',
     'lead_status_undone':   'Status reverted',
+    'outreach_paused':      'Outreach paused',
+    'outreach_resumed':     'Outreach resumed',
+    'outreach_batch':       'Outreach scheduled',
 }
 
 ACTION_COLOUR = {
@@ -593,6 +596,242 @@ def bulk_revert_status(previous: list[tuple[int, str]]) -> int:
                     )
         conn.commit()
     return n
+
+
+# ── Outreach (Step 7) ────────────────────────────────────────────────
+OUTREACH_TABS = ('today', 'sent', 'followups', 'bounces')
+
+# Day-N labels keyed by emails.email_number (1, 2, 3)
+EMAIL_STEP_LABEL = {1: 'Day 1', 2: 'Day 3', 3: 'Day 7'}
+
+
+def outreach_kpis() -> dict:
+    """Four headline numbers for the Outreach page.
+
+    Pending today is calendar-day Europe/London (matches operator
+    morning-check mental model — at 4pm, a rolling-24h count would
+    leak tomorrow's queue into today's number).
+    """
+    sql = """
+        with
+          today_window as (
+            select date_trunc('day', now() at time zone 'Europe/London')
+                     at time zone 'Europe/London'                as day_start,
+                   (date_trunc('day', now() at time zone 'Europe/London')
+                     + interval '1 day') at time zone 'Europe/London' as day_end
+          )
+        select
+          (select count(*) from crm.emails, today_window
+             where status = 'scheduled'
+               and scheduled_at >= day_start and scheduled_at < day_end)                    as pending_today,
+          (select count(*) from crm.emails
+             where status = 'sent' and sent_at >= now() - interval '7 days')                as sent_7d,
+          (select count(*) from crm.emails
+             where status = 'sent' and sent_at >= now() - interval '7 days')                as sent_total_7d,
+          (select count(*) from crm.emails
+             where replied_at is not null and replied_at >= now() - interval '7 days')      as replied_7d,
+          (select count(*) from crm.emails
+             where status = 'bounced' and created_at >= now() - interval '7 days')          as bounced_7d
+    """
+    r = fetch_one(sql) or {}
+    sent       = int(r.get('sent_7d') or 0)
+    replied    = int(r.get('replied_7d') or 0)
+    bounced    = int(r.get('bounced_7d') or 0)
+    attempted  = sent + bounced  # rough denominator for bounce rate
+    return {
+        'pending_today': int(r.get('pending_today') or 0),
+        'sent_7d':       sent,
+        'reply_rate':    round(replied / sent * 100, 1) if sent else 0.0,
+        'bounce_rate':   round(bounced / attempted * 100, 1) if attempted else 0.0,
+    }
+
+
+def outreach_tab_counts(client_id: int | None = None) -> dict:
+    """Count per tab — driven by the same filters the lists use."""
+    where_client = ''
+    params: dict = {}
+    if client_id:
+        where_client = 'and client_id = %(cid)s'
+        params['cid'] = client_id
+
+    sql = f"""
+        with today_window as (
+            select date_trunc('day', now() at time zone 'Europe/London')
+                     at time zone 'Europe/London'                as day_start,
+                   (date_trunc('day', now() at time zone 'Europe/London')
+                     + interval '1 day') at time zone 'Europe/London' as day_end
+          )
+        select
+          (select count(*) from crm.emails, today_window
+             where status = 'scheduled'
+               and scheduled_at >= day_start and scheduled_at < day_end
+               {where_client})                                                              as today,
+          (select count(*) from crm.emails
+             where status = 'sent' and sent_at >= now() - interval '30 days'
+               {where_client})                                                              as sent,
+          (select count(*) from crm.emails, today_window
+             where status = 'scheduled' and email_number in (2, 3)
+               and scheduled_at >= day_end
+               and scheduled_at <  day_end + interval '7 days'
+               {where_client})                                                              as followups,
+          (select count(*) from crm.emails
+             where status = 'bounced'
+               {where_client})                                                              as bounces
+    """
+    r = fetch_one(sql, params) or {}
+    return {k: int(r.get(k) or 0) for k in ('today', 'sent', 'followups', 'bounces')}
+
+
+def outreach_clients_panel() -> list[dict]:
+    """Active clients with their pause state + pending count for the strip."""
+    sql = """
+        with today_window as (
+            select date_trunc('day', now() at time zone 'Europe/London')
+                     at time zone 'Europe/London'                as day_start,
+                   (date_trunc('day', now() at time zone 'Europe/London')
+                     + interval '1 day') at time zone 'Europe/London' as day_end
+          )
+        select
+          c.id, c.name, c.outreach_paused, c.status,
+          (select count(*) from crm.emails e, today_window
+             where e.client_id = c.id and e.status = 'scheduled'
+               and e.scheduled_at >= day_start and e.scheduled_at < day_end)  as pending_today,
+          (select count(*) from crm.emails e
+             where e.client_id = c.id and e.status = 'scheduled'
+               and e.scheduled_at >= now()
+               and e.scheduled_at <  now() + interval '7 days')               as queued_7d
+        from crm.clients c
+        where c.status != 'churned'
+        order by c.name
+    """
+    return fetch_all(sql)
+
+
+def set_client_outreach_paused(client_id: int, paused: bool) -> dict:
+    """Flip outreach_paused, log to activity_log. Returns previous + new state."""
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "select id, name, outreach_paused from crm.clients where id = %s",
+                (client_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise LookupError(f'No client {client_id}')
+            old = bool(row['outreach_paused'])
+            if old == paused:
+                return {'changed': False, 'paused': old, 'name': row['name']}
+            cur.execute(
+                "update crm.clients set outreach_paused = %s where id = %s",
+                (paused, client_id),
+            )
+            cur.execute(
+                "insert into crm.activity_log (client_id, action, detail)"
+                " values (%s, %s, %s)",
+                (client_id,
+                 'outreach_paused' if paused else 'outreach_resumed',
+                 f"{row['name']} — outreach {'paused' if paused else 'resumed'}"),
+            )
+        conn.commit()
+    return {'changed': True, 'paused': paused, 'name': row['name']}
+
+
+def _outreach_where(extra: list[str], params: dict, client_id: int | None,
+                    search: str | None) -> str:
+    """Shared WHERE-clause builder for the four outreach lists."""
+    if client_id:
+        extra.append('e.client_id = %(cid)s'); params['cid'] = client_id
+    if search:
+        extra.append('(e.subject ilike %(q)s or l.business_name ilike %(q)s)')
+        params['q'] = f'%{search}%'
+    return ' and '.join(extra) if extra else '1=1'
+
+
+_OUTREACH_SELECT = """
+    select e.id, e.email_number, e.subject, e.status,
+           e.scheduled_at, e.sent_at, e.opened_at, e.replied_at,
+           e.bounce_reason, e.to_address,
+           l.id   as lead_id,    l.business_name,
+           c.id   as client_id,  c.name as client_name
+      from crm.emails e
+      join crm.leads   l on l.id = e.lead_id
+      join crm.clients c on c.id = e.client_id
+"""
+
+
+def outreach_today(client_id: int | None = None, search: str | None = None) -> list[dict]:
+    """Scheduled sends for today (calendar day, Europe/London)."""
+    extra = [
+        "e.status = 'scheduled'",
+        "e.scheduled_at >= date_trunc('day', now() at time zone 'Europe/London') at time zone 'Europe/London'",
+        "e.scheduled_at <  (date_trunc('day', now() at time zone 'Europe/London') + interval '1 day') at time zone 'Europe/London'",
+    ]
+    params: dict = {}
+    where = _outreach_where(extra, params, client_id, search)
+    rows = fetch_all(_OUTREACH_SELECT + f"where {where} order by e.scheduled_at asc", params)
+    for r in rows:
+        r['step_label']    = EMAIL_STEP_LABEL.get(r.get('email_number'), '—')
+        r['scheduled_hm']  = r['scheduled_at'].strftime('%H:%M') if r.get('scheduled_at') else ''
+    return rows
+
+
+def outreach_sent(client_id: int | None = None, search: str | None = None,
+                  limit: int = 200) -> list[dict]:
+    """Recently sent emails — last 30 days, capped at `limit` rows."""
+    extra = [
+        "e.status = 'sent'",
+        "e.sent_at >= now() - interval '30 days'",
+    ]
+    params: dict = {'lim': limit}
+    where = _outreach_where(extra, params, client_id, search)
+    rows = fetch_all(
+        _OUTREACH_SELECT + f"where {where} order by e.sent_at desc limit %(lim)s",
+        params,
+    )
+    for r in rows:
+        r['step_label'] = EMAIL_STEP_LABEL.get(r.get('email_number'), '—')
+        r['sent_at_short'] = r['sent_at'].strftime('%-d %b %H:%M') if r.get('sent_at') else ''
+        r['relative'] = relative_time(r['sent_at']) if r.get('sent_at') else ''
+    return rows
+
+
+def outreach_followups(client_id: int | None = None, search: str | None = None) -> list[dict]:
+    """Day-3 / Day-7 emails scheduled within the next 7 days (excluding today)."""
+    extra = [
+        "e.status = 'scheduled'",
+        "e.email_number in (2, 3)",
+        "e.scheduled_at >= (date_trunc('day', now() at time zone 'Europe/London') + interval '1 day') at time zone 'Europe/London'",
+        "e.scheduled_at <  (date_trunc('day', now() at time zone 'Europe/London') + interval '8 days') at time zone 'Europe/London'",
+    ]
+    params: dict = {}
+    where = _outreach_where(extra, params, client_id, search)
+    rows = fetch_all(_OUTREACH_SELECT + f"where {where} order by e.scheduled_at asc", params)
+    for r in rows:
+        r['step_label']     = EMAIL_STEP_LABEL.get(r.get('email_number'), '—')
+        r['scheduled_short'] = r['scheduled_at'].strftime('%a %-d %b · %H:%M') if r.get('scheduled_at') else ''
+    return rows
+
+
+def outreach_bounces(client_id: int | None = None, search: str | None = None,
+                     limit: int = 200) -> list[dict]:
+    """All bounced sends, newest first."""
+    extra = ["e.status = 'bounced'"]
+    params: dict = {'lim': limit}
+    where = _outreach_where(extra, params, client_id, search)
+    rows = fetch_all(
+        _OUTREACH_SELECT + f"where {where} order by coalesce(e.sent_at, e.created_at) desc limit %(lim)s",
+        params,
+    )
+    for r in rows:
+        r['step_label']    = EMAIL_STEP_LABEL.get(r.get('email_number'), '—')
+        when = r.get('sent_at')
+        r['bounced_short'] = when.strftime('%-d %b %H:%M') if when else '—'
+        r['relative']      = relative_time(when) if when else ''
+        # First word before the em-dash → severity (Hard / Soft) for the pill
+        reason = (r.get('bounce_reason') or '').strip()
+        head   = reason.split('—', 1)[0].strip().lower() if '—' in reason else ''
+        r['severity'] = head if head in ('hard', 'soft') else 'unknown'
+    return rows
 
 
 def leads_for_csv(

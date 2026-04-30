@@ -1,7 +1,265 @@
 {% extends "base.html" %}
 {% block title %}Outreach · Innovite CRM{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Outreach</h1>
-<p class="page-sub">Email queue, send status, follow-ups, bounces.</p>
-<div class="placeholder"><strong>Outreach</strong> arrives in Step 7.</div>
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Outreach</h1>
+    <p class="page-sub">Email queue, sends, follow-ups, and bounces.</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn" disabled title="Available once Step 7 backend lands">
+      <span class="btn-icon">⟳</span> Run pipeline
+    </button>
+  </div>
+</div>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong>
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{# ── KPIs ─────────────────────────────────────────────── #}
+{% set k = kpis %}
+<div class="metrics">
+  <div class="metric">
+    <div class="metric-label">Pending today</div>
+    <div class="metric-value">{{ '{:,}'.format(k.pending_today) }}</div>
+    <div class="metric-change flat">scheduled · UK time</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Sent · 7d</div>
+    <div class="metric-value">{{ '{:,}'.format(k.sent_7d) }}</div>
+    <div class="metric-change flat">across all clients</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Reply rate · 7d</div>
+    <div class="metric-value">{{ k.reply_rate }}%</div>
+    <div class="metric-change flat">replies / sent</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Bounce rate · 7d</div>
+    <div class="metric-value">{{ k.bounce_rate }}%</div>
+    <div class="metric-change flat">bounced / attempted</div>
+  </div>
+</div>
+
+{# ── Send-status per client ──────────────────────────── #}
+<div class="send-panel">
+  <div class="send-panel-head">
+    <div class="card-title" style="margin-bottom:0;">Send status per client</div>
+    <div class="send-panel-hint">Pause stops outbound sends only — reporting and pipeline keep running.</div>
+  </div>
+  {% if clients_panel %}
+    <div class="send-rows">
+      {% for c in clients_panel %}
+        <div class="send-row {% if c.outreach_paused %}is-paused{% endif %}">
+          <div class="send-row-name">{{ c.name }}</div>
+          <div class="send-row-status">
+            {% if c.outreach_paused %}
+              <span class="send-state state-paused">
+                <span class="status-dot"></span> Paused
+              </span>
+            {% else %}
+              <span class="send-state state-sending">
+                <span class="status-dot"></span> Sending
+              </span>
+            {% endif %}
+          </div>
+          <div class="send-row-meta">
+            <span class="send-num">{{ '{:,}'.format(c.pending_today or 0) }}</span> pending today
+            <span class="send-sep">·</span>
+            <span class="send-num">{{ '{:,}'.format(c.queued_7d or 0) }}</span> queued · 7d
+          </div>
+          <form method="post" action="{{ url_for('outreach_toggle_pause', client_id=c.id) }}" class="send-row-action">
+            <input type="hidden" name="paused" value="{{ 'false' if c.outreach_paused else 'true' }}">
+            <button type="submit" class="btn {% if c.outreach_paused %}btn-primary{% endif %}">
+              {{ 'Resume' if c.outreach_paused else 'Pause' }}
+            </button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-sm">No active clients yet.</div>
+  {% endif %}
+</div>
+
+{# ── Tabs ─────────────────────────────────────────────── #}
+{% set qs = request.args.to_dict() %}
+{% set _ = qs.pop('tab', None) %}
+{% set tabs = [
+  ('today',     'Today',                 counts.today),
+  ('sent',      'Sent',                  counts.sent),
+  ('followups', 'Follow-ups this week',  counts.followups),
+  ('bounces',   'Bounces',               counts.bounces),
+] %}
+<div class="tabbar" role="tablist" aria-label="Outreach view">
+  {% for slug, label, count in tabs %}
+    {% set this_qs = qs.copy() %}
+    {% set _ = this_qs.update({'tab': slug}) %}
+    <a class="tab {% if tab == slug %}is-active{% endif %}"
+       href="{{ url_for('outreach', **this_qs) }}"
+       role="tab"
+       aria-selected="{{ 'true' if tab == slug else 'false' }}">
+      {{ label }} <span class="tab-count">{{ count }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+{# ── Filter row ──────────────────────────────────────── #}
+<form class="leads-toolbar" method="get" action="{{ url_for('outreach') }}">
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <select class="filter-select" name="client" onchange="this.form.submit()">
+    <option value="">All clients</option>
+    {% for cl in clients_min %}
+      <option value="{{ cl.id }}" {% if f.client_id == cl.id %}selected{% endif %}>{{ cl.name }}</option>
+    {% endfor %}
+  </select>
+
+  <label class="search-wrap">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"/>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </svg>
+    <input type="search" name="q" placeholder="Search subject or business…"
+           value="{{ f.search or '' }}" autocomplete="off" data-debounce-search>
+  </label>
+</form>
+
+{# ── Tables (one per tab — only the active tab renders) ── #}
+{% if rows %}
+<div class="leads-table-wrap">
+  <table class="leads-table outreach-table" aria-label="Outreach · {{ tab }}">
+    <thead>
+      {% if tab == 'today' %}
+        <tr>
+          <th class="col-time">Time</th>
+          <th>Lead</th>
+          <th class="col-client">Client</th>
+          <th class="col-step">Step</th>
+          <th>Subject preview</th>
+        </tr>
+      {% elif tab == 'sent' %}
+        <tr>
+          <th class="col-time">Sent</th>
+          <th>Lead</th>
+          <th class="col-client">Client</th>
+          <th class="col-step">Step</th>
+          <th>Subject</th>
+          <th class="col-flag">Opened</th>
+          <th class="col-flag">Replied</th>
+        </tr>
+      {% elif tab == 'followups' %}
+        <tr>
+          <th class="col-time">Scheduled</th>
+          <th>Lead</th>
+          <th class="col-client">Client</th>
+          <th class="col-step">Step</th>
+          <th>Subject preview</th>
+        </tr>
+      {% else %}{# bounces #}
+        <tr>
+          <th class="col-time">Bounced</th>
+          <th>Lead</th>
+          <th class="col-client">Client</th>
+          <th>To address</th>
+          <th>Reason</th>
+          <th class="col-action"></th>
+        </tr>
+      {% endif %}
+    </thead>
+    <tbody>
+      {% for r in rows %}
+        {% set href = url_for('lead_detail', lead_id=r.lead_id) %}
+        <tr class="lead-tr" data-href="{{ href }}">
+          {% if tab == 'today' %}
+            <td class="col-time">{{ r.scheduled_hm }}</td>
+            <td><a class="lead-name-link" href="{{ href }}">{{ r.business_name }}</a></td>
+            <td class="col-client">{{ r.client_name }}</td>
+            <td class="col-step"><span class="step-pill step-{{ r.email_number }}">{{ r.step_label }}</span></td>
+            <td class="col-subject">{{ r.subject }}</td>
+          {% elif tab == 'sent' %}
+            <td class="col-time" title="{{ r.sent_at.isoformat() if r.sent_at else '' }}">{{ r.sent_at_short }}</td>
+            <td><a class="lead-name-link" href="{{ href }}">{{ r.business_name }}</a></td>
+            <td class="col-client">{{ r.client_name }}</td>
+            <td class="col-step"><span class="step-pill step-{{ r.email_number }}">{{ r.step_label }}</span></td>
+            <td class="col-subject">{{ r.subject }}</td>
+            <td class="col-flag">{% if r.opened_at %}<span class="dot-flag dot-blue"  title="Opened {{ r.opened_at.strftime('%-d %b %H:%M') }}"></span>{% else %}<span class="dot-flag dot-empty"></span>{% endif %}</td>
+            <td class="col-flag">{% if r.replied_at %}<span class="dot-flag dot-green" title="Replied {{ r.replied_at.strftime('%-d %b %H:%M') }}"></span>{% else %}<span class="dot-flag dot-empty"></span>{% endif %}</td>
+          {% elif tab == 'followups' %}
+            <td class="col-time">{{ r.scheduled_short }}</td>
+            <td><a class="lead-name-link" href="{{ href }}">{{ r.business_name }}</a></td>
+            <td class="col-client">{{ r.client_name }}</td>
+            <td class="col-step"><span class="step-pill step-{{ r.email_number }}">{{ r.step_label }}</span></td>
+            <td class="col-subject">{{ r.subject }}</td>
+          {% else %}{# bounces #}
+            <td class="col-time">{{ r.bounced_short }}</td>
+            <td><a class="lead-name-link" href="{{ href }}">{{ r.business_name }}</a></td>
+            <td class="col-client">{{ r.client_name }}</td>
+            <td class="col-addr">{{ r.to_address or '—' }}</td>
+            <td class="col-reason">
+              {% if r.severity == 'hard' %}<span class="bounce-pill bounce-hard">Hard</span>
+              {% elif r.severity == 'soft' %}<span class="bounce-pill bounce-soft">Soft</span>
+              {% else %}<span class="bounce-pill bounce-unknown">—</span>{% endif %}
+              <span class="bounce-detail">{{ r.bounce_reason or 'No reason captured' }}</span>
+            </td>
+            <td class="col-action">
+              <button type="button" class="btn btn-quiet" disabled title="Suppress lands with the Step 7 backend">Suppress</button>
+            </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+  {% if tab == 'today' %}
+    <div class="empty">Nothing scheduled for today. {% if f.client_id or f.search %}<a href="{{ url_for('outreach', tab='today') }}" class="card-link">Clear filters →</a>{% endif %}</div>
+  {% elif tab == 'sent' %}
+    <div class="empty">No sends in the last 30 days.</div>
+  {% elif tab == 'followups' %}
+    <div class="empty">No follow-ups queued for the next 7 days.</div>
+  {% else %}
+    <div class="empty">No bounces — clean run.</div>
+  {% endif %}
+{% endif %}
+
+{# ── Flash messages (pause/resume confirmations) ─────── #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-stack" aria-live="polite">
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<script>
+  // Debounced search — submit form after 250ms (same as Leads page).
+  (function () {
+    const input = document.querySelector('[data-debounce-search]');
+    if (!input) return;
+    let t;
+    input.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => input.form.submit(), 250);
+    });
+  })();
+
+  // Row click → open the lead. Don't hijack inline buttons / links.
+  (function () {
+    document.querySelectorAll('.lead-tr').forEach(tr => {
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('a, button, input, label, form')) return;
+        if (!tr.dataset.href) return;
+        window.location = tr.dataset.href;
+      });
+    });
+  })();
+</script>
 {% endblock %}
