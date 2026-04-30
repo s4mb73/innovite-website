@@ -114,18 +114,39 @@ def leads():
     db_error = None
     result = {'rows': [], 'total': 0, 'counts': {s: 0 for s in db.LEAD_STATUSES} | {'all': 0},
               'page': 1, 'pages': 1, 'page_size': 50, 'page_start': 0, 'page_end': 0}
-    clients_min: list[dict] = []
+    clients_min: list[dict]   = []
+    client_tabs: list[dict]   = []
+    active_client: dict | None = None
     f = _lead_filters_from_request()
+
     try:
-        result = db.leads_search(**f, page_size=50)
         clients_min = db.all_clients_min()
+        client_tabs = db.leads_count_per_client(status=f['status'], search=f['search'])
+
+        # Default to first active client if none specified — the page is
+        # always scoped to one client (no "all clients" view).
+        if f['client_id'] is None and client_tabs:
+            f['client_id'] = client_tabs[0]['id']
+
+        if f['client_id'] is not None:
+            active_client = next((c for c in client_tabs if c['id'] == f['client_id']), None)
+            if active_client is None:
+                # Filter named a client that doesn't exist — fall back to first.
+                f['client_id'] = client_tabs[0]['id'] if client_tabs else None
+                active_client = client_tabs[0] if client_tabs else None
+
+        if f['client_id'] is not None:
+            result = db.leads_search(**f, page_size=50)
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
+
     return render_template(
         'leads.html',
         active='leads',
         result=result,
         clients_min=clients_min,
+        client_tabs=client_tabs,
+        active_client=active_client,
         f=f,
         active_status=request.args.get('status', 'all'),
         db_error=db_error,

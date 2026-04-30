@@ -5,7 +5,13 @@
 <div class="page-head">
   <div>
     <h1 class="page-title">Leads</h1>
-    <p class="page-sub">Every prospect across every client.</p>
+    <p class="page-sub">
+      {% if active_client %}
+        Prospects for <strong>{{ active_client.name }}</strong>.
+      {% else %}
+        No active clients yet.
+      {% endif %}
+    </p>
   </div>
   <div class="page-actions">
     <a class="btn" href="{{ url_for('leads_csv', **request.args) }}" title="Download these results as CSV">
@@ -24,6 +30,23 @@
 <div class="banner banner-err">
   <strong>Database unavailable.</strong>
   <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{# ── Client tabs (page is always scoped to one client) ── #}
+{% if client_tabs %}
+<div class="tabbar tabbar-clients" role="tablist" aria-label="Client">
+  {% for ct in client_tabs %}
+    {% set qs = request.args.to_dict() %}
+    {% set _ = qs.pop('page', None) %}
+    {% set _ = qs.update({'client': ct.id}) %}
+    <a class="tab {% if active_client and ct.id == active_client.id %}is-active{% endif %}"
+       href="{{ url_for('leads', **qs) }}"
+       role="tab"
+       aria-selected="{{ 'true' if (active_client and ct.id == active_client.id) else 'false' }}">
+      {{ ct.name }} <span class="tab-count">{{ ct.count }}</span>
+    </a>
+  {% endfor %}
 </div>
 {% endif %}
 
@@ -56,12 +79,7 @@
 {# ── Filter bar ───────────────────────────────────────── #}
 <form class="leads-toolbar" method="get" action="{{ url_for('leads') }}">
   {% if f.status %}<input type="hidden" name="status" value="{{ f.status }}">{% endif %}
-  <select class="filter-select" name="client" onchange="this.form.submit()">
-    <option value="">All clients</option>
-    {% for cl in clients_min %}
-      <option value="{{ cl.id }}" {% if f.client_id == cl.id %}selected{% endif %}>{{ cl.name }}</option>
-    {% endfor %}
-  </select>
+  {% if f.client_id %}<input type="hidden" name="client" value="{{ f.client_id }}">{% endif %}
 
   <label class="search-wrap">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -148,13 +166,15 @@
   </div>
 </div>
 {% else %}
-  {% if f.search or f.status or f.client_id %}
+  {% if f.search or f.status %}
     <div class="empty">
-      No leads match these filters.
-      <a href="{{ url_for('leads') }}" class="card-link">Clear filters →</a>
+      No leads match these filters for {{ active_client.name if active_client else 'this client' }}.
+      <a href="{{ url_for('leads', client=f.client_id) }}" class="card-link">Clear filters →</a>
     </div>
+  {% elif active_client %}
+    <div class="empty">No leads yet for {{ active_client.name }} — run the pipeline to start seeing data.</div>
   {% else %}
-    <div class="empty">No leads yet — run the pipeline to start seeing data.</div>
+    <div class="empty">No active clients yet — onboard a client from the Clients page first.</div>
   {% endif %}
 {% endif %}
 

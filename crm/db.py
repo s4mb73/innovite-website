@@ -413,7 +413,46 @@ def leads_search(
 
 def all_clients_min() -> list[dict]:
     """Tiny client list for the leads-page filter dropdown."""
+    if not DATABASE_URL:
+        return [{'id': c['id'], 'name': c['name']}
+                for c in _REPORTS_CLIENTS_FIXTURE]
     return fetch_all("select id, name from crm.clients order by name")
+
+
+def leads_count_per_client(*, status: str | None = None,
+                           search: str | None = None) -> list[dict]:
+    """Active clients with their lead counts under the current visible
+    filter set (status + search), so the per-client tabs show exactly
+    how many rows each tab would render. Churned clients are excluded.
+
+    Honours `status` and `search` but NOT `client_id` — the whole point
+    is to show what each client looks like under the current view."""
+    if not DATABASE_URL:
+        # Fixture mode: deterministic counts so the tabs render with
+        # plausible numbers in the local POC. Status/search filters are
+        # ignored here since fixture leads aren't queryable.
+        return [{'id': 1, 'name': 'Vidora Media',     'count': 24},
+                {'id': 2, 'name': 'ROCA Accountants', 'count': 18}]
+    lead_where = ['l.client_id = c.id']
+    params: dict = {}
+    if status and status in LEAD_STATUSES:
+        lead_where.append('l.status = %(status)s')
+        params['status'] = status
+    if search:
+        lead_where.append('(l.business_name ilike %(q)s or l.decision_maker_name ilike %(q)s)')
+        params['q'] = f'%{search}%'
+
+    sql = f"""
+        select c.id, c.name,
+               (select count(*)
+                  from crm.leads l
+                 where {' and '.join(lead_where)}) as count
+          from crm.clients c
+         where c.status != 'churned'
+         order by c.name
+    """
+    rows = fetch_all(sql, params)
+    return [{'id': int(r['id']), 'name': r['name'], 'count': int(r['count'])} for r in rows]
 
 
 def bulk_change_status(lead_ids: list[int], new_status: str) -> dict:
