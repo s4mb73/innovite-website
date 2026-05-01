@@ -2824,7 +2824,7 @@ def system_status() -> dict:
         'worker':       {'state': 'idle',    'detail': 'No worker yet — pipeline runs in-process'},
         'email_queue':  {'state': 'healthy', 'detail': '0 pending · 0 failed'},
         'build':        {'state': 'healthy', 'detail': _build_signature()},
-        'app_version':  {'state': 'healthy', 'detail': 'v0.10.0 — Step 10 of 10'},
+        'app_version':  {'state': 'healthy', 'detail': 'v0.10.0'},
     }
     # DB ping
     if _settings_use_fixture():

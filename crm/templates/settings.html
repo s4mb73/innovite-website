@@ -104,7 +104,6 @@
       </div>
       <div class="settings-form-foot">
         <button type="submit" class="btn btn-primary">Save sending settings</button>
-        <button type="button" class="btn btn-quiet" disabled title="Test once SMTP send lands">Send test email</button>
       </div>
     </form>
   </section>
@@ -180,11 +179,6 @@
               {% else %}{{ it.state|capitalize }}{% endif %}
             </span>
           </div>
-          <div class="integration-action">
-            {% if it.env_name %}
-              <button type="button" class="btn btn-quiet" disabled title="Rotation lands with the secrets manager">Rotate</button>
-            {% endif %}
-          </div>
         </div>
       {% endfor %}
     </div>
@@ -241,20 +235,13 @@
           {% endif %}
         </div>
       </div>
-      <form method="post" action="{{ url_for('settings_pause_all') }}">
+      <form method="post" action="{{ url_for('settings_pause_all') }}"
+            onsubmit="return {% if s.system_outreach_paused %}true{% else %}confirm('Pause all outreach for every client? Inbound and reporting keep running.'){% endif %};">
         <input type="hidden" name="paused" value="{{ 'false' if s.system_outreach_paused else 'true' }}">
         <button type="submit" class="btn {% if s.system_outreach_paused %}btn-primary{% else %}btn-danger{% endif %}">
           {% if s.system_outreach_paused %}Resume sends{% else %}Pause all sends{% endif %}
         </button>
       </form>
-    </div>
-
-    <div class="danger-row">
-      <div class="danger-row-text">
-        <div class="danger-row-title">Wipe demo seed data</div>
-        <div class="danger-row-sub">Drops all demo leads / emails / replies / inbound rows. Clients are kept. Coming soon.</div>
-      </div>
-      <button type="button" class="btn btn-quiet" disabled>Wipe demo data</button>
     </div>
   </section>
 

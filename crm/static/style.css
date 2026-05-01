@@ -2474,7 +2474,7 @@ a { color:inherit; text-decoration:none; }
 .integrations { display:flex; flex-direction:column; }
 .integration-row {
   display:grid;
-  grid-template-columns: 1.4fr 1fr 1.2fr auto auto;
+  grid-template-columns: 1.4fr 1fr 1.2fr auto;
   gap:14px;
   align-items:center;
   padding:13px 0;
@@ -2493,8 +2493,6 @@ a { color:inherit; text-decoration:none; }
   overflow:hidden;
   text-overflow:ellipsis;
 }
-.integration-action .btn { padding:5px 10px; font-size:11.5px; }
-
 /* System status grid */
 .status-grid { display:flex; flex-direction:column; }
 .status-row {
