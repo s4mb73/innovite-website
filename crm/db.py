@@ -2385,20 +2385,21 @@ def reports_wins(client_id: int, days: int) -> list[dict]:
                decision_maker_name,
                business_name,
                status,
-               updated_at,
-               extract(day from now() - updated_at)::int as days_ago
+               updated_at
           from crm.leads
          where client_id = %(cid)s
            and status in ('meeting', 'won')
-           and updated_at >= now() - (%(days)s || ' days')::interval
+           and updated_at >= now() - interval %(window)s
          order by updated_at desc
          limit 6
     """
-    rows = fetch_all(sql, {'cid': client_id, 'days': days}) or []
+    rows = fetch_all(sql, {'cid': client_id, 'window': f'{days} days'}) or []
     avg = REPORTS_DEFAULT_AVG_DEAL_VALUE
+    now = datetime.now(timezone.utc)
     out: list[dict] = []
     for r in rows:
-        days_ago = int(r.get('days_ago') or 0)
+        updated  = r.get('updated_at')
+        days_ago = (now - updated).days if updated else 0
         outcome  = r.get('status')
         out.append({
             'outcome':    outcome,
