@@ -62,22 +62,31 @@
   <section class="card settings-card" id="mailboxes-summary">
     <div class="settings-card-head">
       <h2 class="settings-card-title">Mailboxes</h2>
-      <p class="settings-card-sub">Per-mailbox SMTP, warmup, and assignment.</p>
+      <p class="settings-card-sub">Email infrastructure health and capacity.</p>
     </div>
     <div class="settings-summary-row">
       <div class="settings-summary-text">
         {% if mb_summary.total %}
-          <strong>{{ mb_summary.total }}</strong> connected ·
-          <span class="state-healthy-text">{{ mb_summary.healthy }} healthy</span>
-          {% if mb_summary.warming %} · {{ mb_summary.warming }} warming{% endif %}
+          <span class="mb-stat-num">{{ mb_summary.total }}</span>
+          <span class="mb-stat-label">connected</span>
+          <span class="mb-stat-sep">·</span>
+          <span class="mb-stat-num mb-stat-num-healthy">{{ mb_summary.healthy }}</span>
+          <span class="mb-stat-label">healthy</span>
+          {% if mb_summary.warming %}
+            <span class="mb-stat-sep">·</span>
+            <span class="mb-stat-num mb-stat-num-warn">{{ mb_summary.warming }}</span>
+            <span class="mb-stat-label">warming</span>
+          {% endif %}
           {% if mb_summary.needs_attention %}
-            · <span class="state-warn-text">{{ mb_summary.needs_attention }} need attention</span>
+            <span class="mb-stat-sep">·</span>
+            <span class="mb-stat-num mb-stat-num-warn">{{ mb_summary.needs_attention }}</span>
+            <span class="mb-stat-label">need attention</span>
           {% endif %}
         {% else %}
           No mailboxes connected yet.
         {% endif %}
       </div>
-      <a class="btn btn-primary" href="{{ url_for('mailboxes') }}">Manage mailboxes</a>
+      <a class="btn" href="{{ url_for('mailboxes') }}">Manage mailboxes</a>
     </div>
   </section>
 

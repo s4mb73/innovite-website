@@ -3305,8 +3305,23 @@ a { color:inherit; text-decoration:none; }
   padding-top:6px;
   flex-wrap:wrap;
 }
-.settings-summary-text { color:var(--t2); font-size:13.5px; }
-.settings-summary-text strong { color:var(--t1); font-weight:500; }
+.settings-summary-text {
+  color:var(--t3);
+  font-size:13px;
+  display:inline-flex;
+  align-items:baseline;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.mb-stat-num {
+  color:var(--t1);
+  font-weight:600;
+  font-variant-numeric:tabular-nums;
+}
+.mb-stat-num-healthy { color:var(--green); }
+.mb-stat-num-warn    { color:var(--amber); }
+.mb-stat-label       { color:var(--t3); }
+.mb-stat-sep         { color:var(--t3); margin:0 2px; }
 
 /* Domain summary strip — one card per sending domain */
 .mb-domain-strip {
