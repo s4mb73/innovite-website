@@ -2373,13 +2373,43 @@ def reports_client_summary(client_id: int) -> dict | None:
 
 
 def reports_wins(client_id: int, days: int) -> list[dict]:
-    """Named meetings + deals for the 'Wins this period' card. Without
-    a database, returns the demo fixture; the production path is a TODO
-    that selects most recent leads in ('meeting','won') status within the
-    window."""
+    """Named meetings + deals for the 'Wins this period' card. Reads
+    from `crm.leads` where status in ('meeting','won') and the most
+    recent status change (`updated_at`) falls inside the window. Capped
+    at 6 most-recent rows so the card stays scannable."""
     if _reports_use_fixture():
         return _reports_wins_fixture(client_id, days)
-    return []
+
+    sql = """
+        select id,
+               decision_maker_name,
+               business_name,
+               status,
+               updated_at,
+               extract(day from now() - updated_at)::int as days_ago
+          from crm.leads
+         where client_id = %(cid)s
+           and status in ('meeting', 'won')
+           and updated_at >= now() - (%(days)s || ' days')::interval
+         order by updated_at desc
+         limit 6
+    """
+    rows = fetch_all(sql, {'cid': client_id, 'days': days}) or []
+    avg = REPORTS_DEFAULT_AVG_DEAL_VALUE
+    out: list[dict] = []
+    for r in rows:
+        days_ago = int(r.get('days_ago') or 0)
+        outcome  = r.get('status')
+        out.append({
+            'outcome':    outcome,
+            'contact':    r.get('decision_maker_name') or '(unknown)',
+            'business':   r.get('business_name')      or '(unknown)',
+            'days_ago':   days_ago,
+            'when':       _format_days_ago(days_ago),
+            # POC: avg estimate until US-031 lands a per-lead deal_value column
+            'deal_value': avg if outcome == 'won' else None,
+        })
+    return out
 
 
 REPORTS_DEFAULT_AVG_DEAL_VALUE = 6000  # GBP — UK B2B service midpoint, see _reports_seed
