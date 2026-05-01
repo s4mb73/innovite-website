@@ -726,7 +726,9 @@ The Outreach page keeps its identity as the **sends-side** dashboard (Today / Se
 
 ## Epic 10 — Reports
 
-Source UI: `templates/reports.html` — per-client performance page at `/reports`. Demoable today via a fixture (`db._reports_use_fixture()` returns True when `DATABASE_URL` is unset) — every section needs to read real data before this surface can be shared with a paying client. The fixture decisions also surface the schema gaps that block the production version: where per-lead `deal_value` lives, where per-client goals live, and where an operator-edited narrative gets persisted.
+Source UI: `templates/reports.html` — per-client performance page at `/reports`. Demoable today via a fixture (`db._reports_use_fixture()` returns True when `DATABASE_URL` is unset) — every section needs to read real data before this surface can be shared with a paying client. The fixture decisions also surface the schema gaps that block the production version: where per-lead `deal_value` lives and where per-client goals live.
+
+The "What we did this period" narrative section was removed from the page on 2026-05-01 — clients reading their own report don't need a paragraph that paraphrases the numbers next to it. The `reports_narrative()` function still composes a recap paragraph that the **Email to client** mailto body uses; on the page itself, the KPI tiles + Wins card + chart + funnel + sequence already speak for themselves.
 
 Stories below cover the gaps between the shipped UI and a real, sharable, single-client report.
 
@@ -737,18 +739,21 @@ Stories below cover the gaps between the shipped UI and a real, sharable, single
 **So that** the report reflects work the agency actually did this month — the named outcomes are the part the client cares about most
 
 **Priority:** P0
-**Status:** Draft
+**Status:** Mostly shipped — query, fixture path, and 6-row cap landed. Two acceptance criteria still open: deal_value column (covered by US-031) and the conditional "demo data" tag. Production query was 500'ing on a psycopg `interval $1` binding bug until 2026-05-01 (commit 085b62f) — the SQL change in that fix is what made the production read path actually run, so re-verify in prod before closing.
 
 **Acceptance criteria**
-- [ ] `db.reports_wins(client_id, days)` selects from `crm.leads` where `client_id = %s`, `status in ('meeting','won')`, and `updated_at >= now() - interval '<days> days'`
-- [ ] Returns `decision_maker_name` as `contact`, `business_name` as `business`, the lead's status as `outcome`, and days since `updated_at` formatted by the existing `_format_days_ago()` helper as `when`
+- [x] `db.reports_wins(client_id, days)` selects from `crm.leads` where `client_id = %(cid)s`, `status in ('meeting','won')`, and `updated_at >= now() - make_interval(days => %(d)s)` (note: `interval %(d)s` syntax does not bind in psycopg — Postgres only accepts a literal there; `make_interval(days => ...)` is the working pattern, see commit 085b62f)
+- [x] Returns `decision_maker_name` as `contact`, `business_name` as `business`, the lead's status as `outcome`, and days since `updated_at` formatted by the existing `_format_days_ago()` helper as `when`
 - [ ] `deal_value` is sourced from a real per-lead column where present, falling back to `null` on the row (display dash) — never the avg estimate (US-031 covers the column)
-- [ ] Capped at 6 most-recent rows so the card stays scannable; "+ N more" hint appears below if the period contains more (links to a filtered Leads page view)
-- [ ] Empty state ("No wins yet in this window — sequence is still warming up") replaces the card silently when the query returns 0 rows
-- [ ] Fixture path is preserved for localhost demo: `_reports_use_fixture()` continues to return the existing fixture when `DATABASE_URL` is unset, so prospect-demo screenshots stay stable
-- [ ] Card title's "demo data" tag only renders when `_reports_use_fixture()` is True; production renders the title alone
+- [x] Capped at 6 most-recent rows so the card stays scannable
+- [ ] "+ N more" hint appears below the 6 rows if the period contains more (links to a filtered Leads page view)
+- [x] Empty state ("No wins yet in this window — sequence is still warming up") replaces the card silently when the query returns 0 rows
+- [x] Fixture path is preserved for localhost demo: `_reports_use_fixture()` continues to return the existing fixture when `DATABASE_URL` is unset, so prospect-demo screenshots stay stable
+- [ ] Card title's "demo data" tag only renders when `_reports_use_fixture()` is True; production renders the title alone (currently hardcoded in template — see `templates/reports.html` line 154)
 
 **Notes** — Status-change date uses `crm.leads.updated_at` for now; a follow-up may move to a dedicated `crm.lead_status_history` table so a lead that flipped meeting → lost still surfaces the meeting date in the right window. Out of scope here — `updated_at` is right ~95% of the time and the schema migration is its own decision.
+
+The same `interval %(d)s` binding bug existed in 6 sibling reports queries (`reports_kpis`, `reports_chart_series`, `reports_funnel`, `reports_sequence`, `reports_grade_mix`) — also fixed in 085b62f. Worth a separate "production read path covered by a smoke test that hits a real DB" story if this defect class repeats.
 
 ---
 
@@ -796,29 +801,6 @@ Stories below cover the gaps between the shipped UI and a real, sharable, single
 
 ---
 
-### US-033 · Operator-edited narrative persists per (client, period)
-
-**As** an operator
-**I want to** edit the auto-generated "What we did this period" paragraph and have my edit replace the auto version for that specific (client, period)
-**So that** I can add context the data can't show ("we paused for the holiday week", "Harbor Legal came via referral, not outbound — counted separately") before sending the report to the client
-
-**Priority:** P1
-**Status:** Draft
-
-**Acceptance criteria**
-- [ ] New table `crm.report_narratives` with columns: `client_id`, `period_slug` (`7d`/`30d`/`90d`), `body` text, `updated_at` timestamptz, `updated_by` text. Primary key `(client_id, period_slug)` — one editable narrative per cell, overwritten on each save
-- [ ] `reports_narrative()` reads from this table first; falls back to the existing auto-composed paragraph when no row exists
-- [ ] On the Reports page, the narrative paragraph gains an inline **Edit** button (Lucide-style stroked SVG, matches existing icon style)
-- [ ] Edit opens an inline textarea pre-filled with the current text (auto or saved); **Save** writes to `crm.report_narratives`; **Cancel** discards
-- [ ] **Reset to auto** button on the editor clears the saved row, so the page falls back to the auto version on next render
-- [ ] Saved narratives show a small "Edited DD MMM" timestamp under the paragraph; auto narratives show no badge (the auto version is the default, not a state worth labelling)
-- [ ] Edits are visible to the same operator immediately on save (no page reload) and to all operators on next render — no per-operator drafts
-- [ ] Mailto body uses the saved narrative if present, falls back to auto otherwise
-
-**Notes** — Period-scoped (not global) because what was true in one period (paused for holiday) isn't true in the next. Storing per-period also avoids "do I need to re-edit every time the auto text changes" — auto is the floor, edited is the ceiling, and the operator only touches it when there's something the data can't say.
-
----
-
 ### US-034 · Per-client goals replace global `REPORTS_TARGETS_MONTHLY`
 
 **As** an operator
@@ -857,8 +839,8 @@ Stories below cover the gaps between the shipped UI and a real, sharable, single
 - [ ] Reports page (operator side) gains a **Share link** action in the kebab menu — generates a token if none exists for the client, copies `https://innovite-crm.onrender.com/report/<token>` to clipboard, shows a confirmation toast
 - [ ] Same kebab menu gains **Revoke share link** when a token exists — sets `revoked_at`; future hits to that URL render a clean "Link revoked — request a new one from your account manager" page
 - [ ] Mailto body (existing on the Reports page) updates to include the share URL alongside the recap text, when a non-revoked token exists
-- [ ] Public route does NOT show: client picker, the **demo data** tag (production data only), the kebab menu, edit narrative button (US-033), CSV export
-- [ ] Public route DOES show: hero, narrative, KPIs, trend chart, Wins this period, Funnel, Sequence — same content shape as the operator view, just locked-down chrome
+- [ ] Public route does NOT show: client picker, the **demo data** tag (production data only), the kebab menu, CSV export
+- [ ] Public route DOES show: hero, KPIs, trend chart, Wins this period, Funnel, Sequence — same content shape as the operator view, just locked-down chrome
 
 **Notes** — Single password + per-client token means the URL alone doesn't expose the report (need the password too) and the token alone scopes which client they see (one client can't see another's). Acceptable trade-off for a 1-person agency; full per-client auth (each client sets their own password, can self-revoke) is overkill at this scale and gets revisited if/when Innovite onboards a fifth client. Comment block at the top of the existing mailto code in `app.py:reports()` can be removed once this lands.
 
