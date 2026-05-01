@@ -606,6 +606,124 @@ The Outreach page keeps its identity as the **sends-side** dashboard (Today / Se
 
 ---
 
+### US-025 · Render the full conversation thread for a lead
+
+**As** an operator
+**I want to** see every outbound email and every received reply for a lead in a single chronological list
+**So that** I can read the full back-and-forth in context without piecing the thread together from the lead detail page
+
+**Priority:** P0
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] `db.reply_thread(reply_id)` returns lead + client metadata plus a chronological message list mixing sent emails (`crm.emails` with `sent_at is not null` for that lead) with received replies (`crm.replies` for that lead)
+- [ ] Each message carries: direction (`out` / `in`), subject, body, from / to address, ISO timestamp, relative time, sentiment (for `in` messages), and the cadence step pill (Day 1 / Day 3 / Day 7 — derived from `email_number`) for `out` messages
+- [ ] Messages render oldest-first; the drawer scrolls to the most recent on open so the operator lands on the reply they just clicked
+- [ ] Out and in messages are visually distinct — out uses the periwinkle tint, in uses surface-2
+- [ ] Empty thread (no prior messages on file) renders a quiet "No prior messages on file" line, not an error
+- [ ] Loading state — skeleton bubbles while the thread JSON resolves
+- [ ] Error state — "Couldn't load this conversation" + Retry button; retry hits the same endpoint without re-opening the drawer
+- [ ] Same component is reusable on `templates/lead_detail.html` so the lead page renders the thread without re-implementing the data layer
+
+**Notes** — The drawer's thread (US-024) and any future "Conversation" panel on the lead detail page should pull from the same data layer function. Do not fork the query.
+
+---
+
+### US-026 · Pre-fill the reply composer with sender, recipient, subject, and quoted body
+
+**As** an operator
+**I want to** open the reply drawer and find From, To, Subject, and quoted body already populated from the conversation in front of me
+**So that** I am typing the reply, not assembling it — the only thing that should need my attention is what to actually say
+
+**Priority:** P0
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] **From** — read-only, populated from `s.sending_email.from_address` (set on Settings → Sending email card)
+- [ ] **To** — read-only, populated from the original reply's `from_address`, falling back to `lead.decision_maker_email` if the reply did not carry one
+- [ ] **Subject** — editable, pre-filled with the original subject prefixed with `Re: ` if it does not already start with one (case-insensitive)
+- [ ] **Body** — empty for typing at the top, with the lead's reply quoted as `> ` lines below the cursor
+- [ ] Keyboard focus lands in the body field on drawer open, with the cursor at position 0,0 (above the quoted block)
+- [ ] All four fields update if the operator opens a different reply without closing the drawer in between
+- [ ] If `s.sending_email.from_address` is empty, the From field shows a `Set sending email →` link to Settings instead of an address; the send buttons are disabled with a tooltip "Sending email not configured"
+
+**Notes** — The "from address not set" disabled state is the only place this story diverges from the happy path. We are not validating recipient addresses on the client — Zoho will bounce a malformed one and the bounce flow (US-007) handles it.
+
+---
+
+### US-027 · Send the manual reply via Zoho SMTP with thread-preserving headers
+
+**As** an operator
+**I want to** click Send and have the reply actually go out through Zoho, threaded into the same conversation on the recipient's side and visible in my Zoho Sent folder
+**So that** the email lands like a normal reply — not as a new thread or a rogue message — and my Zoho web UI stays in sync with what I sent from the CRM
+
+**Priority:** P0
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] Send POSTs to `/inbox/reply/<reply_id>/send` with subject + body + optional `action`
+- [ ] Server-side, the email goes out via SMTP using `s.sending_email.smtp_host` / `smtp_port` / authenticated as `from_address` (Zoho `.eu` endpoints by default for UK)
+- [ ] Outgoing message sets `In-Reply-To: <original-message-id>` and `References` (chained from any prior `References` header in the thread, falling back to just the original Message-ID) so Zoho threads the reply on both inbox and Sent-folder views
+- [ ] Outgoing message also sets a fresh `Message-ID` (UUID-based, sender's domain) so future replies thread back cleanly
+- [ ] On success: a row is inserted into `crm.emails` with `kind='manual_reply'`, `status='sent'`, `sent_at=now()`, body, subject, from, to, lead_id, client_id; the originating `crm.replies.processed` is set true; an `crm.activity_log` row records `manual_reply_sent`
+- [ ] On SMTP failure: typed body + subject are preserved client-side; an inline banner under the composer shows a short error ("Couldn't reach smtp.zoho.eu — check Settings") with a Retry button; nothing is written to `crm.emails`
+- [ ] Send timeouts cap at 15s; longer than that, the banner says "Send timed out — your text is safe; try again"
+- [ ] Sends are not rate-capped against the daily send cap (`s.daily_send_cap`) — a manual reply is a human-in-the-loop conversation, not bulk outbound, so US-004's cap does not apply
+
+**Notes — Zoho specifics**
+- UK account region so SMTP host defaults to `smtp.zoho.eu` port 587 (STARTTLS). The Settings page already exposes these — no detection logic needed.
+- App-specific password lives in env (`ZOHO_SMTP_PASSWORD`), not in the DB. The Settings UI shows a "Configured / Not configured" pill — the password itself is never read or echoed back.
+
+**Notes — explicitly out of scope**
+- Switching to Zoho Mail API instead of SMTP — deferred. SMTP + headers covers ~95% of the threading behaviour; the API gives marginal benefits at higher OAuth setup cost. Revisit if read-after-send sync ever matters.
+
+---
+
+### US-028 · Quick-action send buttons advance lead status atomically
+
+**As** an operator
+**I want to** click "Send & mark as meeting booked" or "Send & mark as lost" and have the reply send and the lead status advance in one action
+**So that** the morning queue clears at the speed of one click per lead, instead of three (send → open lead → change status)
+
+**Priority:** P0
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] Three buttons share one row at the bottom of the composer:
+  - **Send reply** — primary, default action; lead stays at `replied`
+  - **Send & mark as meeting booked** — secondary; advances `replied` → `meeting`
+  - **Send & mark as lost** — secondary; advances `replied` → `lost`
+- [ ] The `action` field (`meeting` / `lost` / unset) is sent on the same POST as body + subject — single round-trip, not send-then-status
+- [ ] Lead status advance is atomic with the send: either both succeed and the row leaves Needs you, or neither happens and the typed text is preserved
+- [ ] An `activity_log` row records the chosen action in its detail JSON (`status_change: 'meeting' | 'lost' | null`) so the audit trail shows whether the operator used a quick-action or default Send
+- [ ] If the operator picks `meeting` or `lost`, the toast reads "Reply sent · marked meeting booked" / "Reply sent · marked lost" instead of plain "Reply sent"
+- [ ] Picking `meeting` when the lead is already at `meeting` (rare — operator clicked from Done tab) is a no-op on status; the email still sends; no error
+- [ ] No "Send & mark as won" — `won` requires a deal-close confirmation that does not belong in a reply composer; operator goes via the lead detail page (US-020 lifecycle)
+
+**Notes** — Status auto-advance from a manual reply is a different signal than from an auto-detected reply (US-009 stops the cadence; it does not infer intent). Here the operator is the intent classifier — they read the reply, judged it, and clicked the right button. AI intent inference is deferred to US-023.
+
+---
+
+### US-029 · Manual reply cancels queued follow-ups for the lead
+
+**As** an operator
+**I want to** have any queued Day 3 / Day 7 follow-ups for this lead cancelled the moment my manual reply sends
+**So that** the cadence engine does not fire a "just bumping this" follow-up after the lead and I are already mid-conversation
+
+**Priority:** P0
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] When `/inbox/reply/<id>/send` succeeds, all `crm.emails` rows for the same lead with `status='scheduled'` move to `status='cancelled'` with reason `manual_reply_sent`
+- [ ] The cancelled rows disappear from the **Follow-ups this week** tab on Outreach
+- [ ] An `activity_log` row records `sequence_stopped` with trigger `manual_reply_sent` (same shape as US-009's `reply_received` trigger, different reason)
+- [ ] Cancellation is idempotent — re-sending a manual reply on the same lead does not error, even though there are no scheduled rows left to cancel
+- [ ] A subsequent automated reply detection (US-008) on the same lead also does not double-cancel — US-009's existing trigger sees `status='cancelled'` and skips
+
+**Notes** — Same end-state as US-009 (sequence stops when a reply is recorded), different trigger (manual send vs IMAP detection). Both write to the same `cancelled` status with a reason field that distinguishes them, so reporting can answer "how often does the operator stop a sequence vs auto-detection?"
+
+---
+
 ## Out of scope for this draft
 
 These belong in later epics or separate docs — recording here so we don't lose them:
