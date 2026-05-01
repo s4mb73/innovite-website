@@ -665,7 +665,6 @@ def reports():
         sequence=sequence,
         wins=wins,
         targets=targets,
-        narrative=narrative,
         mailto_url=mailto_url,
         db_error=db_error,
     )
