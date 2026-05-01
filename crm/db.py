@@ -1314,6 +1314,146 @@ def _inbound_use_fixture() -> bool:
     return not DATABASE_URL
 
 
+# ── Replies fixture (for /inbox demo without DB) ─────────────────────
+# Mirrors crm.replies + parent lead/client so the reply drawer (US-024)
+# is demoable on localhost without a Supabase connection. Tied tightly
+# to a small set of leads so the thread fetch can compose realistic
+# Day 1 / Day 3 outbound bodies for context.
+
+def _replies_local_fixture() -> list[dict]:
+    now = datetime.now(timezone.utc)
+    h = lambda hours: now - _td(hours=hours)
+    d = lambda days:  now - _td(days=days)
+    return [
+        # Needs you — positive reply, fresh
+        dict(id=101, lead_id=9001, client_id=1, processed=False,
+             from_address='sarah@coleandreeves.co.uk',
+             subject='Re: Helping Cole & Reeves cut prospecting time',
+             body=(
+                 "Hi Sammy,\n\n"
+                 "This is on point — we're spending way too long on outbound "
+                 "and the conversion is patchy. The ROCA case study is "
+                 "exactly the kind of result I'd want.\n\n"
+                 "Happy to do a 25-min intro this week. Tuesday or Thursday "
+                 "afternoon work?\n\n"
+                 "Sarah"
+             ),
+             sentiment='positive', detected_at=h(2),
+             business_name='Cole & Reeves Accountants',
+             decision_maker_name='Sarah Cole',
+             decision_maker_email='sarah@coleandreeves.co.uk',
+             lead_status='replied',
+             client_name='ROCA Accountants'),
+        # Needs you — neutral / question
+        dict(id=102, lead_id=9002, client_id=2, processed=False,
+             from_address='james@whitfordproperty.co.uk',
+             subject='Re: Whitford — qualified leads on autopilot',
+             body=(
+                 "Thanks for reaching out. Before I commit to a call, can "
+                 "you send across pricing and the kind of volume you typically "
+                 "deliver in property?\n\n"
+                 "Cheers, James"
+             ),
+             sentiment='neutral', detected_at=h(7),
+             business_name='Whitford Property Group',
+             decision_maker_name='James Whitford',
+             decision_maker_email='james@whitfordproperty.co.uk',
+             lead_status='replied',
+             client_name='Vidora Media'),
+        # Done — already processed (becomes a meeting)
+        dict(id=103, lead_id=9003, client_id=1, processed=True,
+             from_address='nina@harborlegal.co.uk',
+             subject='Re: Harbor Legal — three new instructions a month',
+             body=(
+                 "Booked you in for Wednesday at 14:00. Looking forward to it.\n\n"
+                 "Nina"
+             ),
+             sentiment='positive', detected_at=d(3),
+             business_name='Harbor Legal',
+             decision_maker_name='Nina Patel',
+             decision_maker_email='nina@harborlegal.co.uk',
+             lead_status='meeting',
+             client_name='ROCA Accountants'),
+    ]
+
+
+def _reply_thread_fixture(reply_id: int) -> dict | None:
+    """Compose a realistic thread for a fixture reply: two outbound
+    messages (Day 1 + Day 3) followed by the lead's reply. Used only
+    when DATABASE_URL is unset."""
+    rows = {r['id']: r for r in _replies_local_fixture()}
+    head = rows.get(reply_id)
+    if not head:
+        return None
+
+    sending = settings_get('sending_email') or {}
+    from_addr = sending.get('from_address') or 'sammy@innoviteai.com'
+    detected = head['detected_at']
+    day1_at  = detected - _td(days=4, hours=2)
+    day3_at  = detected - _td(days=1, hours=4)
+
+    business = head['business_name']
+    name     = head['decision_maker_name'].split(' ')[0]
+
+    day1_body = (
+        f"Hi {name},\n\n"
+        f"Saw {business} comes up at the top of search for your area — "
+        f"impressive presence. Quick context: we're an outbound system "
+        f"built for service firms in your sector. Our ROCA engagement "
+        f"is doing 3× pipeline in 60 days, zero hours of prospecting "
+        f"on their side.\n\n"
+        f"Worth a 25-min intro to see if the shape fits {business}?\n\n"
+        f"— Sammy"
+    )
+    day3_body = (
+        f"Hi {name},\n\n"
+        f"Just bumping the note from earlier — happy to send the ROCA "
+        f"deck across first if useful, or jump straight to a call.\n\n"
+        f"— Sammy"
+    )
+
+    messages = [
+        {'kind':'out', 'subject': head['subject'].replace('Re: ', ''),
+         'body': day1_body, 'from_address': from_addr,
+         'to_address': head['decision_maker_email'],
+         'at': day1_at.isoformat(), 'relative': relative_time(day1_at),
+         'step': 'Day 1'},
+        {'kind':'out', 'subject': '',
+         'body': day3_body, 'from_address': from_addr,
+         'to_address': head['decision_maker_email'],
+         'at': day3_at.isoformat(), 'relative': relative_time(day3_at),
+         'step': 'Day 3'},
+        {'kind':'in', 'subject': head['subject'],
+         'body': head['body'], 'from_address': head['from_address'],
+         'at': detected.isoformat(), 'relative': relative_time(detected),
+         'sentiment': head['sentiment']},
+    ]
+
+    head_subject = head['subject']
+    reply_subject = head_subject if head_subject.lower().startswith('re:') else f'Re: {head_subject}'
+    quoted = '\n\n'.join(f'> {line}' for line in (head['body'] or '').splitlines())
+
+    return {
+        'reply_id':       head['id'],
+        'lead_id':        head['lead_id'],
+        'client_id':      head['client_id'],
+        'client_name':    head['client_name'],
+        'business_name':  head['business_name'],
+        'lead_name':      head['decision_maker_name'],
+        'lead_status':    head['lead_status'],
+        'sentiment':      head['sentiment'],
+        'reply_relative': relative_time(detected),
+        'processed':      head['processed'],
+        'messages':       messages,
+        'composer': {
+            'from':    from_addr,
+            'to':      head['from_address'],
+            'subject': reply_subject,
+            'quoted':  quoted,
+        },
+    }
+
+
 # ── Inbox (Epic 9 / US-022) ───────────────────────────────────────────
 # One page that answers "did anything come back?" — unifies outbound
 # replies (crm.replies) and inbound form submissions (crm.inbound_leads)
@@ -1375,8 +1515,15 @@ def inbox_tab_counts() -> dict:
     counts = {'needs_you': 0, 'drafts': 0, 'done': 0}
     if _inbound_use_fixture():
         forms = _inbound_local_fixture()
-        counts['needs_you'] = sum(1 for r in forms if r.get('status') == 'new')
-        counts['done']      = sum(1 for r in forms if r.get('status') != 'new')
+        replies = _replies_local_fixture()
+        counts['needs_you'] = (
+            sum(1 for r in forms   if r.get('status') == 'new')
+            + sum(1 for r in replies if r.get('lead_status') == 'replied')
+        )
+        counts['done'] = (
+            sum(1 for r in forms   if r.get('status') != 'new')
+            + sum(1 for r in replies if r.get('lead_status') in ('meeting','won','lost'))
+        )
         return counts
     try:
         rep = fetch_one("""
@@ -1409,13 +1556,19 @@ def inbox_items(*, tab: str = 'needs_you', limit: int = 200) -> list[dict]:
     if tab == 'drafts':
         return []
     if _inbound_use_fixture():
-        rows = _inbound_local_fixture()
+        forms = _inbound_local_fixture()
+        replies = _replies_local_fixture()
         if tab == 'needs_you':
-            rows = [r for r in rows if r.get('status') == 'new']
+            forms   = [r for r in forms   if r.get('status') == 'new']
+            replies = [r for r in replies if r.get('lead_status') == 'replied']
         else:
-            rows = [r for r in rows if r.get('status') != 'new']
-        rows.sort(key=lambda r: r.get('created_at') or datetime.min, reverse=True)
-        return [_form_to_inbox_item(_inbound_decorate(dict(r))) for r in rows[:limit]]
+            forms   = [r for r in forms   if r.get('status') != 'new']
+            replies = [r for r in replies if r.get('lead_status') in ('meeting','won','lost')]
+        items: list[dict] = []
+        items.extend(_reply_to_inbox_item(r) for r in replies)
+        items.extend(_form_to_inbox_item(_inbound_decorate(dict(r))) for r in forms)
+        items.sort(key=lambda x: x.get('received_at') or datetime.min, reverse=True)
+        return items[:limit]
 
     # Replies — join through to lead + client.
     if tab == 'needs_you':
@@ -1457,6 +1610,191 @@ def inbox_items(*, tab: str = 'needs_you', limit: int = 200) -> list[dict]:
 
     items.sort(key=lambda x: x.get('received_at') or datetime.min, reverse=True)
     return items[:limit]
+
+
+def reply_thread(reply_id: int) -> dict | None:
+    """Full conversation around a single inbound reply. Returns lead +
+    client metadata for the drawer header, the latest reply (the one the
+    operator clicked), and a chronological message list mixing sent
+    outbound emails (`crm.emails`) with received replies (`crm.replies`).
+
+    Returns None if the reply id is not found. Used by US-024
+    (reply-from-Inbox flow) — the drawer renders the thread above the
+    composer so the operator sees the full back-and-forth in context.
+    """
+    if _inbound_use_fixture():
+        return _reply_thread_fixture(reply_id)
+
+    head = fetch_one("""
+        select r.id, r.lead_id, r.from_address, r.subject, r.body,
+               r.sentiment, r.detected_at, r.processed,
+               l.business_name, l.decision_maker_name,
+               l.decision_maker_email, l.status as lead_status,
+               l.client_id, c.name as client_name
+          from crm.replies r
+          join crm.leads   l on l.id = r.lead_id
+          join crm.clients c on c.id = l.client_id
+         where r.id = %(rid)s
+    """, {'rid': reply_id})
+    if not head:
+        return None
+
+    lead_id = head['lead_id']
+    sent = fetch_all("""
+        select id, subject, body, from_address, to_address,
+               sent_at, email_number
+          from crm.emails
+         where lead_id = %(lid)s and sent_at is not null
+         order by sent_at asc
+    """, {'lid': lead_id}) or []
+    received = fetch_all("""
+        select id, subject, body, from_address, detected_at, sentiment
+          from crm.replies
+         where lead_id = %(lid)s
+         order by detected_at asc
+    """, {'lid': lead_id}) or []
+
+    messages: list[dict] = []
+    for e in sent:
+        ts = e.get('sent_at')
+        messages.append({
+            'kind':         'out',
+            'subject':      e.get('subject') or '',
+            'body':         e.get('body') or '',
+            'from_address': e.get('from_address') or '',
+            'to_address':   e.get('to_address') or '',
+            'at':           ts.isoformat() if ts else None,
+            'relative':     relative_time(ts) if ts else '—',
+            'step':         f"Day {1 if e.get('email_number') == 1 else 3 if e.get('email_number') == 2 else 7}",
+        })
+    for r in received:
+        ts = r.get('detected_at')
+        messages.append({
+            'kind':         'in',
+            'subject':      r.get('subject') or '',
+            'body':         r.get('body') or '',
+            'from_address': r.get('from_address') or '',
+            'at':           ts.isoformat() if ts else None,
+            'relative':     relative_time(ts) if ts else '—',
+            'sentiment':    r.get('sentiment') or 'neutral',
+        })
+    messages.sort(key=lambda m: m.get('at') or '')
+
+    head_subject = head.get('subject') or ''
+    reply_subject = head_subject if head_subject.lower().startswith('re:') else f'Re: {head_subject}'
+    quoted = '\n\n'.join(f'> {line}' for line in (head.get('body') or '').splitlines())
+
+    sending = settings_get('sending_email') or {}
+    return {
+        'reply_id':       head['id'],
+        'lead_id':        lead_id,
+        'client_id':      head['client_id'],
+        'client_name':    head.get('client_name') or '',
+        'business_name':  head.get('business_name') or '',
+        'lead_name':      head.get('decision_maker_name') or head.get('business_name') or 'Unknown',
+        'lead_status':    head.get('lead_status') or '',
+        'sentiment':      head.get('sentiment') or 'neutral',
+        'reply_relative': relative_time(head['detected_at']) if head.get('detected_at') else '—',
+        'processed':      bool(head.get('processed')),
+        'messages':       messages,
+        'composer': {
+            'from':    sending.get('from_address') or '',
+            'to':      head.get('from_address') or head.get('decision_maker_email') or '',
+            'subject': reply_subject,
+            'quoted':  quoted,
+        },
+    }
+
+
+def reply_send(reply_id: int, *, body: str, subject: str,
+               status_action: str | None = None) -> dict:
+    """Record a manual reply sent from the Inbox composer (US-024).
+
+    POC scope: writes to `crm.emails` (kind isn't a constraint, status is —
+    we use 'sent' and set sent_at), marks the originating reply processed,
+    optionally advances the lead status, writes an activity_log entry.
+    Actual SMTP send is deferred until the email-engine backend lands;
+    when it does, this function is the single insertion point.
+
+    `status_action` may be 'meeting' or 'lost' to drive the quick-action
+    buttons; anything else (or None) leaves the lead at 'replied'.
+    """
+    if _inbound_use_fixture():
+        # POC demo: pretend it sent. Real send + persistence requires
+        # the email-engine backend (Epic 2) and DB. Here we just confirm
+        # the call so the UI completes its success path.
+        rows = {r['id']: r for r in _replies_local_fixture()}
+        head = rows.get(reply_id)
+        if not head:
+            raise LookupError(f'reply {reply_id} not found')
+        new_status = 'meeting' if status_action == 'meeting' else \
+                     'lost'    if status_action == 'lost'    else None
+        return {
+            'ok':         True,
+            'reply_id':   reply_id,
+            'lead_id':    head['lead_id'],
+            'new_status': new_status,
+            'demo':       True,
+        }
+
+    head = fetch_one("""
+        select r.id, r.lead_id, r.from_address,
+               l.client_id, l.decision_maker_email
+          from crm.replies r
+          join crm.leads   l on l.id = r.lead_id
+         where r.id = %(rid)s
+    """, {'rid': reply_id})
+    if not head:
+        raise LookupError(f'reply {reply_id} not found')
+
+    sending = settings_get('sending_email') or {}
+    from_addr = sending.get('from_address') or ''
+    to_addr   = head.get('from_address') or head.get('decision_maker_email') or ''
+
+    execute("""
+        insert into crm.emails
+          (lead_id, client_id, email_number, subject, body,
+           from_address, to_address, status, sent_at)
+        values
+          (%(lid)s, %(cid)s, 1, %(subj)s, %(body)s,
+           %(from)s, %(to)s, 'sent', now())
+    """, {
+        'lid': head['lead_id'], 'cid': head['client_id'],
+        'subj': subject, 'body': body, 'from': from_addr, 'to': to_addr,
+    })
+
+    execute("update crm.replies set processed = true where id = %(rid)s",
+            {'rid': reply_id})
+
+    new_status = None
+    if status_action == 'meeting':
+        new_status = 'meeting'
+    elif status_action == 'lost':
+        new_status = 'lost'
+    if new_status:
+        execute("""
+            update crm.leads set status = %(s)s, updated_at = now()
+             where id = %(lid)s
+        """, {'s': new_status, 'lid': head['lead_id']})
+
+    execute("""
+        insert into crm.activity_log (client_id, lead_id, action, detail)
+             values (%(cid)s, %(lid)s, 'manual_reply_sent', %(detail)s)
+    """, {
+        'cid': head['client_id'], 'lid': head['lead_id'],
+        'detail': _json.dumps({
+            'reply_id': reply_id,
+            'status_change': new_status,
+            'subject': subject[:200],
+        }),
+    })
+
+    return {
+        'ok':         True,
+        'reply_id':   reply_id,
+        'lead_id':    head['lead_id'],
+        'new_status': new_status,
+    }
 
 
 def _inbound_decorate(row: dict) -> dict:

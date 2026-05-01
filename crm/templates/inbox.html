@@ -47,6 +47,7 @@
     {% for it in items %}
       <a class="inbox-row inbox-kind-{{ it.kind }}"
          {% if it.kind == 'form' %}data-inbound-id="{{ it.inbound_id }}" href="#"
+         {% elif it.kind == 'reply' %}data-reply-id="{{ it.id[2:] }}" href="{{ it.href }}"
          {% else %}href="{{ it.href }}"
          {% endif %}
          role="listitem">
@@ -83,7 +84,95 @@
   {% endif %}
 {% endif %}
 
-{# Drawer + scripts only needed when there are form-kind rows in the feed.
+{# Reply drawer (US-024) — opens when a reply row is clicked.
+   Full thread + composer + three quick-action send buttons. Renders
+   regardless of whether the visible feed has reply rows on this tab —
+   the Done tab also opens the drawer (read-mostly: composer is hidden
+   for already-processed replies). #}
+{% if tab != 'drafts' %}
+  <div class="drawer-overlay" id="replyDrawerOverlay" hidden></div>
+  <aside class="drawer drawer--wide" id="replyDrawer" hidden aria-labelledby="replyDrawerTitle" role="dialog" aria-modal="false">
+    <div class="drawer-head">
+      <div class="drawer-head-titles">
+        <div class="drawer-eyebrow">
+          <span id="replySentimentPill" class="signal-pill signal-positive">—</span>
+          <span id="replyStatusPill" class="signal-pill signal-status">replied</span>
+        </div>
+        <h2 class="drawer-title" id="replyDrawerTitle">—</h2>
+        <div class="drawer-sub">
+          <span id="replyDrawerCo">—</span>
+          <a class="drawer-leadlink" id="replyLeadLink" href="#">View full lead →</a>
+        </div>
+      </div>
+      <button class="drawer-close" id="replyDrawerCloseBtn" aria-label="Close drawer">×</button>
+    </div>
+
+    <div class="drawer-body" id="replyDrawerBody">
+      <section class="drawer-section">
+        <div class="drawer-section-label">Conversation</div>
+        <div class="thread" id="replyThread" aria-live="polite">
+          <div class="thread-skeleton" aria-hidden="true">
+            <div class="skeleton-bubble skeleton-bubble--out"></div>
+            <div class="skeleton-bubble skeleton-bubble--in"></div>
+            <div class="skeleton-bubble skeleton-bubble--out"></div>
+          </div>
+        </div>
+        <div class="thread-error" id="replyThreadError" hidden>
+          <strong>Couldn't load this conversation.</strong>
+          <button class="btn btn-quiet" id="replyThreadRetry" type="button">Retry</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="drawer-foot reply-foot" id="replyComposerWrap">
+      <div class="composer">
+        <div class="composer-meta">
+          <div class="composer-row">
+            <label class="composer-label">From</label>
+            <span class="composer-static" id="composerFrom">—</span>
+          </div>
+          <div class="composer-row">
+            <label class="composer-label">To</label>
+            <span class="composer-static" id="composerTo">—</span>
+          </div>
+          <div class="composer-row composer-row--input">
+            <label class="composer-label" for="composerSubject">Subject</label>
+            <input class="composer-input" id="composerSubject" type="text" autocomplete="off">
+          </div>
+        </div>
+        <textarea class="composer-body" id="composerBody"
+                  placeholder="Write your reply…"
+                  spellcheck="true"
+                  aria-label="Reply body"></textarea>
+        <div class="composer-error" id="composerError" hidden></div>
+        <div class="composer-actions">
+          <button type="button" class="btn btn-quiet" id="composerDiscard">Discard</button>
+          <div class="composer-send-group">
+            <button type="button" class="btn btn-quiet btn-send-secondary" data-action="lost">
+              Send &amp; mark as lost
+            </button>
+            <button type="button" class="btn btn-quiet btn-send-secondary" data-action="meeting">
+              Send &amp; mark as meeting booked
+            </button>
+            <button type="button" class="btn btn-primary" data-action="">
+              Send reply
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="reply-readonly" id="replyReadOnlyNote" hidden>
+      Reply already sent or lead is no longer awaiting response.
+      Use the lead detail page to send another message.
+    </div>
+  </aside>
+
+  {# Toast for "Reply sent" feedback. #}
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+{% endif %}
+
+{# Form drawer + scripts only needed when there are form-kind rows in the feed.
    Reuses the existing /inbound/<id>.json + /inbound/<id>/status endpoints. #}
 {% if tab != 'drafts' and items %}
   {# Drawer shell — copied verbatim from the old inbound page so the form
@@ -230,6 +319,262 @@
       overlay.addEventListener('click', close);
       document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && !drawer.hidden) close();
+      });
+    })();
+  </script>
+{% endif %}
+
+{# Reply drawer JS (US-024) — wires reply rows in the feed to the
+   thread + composer drawer added above. Reuses /inbox/reply/<id>.json
+   for thread fetch and POSTs to /inbox/reply/<id>/send. Coexists with
+   the form drawer (different overlay/drawer ids). #}
+{% if tab != 'drafts' %}
+  <script>
+    (function () {
+      const drawer  = document.getElementById('replyDrawer');
+      const overlay = document.getElementById('replyDrawerOverlay');
+      if (!drawer) return;
+
+      const els = {
+        title:       document.getElementById('replyDrawerTitle'),
+        co:          document.getElementById('replyDrawerCo'),
+        sentiment:   document.getElementById('replySentimentPill'),
+        statusPill:  document.getElementById('replyStatusPill'),
+        leadLink:    document.getElementById('replyLeadLink'),
+        thread:      document.getElementById('replyThread'),
+        threadErr:   document.getElementById('replyThreadError'),
+        threadRetry: document.getElementById('replyThreadRetry'),
+        composerWrap:document.getElementById('replyComposerWrap'),
+        composerErr: document.getElementById('composerError'),
+        readonlyNote:document.getElementById('replyReadOnlyNote'),
+        from:        document.getElementById('composerFrom'),
+        to:          document.getElementById('composerTo'),
+        subject:     document.getElementById('composerSubject'),
+        body:        document.getElementById('composerBody'),
+        discard:     document.getElementById('composerDiscard'),
+        closeBtn:    document.getElementById('replyDrawerCloseBtn'),
+        toastStack:  document.getElementById('toastStack'),
+      };
+      const sentimentLabel = {
+        positive: 'Positive', negative: 'Negative',
+        neutral: 'Neutral',  ooo: 'Out of office',
+      };
+      let currentReplyId = null;
+      let currentLeadId = null;
+      let lastTrigger = null;
+      let dirty = false;
+      let loadedQuoted = '';
+
+      function escapeHtml(s) {
+        return (s || '').replace(/[&<>"']/g, c => ({
+          '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        })[c]);
+      }
+      function nl2br(s) { return escapeHtml(s).replace(/\n/g, '<br>'); }
+
+      function open(replyId, trigger) {
+        currentReplyId = replyId;
+        lastTrigger = trigger || null;
+        dirty = false;
+        els.thread.innerHTML = `
+          <div class="thread-skeleton" aria-hidden="true">
+            <div class="skeleton-bubble skeleton-bubble--out"></div>
+            <div class="skeleton-bubble skeleton-bubble--in"></div>
+            <div class="skeleton-bubble skeleton-bubble--out"></div>
+          </div>`;
+        els.threadErr.hidden = true;
+        els.composerErr.hidden = true;
+        els.composerWrap.hidden = true;
+        els.readonlyNote.hidden = true;
+        drawer.hidden = false;
+        overlay.hidden = false;
+        requestAnimationFrame(() => {
+          drawer.classList.add('is-open');
+          overlay.classList.add('is-open');
+        });
+        fetch(`/inbox/reply/${replyId}.json`, {headers: {'Accept': 'application/json'}})
+          .then(r => r.ok ? r.json() : Promise.reject(r.status))
+          .then(populate)
+          .catch(() => {
+            els.thread.innerHTML = '';
+            els.threadErr.hidden = false;
+          });
+      }
+
+      function populate(d) {
+        currentLeadId = d.lead_id;
+        els.title.textContent     = d.lead_name + (d.business_name && d.business_name !== d.lead_name ? '' : '');
+        els.co.textContent        = [d.business_name, d.client_name ? 'via ' + d.client_name : ''].filter(Boolean).join(' · ') || '—';
+        const sent = d.sentiment || 'neutral';
+        els.sentiment.textContent = sentimentLabel[sent] || sent;
+        els.sentiment.className   = 'signal-pill signal-' + sent;
+        els.statusPill.textContent= d.lead_status || '—';
+        els.leadLink.href         = `/leads/${d.lead_id}`;
+
+        // Thread
+        if (!d.messages || d.messages.length === 0) {
+          els.thread.innerHTML = '<div class="thread-empty">No prior messages on file.</div>';
+        } else {
+          els.thread.innerHTML = d.messages.map(m => {
+            const dirClass = m.kind === 'out' ? 'thread-msg--out' : 'thread-msg--in';
+            const who = m.kind === 'out' ? 'You' : (d.lead_name);
+            const subj = m.subject ? `<div class="thread-subject">${escapeHtml(m.subject)}</div>` : '';
+            const meta = m.step ? `<span class="thread-step">${escapeHtml(m.step)}</span>` : '';
+            return `
+              <article class="thread-msg ${dirClass}">
+                <header class="thread-meta">
+                  <span class="thread-who">${escapeHtml(who)}</span>
+                  ${meta}
+                  <time class="thread-time" title="${escapeHtml(m.at || '')}">${escapeHtml(m.relative)}</time>
+                </header>
+                ${subj}
+                <div class="thread-body">${nl2br(m.body)}</div>
+              </article>`;
+          }).join('');
+          // Scroll to most recent.
+          requestAnimationFrame(() => {
+            const last = els.thread.lastElementChild;
+            if (last) last.scrollIntoView({block: 'end', behavior: 'instant'});
+          });
+        }
+
+        // Composer
+        if (d.processed || (d.lead_status && d.lead_status !== 'replied')) {
+          els.composerWrap.hidden = true;
+          els.readonlyNote.hidden = false;
+        } else {
+          els.composerWrap.hidden = false;
+          els.readonlyNote.hidden = true;
+          els.from.textContent    = d.composer.from || '—';
+          els.to.textContent      = d.composer.to || '—';
+          els.subject.value       = d.composer.subject || '';
+          loadedQuoted            = '\n\n' + (d.composer.quoted || '');
+          els.body.value          = loadedQuoted;
+          // Cursor at the top so the operator types above the quoted text.
+          requestAnimationFrame(() => {
+            els.body.focus({preventScroll: true});
+            els.body.setSelectionRange(0, 0);
+          });
+        }
+      }
+
+      function close(force) {
+        if (!force && dirty && hasTypedContent()) {
+          if (!confirm('Discard your reply?')) return;
+        }
+        drawer.classList.remove('is-open');
+        overlay.classList.remove('is-open');
+        setTimeout(() => { drawer.hidden = true; overlay.hidden = true; }, 220);
+        if (lastTrigger) lastTrigger.focus({preventScroll: true});
+        currentReplyId = null;
+        currentLeadId = null;
+        dirty = false;
+      }
+
+      function hasTypedContent() {
+        const v = (els.body.value || '');
+        const stripped = v.replace(loadedQuoted, '').trim();
+        return stripped.length > 0;
+      }
+
+      function toast(msg) {
+        const t = document.createElement('div');
+        t.className = 'toast';
+        t.textContent = msg;
+        els.toastStack.appendChild(t);
+        requestAnimationFrame(() => t.classList.add('is-in'));
+        setTimeout(() => {
+          t.classList.remove('is-in');
+          setTimeout(() => t.remove(), 240);
+        }, 2400);
+      }
+
+      function send(action) {
+        if (!currentReplyId) return;
+        if (!hasTypedContent()) {
+          els.composerErr.textContent = 'Type a reply before sending.';
+          els.composerErr.hidden = false;
+          els.body.focus();
+          return;
+        }
+        const buttons = drawer.querySelectorAll('.composer-send-group .btn');
+        buttons.forEach(b => b.disabled = true);
+        els.composerErr.hidden = true;
+
+        const fd = new FormData();
+        fd.append('subject', els.subject.value);
+        fd.append('body',    els.body.value);
+        if (action) fd.append('action', action);
+
+        fetch(`/inbox/reply/${currentReplyId}/send`, {method: 'POST', body: fd})
+          .then(r => r.json().then(j => ({ok: r.ok, body: j})))
+          .then(({ok, body}) => {
+            if (!ok || !body.ok) {
+              els.composerErr.textContent = 'Couldn\'t send: ' + (body.error || 'unknown error');
+              els.composerErr.hidden = false;
+              buttons.forEach(b => b.disabled = false);
+              return;
+            }
+            const label = action === 'meeting' ? 'Reply sent · marked meeting booked'
+                        : action === 'lost'    ? 'Reply sent · marked lost'
+                        :                        'Reply sent';
+            toast(label);
+            dirty = false;
+            setTimeout(() => {
+              close(true);
+              window.location.reload();
+            }, 800);
+          })
+          .catch(() => {
+            els.composerErr.textContent = 'Network error — your text is preserved. Try again.';
+            els.composerErr.hidden = false;
+            buttons.forEach(b => b.disabled = false);
+          });
+      }
+
+      // Wire reply rows.
+      document.querySelectorAll('.inbox-kind-reply[data-reply-id]').forEach(el => {
+        el.addEventListener('click', e => {
+          e.preventDefault();
+          const id = el.dataset.replyId;
+          if (id) open(parseInt(id, 10), el);
+        });
+      });
+
+      // Composer dirty tracking.
+      els.body.addEventListener('input', () => { dirty = true; });
+      els.subject.addEventListener('input', () => { dirty = true; });
+
+      // Discard.
+      els.discard.addEventListener('click', () => {
+        if (!hasTypedContent() || confirm('Discard your reply?')) {
+          els.body.value = loadedQuoted;
+          els.subject.value = els.subject.defaultValue || '';
+          dirty = false;
+          els.body.focus();
+        }
+      });
+
+      // Send buttons.
+      drawer.querySelectorAll('.composer-send-group [data-action]').forEach(btn => {
+        btn.addEventListener('click', () => send(btn.dataset.action || null));
+      });
+
+      // Retry.
+      els.threadRetry.addEventListener('click', () => {
+        if (currentReplyId) open(currentReplyId, lastTrigger);
+      });
+
+      els.closeBtn.addEventListener('click', () => close(false));
+      overlay.addEventListener('click', () => close(false));
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && !drawer.hidden) close(false);
+      });
+      window.addEventListener('beforeunload', e => {
+        if (!drawer.hidden && hasTypedContent()) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
       });
     })();
   </script>

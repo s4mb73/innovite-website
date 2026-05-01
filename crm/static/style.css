@@ -2809,3 +2809,263 @@ a { color:inherit; text-decoration:none; }
   *, *::before, *::after { transition:none !important; }
   .progress-row-state.state-running { animation:none; }
 }
+
+/* ── Reply drawer (US-024) ──────────────────────────────────────────
+   Wider drawer than the form drawer, full thread above, composer
+   docked at the bottom. Reuses .drawer / .drawer-overlay base styles. */
+.drawer.drawer--wide { width:min(720px, 96vw); }
+
+.drawer-eyebrow .signal-pill { margin-right:6px; }
+.signal-pill {
+  display:inline-block;
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.4px;
+  text-transform:uppercase;
+  padding:3px 9px;
+  border-radius:4px;
+  background:var(--accent-bg);
+  color:var(--accent);
+}
+.signal-pill.signal-positive { background:var(--green-bg); color:var(--green); }
+.signal-pill.signal-negative { background:rgba(239,68,68,.10); color:var(--red); }
+.signal-pill.signal-neutral  { background:var(--accent-bg);   color:var(--accent); }
+.signal-pill.signal-ooo      { background:var(--amber-bg);    color:var(--amber); }
+.signal-pill.signal-status   { background:var(--s3); color:var(--t2); text-transform:capitalize; }
+
+.drawer-leadlink {
+  margin-left:8px;
+  font-size:12px;
+  color:var(--t3);
+  text-decoration:none;
+}
+.drawer-leadlink:hover { color:var(--accent); }
+
+/* Thread ────────────────────────────────────────────────────────── */
+.thread {
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  max-height:none;
+}
+.thread-msg {
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  padding:14px 16px;
+  background:var(--s1);
+}
+.thread-msg--out {
+  background:var(--accent-bg2);
+  border-color:rgba(143,183,255,.12);
+}
+.thread-msg--in {
+  background:var(--s2);
+  border-color:var(--b2);
+}
+.thread-meta {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:6px;
+}
+.thread-who {
+  font-size:12px;
+  font-weight:600;
+  color:var(--t1);
+}
+.thread-step {
+  font-size:10.5px;
+  font-weight:600;
+  letter-spacing:.5px;
+  text-transform:uppercase;
+  padding:2px 7px;
+  border-radius:4px;
+  color:var(--accent);
+  background:var(--accent-bg2);
+}
+.thread-time {
+  margin-left:auto;
+  font-size:11.5px;
+  color:var(--t3);
+  font-variant-numeric:tabular-nums;
+}
+.thread-subject {
+  font-size:13px;
+  font-weight:500;
+  color:var(--t1);
+  margin:2px 0 6px;
+}
+.thread-body {
+  font-size:13.5px;
+  line-height:1.6;
+  color:var(--t2);
+  word-wrap:break-word;
+}
+.thread-empty {
+  font-size:13px;
+  color:var(--t3);
+  padding:12px 0;
+}
+
+/* Skeleton loading. */
+.thread-skeleton {
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.skeleton-bubble {
+  height:80px;
+  border-radius:var(--r-md);
+  background:linear-gradient(90deg, var(--s2) 0%, var(--s3) 50%, var(--s2) 100%);
+  background-size:200% 100%;
+  animation:skel 1.4s ease-in-out infinite;
+}
+.skeleton-bubble--in  { width:88%; }
+.skeleton-bubble--out { width:92%; align-self:flex-end; }
+@keyframes skel {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.thread-error {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px 16px;
+  border:1px solid rgba(239,68,68,.20);
+  background:rgba(239,68,68,.06);
+  border-radius:var(--r-md);
+  font-size:13px;
+  color:var(--t1);
+}
+
+/* Foot wrap repurposed for the composer — overrides .drawer-foot. */
+.reply-foot {
+  display:block;
+  padding:0;
+  border-top:1px solid var(--border);
+  background:var(--s1);
+}
+.composer { padding:14px 18px 16px; display:flex; flex-direction:column; gap:10px; }
+.composer-meta {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding-bottom:10px;
+  border-bottom:1px solid var(--border);
+}
+.composer-row {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-size:12.5px;
+}
+.composer-row--input { padding-top:2px; }
+.composer-label {
+  width:54px;
+  font-size:11.5px;
+  text-transform:uppercase;
+  letter-spacing:.6px;
+  color:var(--t3);
+}
+.composer-static {
+  font-size:12.5px;
+  color:var(--t2);
+  font-variant-numeric:tabular-nums;
+  word-break:break-all;
+}
+.composer-input {
+  flex:1;
+  font:inherit;
+  font-size:13px;
+  color:var(--t1);
+  background:var(--s3);
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+  padding:7px 10px;
+  outline:none;
+  transition:border-color .15s var(--ease);
+}
+.composer-input:focus { border-color:var(--accent); }
+.composer-body {
+  width:100%;
+  min-height:160px;
+  resize:vertical;
+  font:inherit;
+  font-size:13.5px;
+  line-height:1.6;
+  color:var(--t1);
+  background:var(--s3);
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+  padding:12px 14px;
+  outline:none;
+  transition:border-color .15s var(--ease);
+}
+.composer-body:focus { border-color:var(--accent); }
+.composer-error {
+  font-size:12.5px;
+  color:var(--red);
+  background:rgba(239,68,68,.06);
+  border:1px solid rgba(239,68,68,.18);
+  padding:8px 12px;
+  border-radius:var(--r-sm);
+}
+.composer-actions {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.composer-send-group {
+  margin-left:auto;
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.composer-send-group .btn { white-space:nowrap; }
+.btn-send-secondary {
+  font-size:12.5px;
+  padding:7px 12px;
+}
+
+.reply-readonly {
+  padding:18px 20px;
+  border-top:1px solid var(--border);
+  background:var(--s2);
+  font-size:13px;
+  color:var(--t3);
+  line-height:1.6;
+}
+
+/* Toast ─────────────────────────────────────────────────────────── */
+.toast-stack {
+  position:fixed;
+  right:20px;
+  bottom:24px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  z-index:1000;
+  pointer-events:none;
+}
+.toast {
+  background:var(--s2);
+  border:1px solid var(--b2);
+  color:var(--t1);
+  font-size:13px;
+  padding:10px 16px;
+  border-radius:var(--r-sm);
+  box-shadow:0 8px 28px rgba(0,0,0,.40);
+  opacity:0;
+  transform:translateY(8px);
+  transition:opacity .22s var(--ease), transform .22s var(--ease);
+}
+.toast.is-in { opacity:1; transform:translateY(0); }
+
+@media (max-width: 720px) {
+  .drawer.drawer--wide { width:100vw; }
+  .composer-send-group { width:100%; }
+  .composer-send-group .btn { flex:1; }
+}
+

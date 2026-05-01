@@ -544,6 +544,43 @@ def inbound_set_status(inbound_id: int):
     return {'ok': True, **result}
 
 
+# Reply-thread + reply-send endpoints (US-024). The drawer fetches the
+# full thread by reply id, then POSTs to send. SMTP wiring is deferred
+# to the email-engine backend; this endpoint records the manual reply,
+# advances lead status if asked, and clears the row from Needs you.
+@app.get('/inbox/reply/<int:reply_id>.json')
+def inbox_reply_thread(reply_id: int):
+    try:
+        data = db.reply_thread(reply_id)
+    except Exception as e:
+        return {'error': str(e)[:200]}, 500
+    if not data:
+        return {'error': 'not_found'}, 404
+    return data
+
+
+@app.post('/inbox/reply/<int:reply_id>/send')
+def inbox_reply_send(reply_id: int):
+    body    = (request.form.get('body') or '').strip()
+    subject = (request.form.get('subject') or '').strip()
+    action  = (request.form.get('action') or '').strip().lower() or None
+    if not body:
+        return {'ok': False, 'error': 'empty_body'}, 400
+    if not subject:
+        return {'ok': False, 'error': 'empty_subject'}, 400
+    if action not in (None, 'meeting', 'lost'):
+        return {'ok': False, 'error': 'invalid_action'}, 400
+    try:
+        result = db.reply_send(
+            reply_id, body=body, subject=subject, status_action=action,
+        )
+    except LookupError:
+        return {'ok': False, 'error': 'not_found'}, 404
+    except Exception as e:
+        return {'ok': False, 'error': str(e)[:200]}, 500
+    return result
+
+
 @app.route('/reports')
 def reports():
     db_error = None

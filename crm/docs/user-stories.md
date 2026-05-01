@@ -552,6 +552,60 @@ The Outreach page keeps its identity as the **sends-side** dashboard (Today / Se
 
 ---
 
+### US-024 · Reply to a lead from Inbox > Needs you without leaving the page
+
+**As** an operator
+**I want to** open a reply in **Needs you**, see the full thread, type a response, and send it from inside the CRM
+**So that** I can clear the morning queue without bouncing between Zoho and the CRM, and the conversation stays attached to the lead
+
+**Priority:** P0
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] Clicking a reply row in **Needs you** opens a slide-out drawer over the Inbox (same drawer pattern as the existing inbound drawer in `templates/inbox.html`) — does not navigate away
+- [ ] Drawer header: lead name, company, sentiment pill, status pill, link to `/leads/<id>` for the full dossier
+- [ ] Drawer body renders the full thread chronologically — every `crm.emails` row sent to this lead and every `crm.replies` row received, oldest first, scrolled to most recent on open
+- [ ] Each thread message shows: direction (You / Lead), relative time (absolute on hover), subject (collapsed if same as parent), and rendered body with a "view raw" toggle
+- [ ] Composer at the bottom of the drawer:
+  - From — pre-filled from `s.sending_email.from_address`, read-only
+  - To — pre-filled from the lead's reply-from address, read-only
+  - Subject — pre-filled `Re: <original subject>`, editable
+  - Body — empty, plain-text, with the previous message appended as `> ` quoted lines below the cursor
+- [ ] Send action POSTs to `/inbox/<reply_id>/send` and:
+  - Sends via Zoho SMTP using existing `s.sending_email` host / port / from
+  - Sets `In-Reply-To` and `References` from the original reply's `Message-ID` so threading is preserved in Zoho's web UI and on the recipient's side
+  - Inserts a row into `crm.emails` with `kind='manual_reply'`, `sent_at=now()`, body, subject, lead_id, client_id
+  - Marks the original `crm.replies` row as `processed=true` with `processed_at=now()`
+  - Writes `manual_reply_sent` to `crm.activity_log`
+  - Row leaves **Needs you**, parent lead surfaces in **Done**
+- [ ] Send button states: idle ("Send reply"), sending (spinner, disabled), error (inline banner with retry, typed text preserved), success (drawer auto-closes after ~800ms with a toast)
+- [ ] **Quick action group next to Send** — three buttons sharing one row:
+  - **Send & mark as meeting booked** — also moves lead `replied` → `meeting`
+  - **Send & mark as lost** — also moves lead → `lost`
+  - **Send only** — default, status stays `replied`
+- [ ] Send-only does not auto-advance status; intent inference is deferred to US-023 (AI drafts)
+- [ ] Discard button clears the composer after a confirm modal; does not delete the original reply
+- [ ] Keyboard focus lands in the body field on drawer open
+- [ ] Loading state — skeleton rows while `/inbox/<reply_id>.json` resolves
+- [ ] Error state — thread fails to load → "Couldn't load this conversation" + retry button; send fails → inline banner under the composer with a short SMTP error, body preserved
+- [ ] Unsaved-text guard — closing the drawer or navigating with text in the composer prompts "Discard your reply?"
+- [ ] No new schema. `crm.emails.kind` already accepts free strings (migration 0001); add `'manual_reply'` to the documented list. `crm.replies.processed` already exists.
+
+**Notes — Zoho specifics**
+- Uses Zoho `.eu` endpoints (UK region), already configurable on Settings. No region detection — operator sets it once.
+- Threading via `In-Reply-To` / `References` is honoured by Zoho for inbox grouping and Sent-folder placement, so the reply appears in the operator's Zoho Sent folder like a normal reply.
+
+**Notes — voice**
+- No copy linting on manual replies. Marketing-site copy rules apply to system-generated text (US-023 AI drafts), not to operator typing.
+
+**Notes — explicitly out of scope**
+- AI-drafted reply suggestions — US-023, deferred until volume justifies
+- Forwarding to a colleague — single-operator agency, no recipient list yet
+- Attachments — deferred until first asked for
+- Multiple sending inboxes — cold-send warming infra is separate from the CRM reply path
+
+---
+
 ## Out of scope for this draft
 
 These belong in later epics or separate docs — recording here so we don't lose them:
