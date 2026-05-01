@@ -593,15 +593,18 @@ def reports():
     client: dict | None     = None
     kpis = {'leads': 0, 'leads_delta': 0, 'sent': 0, 'sent_delta': 0,
             'reply_rate': 0.0, 'reply_rate_delta': 0.0,
-            'meetings': 0, 'meetings_delta': 0}
+            'meetings': 0, 'meetings_delta': 0,
+            'won': 0, 'won_delta': 0,
+            'pipeline_value': 0, 'pipeline_value_delta': 0,
+            'avg_deal_value': db.REPORTS_DEFAULT_AVG_DEAL_VALUE}
     chart   = {'labels': [], 'sent': [], 'replies': []}
     funnel: list[dict]   = []
     sequence: list[dict] = []
-    grade_mix: list[dict] = []
+    targets: dict        = db.reports_targets(days)
+    narrative: str       = ''
 
     try:
         clients_min = db.reports_clients_min()
-        # Pick client: ?client= query, else first client.
         client_raw = request.args.get('client')
         client_id = int(client_raw) if (client_raw or '').isdigit() else None
         if client_id is None and clients_min:
@@ -612,30 +615,38 @@ def reports():
             chart     = db.reports_chart_series(client_id, days)
             funnel    = db.reports_funnel(client_id, days)
             sequence  = db.reports_sequence(client_id, days)
-            grade_mix = db.reports_grade_mix(client_id, days)
+            narrative = db.reports_narrative(client_id, days, kpis)
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
 
-    # Build mailto for the "Email to client" button — non-functional but
-    # demonstrates the wired-in workflow to a prospect.
+    # Email-to-client mailto — recap text only, no private CRM URL
+    # (clients can't open it). A real shareable public report URL is
+    # a separate user story; until then the mailto is honest.
     mailto_url = ''
     if client and client.get('contact_email'):
         period_label = next((lbl for slug, lbl, _ in db.REPORTS_PERIODS
                              if slug == period), 'period')
         subj = f"Innovite — {client['name']} — {period_label} performance report"
-        body = (
-            f"Hi {(client.get('contact_name') or '').split(' ')[0] or 'there'},"
-            f"\n\nQuick recap for {period_label.lower()} — full report attached:\n"
-            f"\n• Leads sourced: {kpis['leads']}"
-            f"\n• Emails sent: {kpis['sent']}"
-            f"\n• Reply rate: {kpis['reply_rate']}%"
-            f"\n• Meetings booked: {kpis['meetings']}"
-            f"\n\nLet me know if you want to dig into any of it.\n\n— Sammy"
-        )
+        body_lines = [
+            f"Hi {(client.get('contact_name') or '').split(' ')[0] or 'there'},",
+            '',
+            f"Quick recap for {period_label.lower()}:",
+            '',
+            narrative or '(report has no activity to summarise yet)',
+            '',
+            f"• Meetings booked: {kpis['meetings']}",
+            f"• Deals won: {kpis['won']}",
+            f"• Pipeline value: £{kpis['pipeline_value']:,}",
+            f"• Reply rate: {kpis['reply_rate']}%",
+            '',
+            "Happy to walk through any of it on a call.",
+            '',
+            "— Sammy",
+        ]
         from urllib.parse import quote
         mailto_url = (
             f"mailto:{client['contact_email']}"
-            f"?subject={quote(subj)}&body={quote(body)}"
+            f"?subject={quote(subj)}&body={quote(chr(10).join(body_lines))}"
         )
 
     return render_template(
@@ -650,7 +661,8 @@ def reports():
         chart=chart,
         funnel=funnel,
         sequence=sequence,
-        grade_mix=grade_mix,
+        targets=targets,
+        narrative=narrative,
         mailto_url=mailto_url,
         db_error=db_error,
     )

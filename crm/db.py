@@ -2161,19 +2161,31 @@ _REPORTS_CLIENTS_FIXTURE: list[dict] = [
 def _reports_seed(client_id: int, days: int) -> dict:
     """Deterministic per-(client, period) bundle — same call returns
     same data so screenshots are stable. Differentiated by client so
-    Vidora and ROCA tell different stories."""
+    Vidora and ROCA tell different stories.
+
+    `avg_deal_value` is the per-meeting pipeline assumption (UK B2B
+    service midpoint), used to compute reportable pipeline value.
+    Belongs on the client record long-term — see a future story for
+    the schema migration. Until then it lives here so the report can
+    show the outcome metric clients actually care about.
+    """
     base = {
         # Vidora — content/creator focus, broader top of funnel
         1: {'leads_per_day': 6.1, 'sends_mult': 2.2, 'reply_rate': 11.8,
             'open_rate': 47.0, 'meeting_rate': 4.9,
+            'won_rate': 0.18,  # of meetings → won
+            'avg_deal_value': 4500,
             'grade_mix': {'A': 0.18, 'B': 0.34, 'C': 0.31, 'D': 0.13, 'F': 0.04}},
         # ROCA — accountancy, tighter qualification, higher reply rate
         2: {'leads_per_day': 4.7, 'sends_mult': 2.8, 'reply_rate': 14.2,
             'open_rate': 51.0, 'meeting_rate': 7.1,
+            'won_rate': 0.25,
+            'avg_deal_value': 8200,
             'grade_mix': {'A': 0.24, 'B': 0.38, 'C': 0.26, 'D': 0.10, 'F': 0.02}},
     }.get(client_id, {'leads_per_day': 5.0, 'sends_mult': 2.4,
                       'reply_rate': 12.0, 'open_rate': 48.0,
-                      'meeting_rate': 5.5,
+                      'meeting_rate': 5.5, 'won_rate': 0.20,
+                      'avg_deal_value': 6000,
                       'grade_mix': {'A': 0.20, 'B': 0.35, 'C': 0.30,
                                     'D': 0.12, 'F': 0.03}})
 
@@ -2185,13 +2197,20 @@ def _reports_seed(client_id: int, days: int) -> dict:
     reply_rate_prev = round(base['reply_rate'] - 1.4, 1)
     meetings_now    = int(round(leads_now  * (base['meeting_rate'] / 100)))
     meetings_prev   = int(round(leads_prev * (base['meeting_rate'] / 100)))
+    won_now         = int(round(meetings_now  * base['won_rate']))
+    won_prev        = int(round(meetings_prev * base['won_rate']))
+    avg_deal        = base['avg_deal_value']
 
     return {
         'leads_now': leads_now, 'leads_prev': leads_prev,
         'sent_now':  sent_now,  'sent_prev':  sent_prev,
         'reply_rate_now':  reply_rate_now, 'reply_rate_prev': reply_rate_prev,
         'meetings_now':    meetings_now,   'meetings_prev':   meetings_prev,
+        'won_now':         won_now,        'won_prev':        won_prev,
         'open_rate':       base['open_rate'],
+        'avg_deal_value':  avg_deal,
+        'pipeline_value_now':  meetings_now * avg_deal,
+        'pipeline_value_prev': meetings_prev * avg_deal,
         'grade_mix_pct':   base['grade_mix'],
     }
 
@@ -2298,8 +2317,65 @@ def reports_client_summary(client_id: int) -> dict | None:
     return get_client(client_id)
 
 
+REPORTS_DEFAULT_AVG_DEAL_VALUE = 6000  # GBP — UK B2B service midpoint, see _reports_seed
+REPORTS_TARGETS_MONTHLY = {
+    'meetings': 5,        # target meetings per 30 days
+    'reply_rate': 8.0,    # target reply % (period-independent)
+}
+
+
+def reports_targets(days: int) -> dict:
+    """Period-scaled goals for the report KPI tiles.
+
+    Reply-rate target is a ratio so it does not scale by window. Meetings
+    target is monthly; pro-rate it for the period the operator picked.
+    Living in code for the POC — when client-specific goals land, this
+    moves to a `goals` JSONB on `crm.clients` and the route fetches it.
+    """
+    monthly_mtg = REPORTS_TARGETS_MONTHLY['meetings']
+    return {
+        'meetings':   max(1, int(round(monthly_mtg * days / 30))),
+        'reply_rate': REPORTS_TARGETS_MONTHLY['reply_rate'],
+    }
+
+
+def reports_narrative(client_id: int, days: int, kpis: dict) -> str:
+    """Auto-generated 'what we did this period' paragraph that sits at
+    the top of the report. POC version composes from the KPIs already
+    computed; a future story persists an operator-edited version per
+    (client, period). The paragraph is what makes the report feel like
+    work was done, not just a dashboard screenshot.
+    """
+    leads = kpis.get('leads', 0)
+    sent  = kpis.get('sent', 0)
+    reps  = int(round(sent * (kpis.get('reply_rate', 0) / 100)))
+    mtgs  = kpis.get('meetings', 0)
+    won   = kpis.get('won', 0)
+    rr    = kpis.get('reply_rate', 0)
+
+    if leads == 0:
+        return ('No outbound activity this period — onboarding still in '
+                'progress, or the campaign is paused.')
+
+    parts = [
+        f"Sourced {leads:,} leads against your targeting profile",
+        f"sent {sent:,} emails across the Day 1 / 3 / 7 cadence",
+        f"recorded {reps} replies ({rr}% reply rate)",
+    ]
+    if mtgs:
+        parts.append(f"booked {mtgs} meeting{'s' if mtgs != 1 else ''}")
+    if won:
+        parts.append(f"closed {won} deal{'s' if won != 1 else ''}")
+
+    return ', '.join(parts) + '.'
+
+
 def reports_kpis(client_id: int, days: int) -> dict:
-    """Four headline numbers + deltas vs the previous window."""
+    """Headline numbers + deltas vs the previous window. Includes the
+    outcome metrics clients actually care about (meetings, deals won,
+    pipeline value) alongside the activity ones (leads, sent, reply
+    rate) so the route can render either as primary tiles or as the
+    Activity subline below."""
     if _reports_use_fixture():
         s = _reports_seed(client_id, days)
         return {
@@ -2311,6 +2387,11 @@ def reports_kpis(client_id: int, days: int) -> dict:
             'reply_rate_delta': round(s['reply_rate_now'] - s['reply_rate_prev'], 1),
             'meetings':       s['meetings_now'],
             'meetings_delta': s['meetings_now'] - s['meetings_prev'],
+            'won':            s['won_now'],
+            'won_delta':      s['won_now']  - s['won_prev'],
+            'pipeline_value':       s['pipeline_value_now'],
+            'pipeline_value_delta': s['pipeline_value_now'] - s['pipeline_value_prev'],
+            'avg_deal_value':       s['avg_deal_value'],
         }
     sql = """
         with windows as (
@@ -2344,7 +2425,13 @@ def reports_kpis(client_id: int, days: int) -> dict:
                and updated_at >= t_now_start and updated_at < t_now_end)            as mtg_now,
           (select count(*) from crm.leads, windows
              where client_id = %(cid)s and status = 'meeting'
-               and updated_at >= t_prev_start and updated_at < t_prev_end)          as mtg_prev
+               and updated_at >= t_prev_start and updated_at < t_prev_end)          as mtg_prev,
+          (select count(*) from crm.leads, windows
+             where client_id = %(cid)s and status = 'won'
+               and updated_at >= t_now_start and updated_at < t_now_end)            as won_now,
+          (select count(*) from crm.leads, windows
+             where client_id = %(cid)s and status = 'won'
+               and updated_at >= t_prev_start and updated_at < t_prev_end)          as won_prev
     """
     r = fetch_one(sql, {
         'cid': client_id,
@@ -2361,6 +2448,9 @@ def reports_kpis(client_id: int, days: int) -> dict:
     leads_prev   = int(r.get('leads_prev') or 0)
     mtg_now      = int(r.get('mtg_now')    or 0)
     mtg_prev     = int(r.get('mtg_prev')   or 0)
+    won_now      = int(r.get('won_now')    or 0)
+    won_prev     = int(r.get('won_prev')   or 0)
+    avg_deal     = REPORTS_DEFAULT_AVG_DEAL_VALUE
     return {
         'leads':            leads_now,
         'leads_delta':      leads_now - leads_prev,
@@ -2370,6 +2460,11 @@ def reports_kpis(client_id: int, days: int) -> dict:
         'reply_rate_delta': round(rr_now - rr_prev, 1),
         'meetings':         mtg_now,
         'meetings_delta':   mtg_now - mtg_prev,
+        'won':              won_now,
+        'won_delta':        won_now  - won_prev,
+        'pipeline_value':       mtg_now  * avg_deal,
+        'pipeline_value_delta': (mtg_now - mtg_prev) * avg_deal,
+        'avg_deal_value':       avg_deal,
     }
 
 
