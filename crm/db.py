@@ -2381,7 +2381,7 @@ def reports_wins(client_id: int, days: int) -> list[dict]:
         return _reports_wins_fixture(client_id, days)
 
     sql = """
-        with w as (select now() - interval %(d)s as t_start)
+        with w as (select now() - make_interval(days => %(d)s) as t_start)
         select id,
                decision_maker_name,
                business_name,
@@ -2394,7 +2394,7 @@ def reports_wins(client_id: int, days: int) -> list[dict]:
          order by updated_at desc
          limit 6
     """
-    rows = fetch_all(sql, {'cid': client_id, 'd': f'{days} days'}) or []
+    rows = fetch_all(sql, {'cid': client_id, 'd': days}) or []
     avg = REPORTS_DEFAULT_AVG_DEAL_VALUE
     now = datetime.now(timezone.utc)
     out: list[dict] = []
@@ -2493,10 +2493,10 @@ def reports_kpis(client_id: int, days: int) -> dict:
     sql = """
         with windows as (
             select
-              now() - interval %(d_now)s  as t_now_start,
-              now()                        as t_now_end,
-              now() - interval %(d_prev)s  as t_prev_start,
-              now() - interval %(d_now)s   as t_prev_end
+              now() - make_interval(days => %(d_now)s)  as t_now_start,
+              now()                                      as t_now_end,
+              now() - make_interval(days => %(d_prev)s) as t_prev_start,
+              now() - make_interval(days => %(d_now)s)  as t_prev_end
         )
         select
           (select count(*) from crm.leads, windows
@@ -2532,8 +2532,8 @@ def reports_kpis(client_id: int, days: int) -> dict:
     """
     r = fetch_one(sql, {
         'cid': client_id,
-        'd_now':  f'{days} days',
-        'd_prev': f'{days * 2} days',
+        'd_now':  days,
+        'd_prev': days * 2,
     }) or {}
     sent_now  = int(r.get('sent_now')  or 0)
     sent_prev = int(r.get('sent_prev') or 0)
@@ -2572,7 +2572,7 @@ def reports_chart_series(client_id: int, days: int) -> dict:
     sql = """
         with d as (
           select generate_series(
-            (date_trunc('day', now()) - interval %(span)s)::date,
+            (date_trunc('day', now()) - make_interval(days => %(span)s))::date,
             date_trunc('day', now())::date - 1,
             '1 day'
           )::date as day
@@ -2587,7 +2587,7 @@ def reports_chart_series(client_id: int, days: int) -> dict:
                             and date_trunc('day', replied_at) = d.day), 0)      as replies
           from d order by d.day
     """
-    rows = fetch_all(sql, {'cid': client_id, 'span': f'{days} days'})
+    rows = fetch_all(sql, {'cid': client_id, 'span': days})
     return {
         'labels':  [r['label']        for r in rows],
         'sent':    [int(r['sent'])    for r in rows],
@@ -2600,7 +2600,7 @@ def reports_funnel(client_id: int, days: int) -> list[dict]:
     if _reports_use_fixture():
         return _reports_funnel_fixture(client_id, days)
     sql = """
-        with w as (select now() - interval %(d)s as t_start)
+        with w as (select now() - make_interval(days => %(d)s) as t_start)
         select
           (select count(*) from crm.leads, w
              where client_id = %(cid)s and created_at >= t_start)               as leads,
@@ -2617,7 +2617,7 @@ def reports_funnel(client_id: int, days: int) -> list[dict]:
              where client_id = %(cid)s and created_at >= t_start
                and status = 'won')                                              as won
     """
-    r = fetch_one(sql, {'cid': client_id, 'd': f'{days} days'}) or {}
+    r = fetch_one(sql, {'cid': client_id, 'd': days}) or {}
     leads     = int(r.get('leads')     or 0)
     contacted = int(r.get('contacted') or 0)
     replied   = int(r.get('replied')   or 0)
@@ -2640,7 +2640,7 @@ def reports_sequence(client_id: int, days: int) -> list[dict]:
     if _reports_use_fixture():
         return _reports_sequence_fixture(client_id, days)
     sql = """
-        with w as (select now() - interval %(d)s as t_start)
+        with w as (select now() - make_interval(days => %(d)s) as t_start)
         select email_number,
                count(*) filter (where status = 'sent')                          as sent,
                count(*) filter (where opened_at is not null)                    as opens,
@@ -2651,7 +2651,7 @@ def reports_sequence(client_id: int, days: int) -> list[dict]:
          group by email_number
          order by email_number
     """
-    rows = fetch_all(sql, {'cid': client_id, 'd': f'{days} days'})
+    rows = fetch_all(sql, {'cid': client_id, 'd': days})
     out = []
     for r in rows:
         sent = int(r.get('sent') or 0)
@@ -2675,13 +2675,13 @@ def reports_grade_mix(client_id: int, days: int) -> list[dict]:
     if _reports_use_fixture():
         return _reports_grade_mix_fixture(client_id, days)
     sql = """
-        with w as (select now() - interval %(d)s as t_start)
+        with w as (select now() - make_interval(days => %(d)s) as t_start)
         select coalesce(grade, 'F') as grade, count(*) as count
           from crm.leads, w
          where client_id = %(cid)s and created_at >= t_start
          group by coalesce(grade, 'F')
     """
-    rows  = fetch_all(sql, {'cid': client_id, 'd': f'{days} days'})
+    rows  = fetch_all(sql, {'cid': client_id, 'd': days})
     by_g  = {r['grade']: int(r['count']) for r in rows}
     total = sum(by_g.values()) or 1
     return [{'grade': g,
