@@ -600,6 +600,7 @@ def reports():
     chart   = {'labels': [], 'sent': [], 'replies': []}
     funnel: list[dict]   = []
     sequence: list[dict] = []
+    wins: list[dict]     = []
     targets: dict        = db.reports_targets(days)
     narrative: str       = ''
 
@@ -615,6 +616,7 @@ def reports():
             chart     = db.reports_chart_series(client_id, days)
             funnel    = db.reports_funnel(client_id, days)
             sequence  = db.reports_sequence(client_id, days)
+            wins      = db.reports_wins(client_id, days)
             narrative = db.reports_narrative(client_id, days, kpis)
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
@@ -661,6 +663,7 @@ def reports():
         chart=chart,
         funnel=funnel,
         sequence=sequence,
+        wins=wins,
         targets=targets,
         narrative=narrative,
         mailto_url=mailto_url,

@@ -2295,6 +2295,61 @@ def _reports_grade_mix_fixture(client_id: int, days: int) -> list[dict]:
     return out
 
 
+def _format_days_ago(d: int) -> str:
+    if d <= 0:  return 'today'
+    if d == 1:  return 'yesterday'
+    if d < 7:   return f'{d} days ago'
+    if d < 14:  return '1 week ago'
+    if d < 30:  return f'{d // 7} weeks ago'
+    if d < 60:  return '1 month ago'
+    return f'{d // 30} months ago'
+
+
+# Named meetings + deals per client. First row in each list is the lead
+# also surfaced on the Inbox demo (Sarah Cole, James Whitford, Nina Patel)
+# so the prospect demo tells one story across pages. Padded with realistic
+# UK B2B contacts. Days_ago controls which rows fall inside the picked
+# period (7d / 30d / 90d).
+_REPORTS_WINS_FIXTURE: dict[int, list[tuple]] = {
+    # Vidora Media — content / creator economy
+    1: [
+        ('meeting', 'James Whitford', 'Whitford Property Group',     4),
+        ('meeting', 'Priya Shah',     'Shah Studios',                6),
+        ('won',     'Daniel Webb',    'Webb Creator Network',        9),
+        ('meeting', 'Aaron Pyke',     'Pyke & Co Films',            18),
+        ('meeting', 'Helena Marsh',   'Marsh Creative House',       33),
+        ('won',     'Ross Caldwell',  'Caldwell Brothers Media',    52),
+    ],
+    # ROCA Accountants — accountancy / professional services
+    2: [
+        ('meeting', 'Nina Patel',     'Harbor Legal',                 3),
+        ('meeting', 'Sarah Cole',     'Cole & Reeves Accountants',    5),
+        ('meeting', 'David Marsh',    'Marsh & Trent Audit',         11),
+        ('won',     'Olivia Bennett', 'Bennett Tax Group',           19),
+        ('meeting', 'Tom Reeves',     'Coastal Bookkeeping Ltd',     34),
+        ('won',     'Marcus Hill',    'Hill & Daughter Audit',       48),
+    ],
+}
+
+
+def _reports_wins_fixture(client_id: int, days: int) -> list[dict]:
+    avg = _reports_seed(client_id, days)['avg_deal_value']
+    rows = _REPORTS_WINS_FIXTURE.get(client_id, [])
+    out: list[dict] = []
+    for outcome, name, business, days_ago in rows:
+        if days_ago > days:
+            continue
+        out.append({
+            'outcome':    outcome,
+            'contact':    name,
+            'business':   business,
+            'days_ago':   days_ago,
+            'when':       _format_days_ago(days_ago),
+            'deal_value': avg if outcome == 'won' else None,
+        })
+    return out
+
+
 # ── Public reports API ───────────────────────────────────────────
 def reports_clients_min() -> list[dict]:
     """Client picker for the reports header."""
@@ -2315,6 +2370,16 @@ def reports_client_summary(client_id: int) -> dict | None:
         row['since'] = row['onboarded_at'].strftime('%b %Y')
         return row
     return get_client(client_id)
+
+
+def reports_wins(client_id: int, days: int) -> list[dict]:
+    """Named meetings + deals for the 'Wins this period' card. Without
+    a database, returns the demo fixture; the production path is a TODO
+    that selects most recent leads in ('meeting','won') status within the
+    window."""
+    if _reports_use_fixture():
+        return _reports_wins_fixture(client_id, days)
+    return []
 
 
 REPORTS_DEFAULT_AVG_DEAL_VALUE = 6000  # GBP — UK B2B service midpoint, see _reports_seed
