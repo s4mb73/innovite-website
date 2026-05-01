@@ -36,8 +36,7 @@
 {% if domains %}
 <div class="mb-domain-strip" role="list">
   {% for d in domains %}
-    <div class="mb-domain-card {% if d.needs_attention_count %}mb-domain-card-attention{% endif %}"
-         role="listitem">
+    <div class="mb-domain-card" role="listitem">
       <div class="mb-domain-name">{{ d.domain }}</div>
       <div class="mb-domain-counts">
         {{ d.mailbox_count }} mailbox{{ '' if d.mailbox_count == 1 else 'es' }}

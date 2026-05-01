@@ -3338,13 +3338,8 @@ a { color:inherit; text-decoration:none; }
   flex-direction:column;
   gap:8px;
 }
-/* Attention domains get a flat 2px red bar — left corners squared so
-   the bar runs straight top-to-bottom instead of tracing the radius. */
-.mb-domain-card-attention {
-  border-left:2px solid #ef4444;
-  border-top-left-radius:0;
-  border-bottom-left-radius:0;
-}
+/* No card-level treatment for attention domains — the amber
+   "N need attention" badge already carries the signal. */
 .mb-domain-name {
   font-family:'SF Mono','Menlo',monospace;
   font-size:12.5px;
