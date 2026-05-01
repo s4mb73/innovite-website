@@ -165,7 +165,8 @@ mock_lead = {**{c: None for c in [
    'status_colour':'green', 'status':'replied', 'created_at': now(), 'updated_at': now(),
    'client_id': 1, 'client_name':'ROCA',
    # ↓ triage fields added in US-021
-   'stage_time_label': '6h', 'op_state': 'replied', 'relative': '6h ago'}
+   'stage_time_label': '6h', 'op_state': 'replied', 'relative': '6h ago',
+   'stage_time_hours': 6, 'stage_urgency': 'green'}
 
 # A second mock with a different op_state so the rendered table exercises
 # at least two of the lead-op-* class branches.

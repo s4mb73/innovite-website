@@ -442,6 +442,28 @@ def _stage_time_label(stage_started: datetime | None, now: datetime | None = Non
     return f'{secs // 86400}d'
 
 
+def _stage_time_hours(stage_started: datetime | None, now: datetime | None = None) -> int | None:
+    """Hours-in-stage as a number — drives row-level urgency colouring
+    and the conditional 'needs response' / 'overdue' CTAs on replied
+    rows. None when we have no timestamp to compare against."""
+    if not stage_started:
+        return None
+    now = now or datetime.now(timezone.utc)
+    return max(0, int((now - stage_started).total_seconds()) // 3600)
+
+
+def _stage_urgency(hours: int | None, op_state: str) -> str:
+    """Bucket stage-time hours into a colour class for the row's stage
+    cell. Terminal states (won/lost) and contacted (still in cadence)
+    don't carry urgency — they map to the neutral default."""
+    if hours is None or op_state in ('won', 'lost', 'contacted'):
+        return 'default'
+    if hours < 24:   return 'green'
+    if hours < 96:   return 'default'
+    if hours < 168:  return 'amber'
+    return 'red'
+
+
 def leads_search(
     *,
     status: str | None = None,
@@ -494,8 +516,11 @@ def leads_search(
         r['relative']      = relative_time(r['created_at'])
         # US-021 — triage row decoration.
         stage_started = r.get('updated_at') or r.get('created_at')
+        hours_in_stage = _stage_time_hours(stage_started, now)
         r['stage_time_label'] = _stage_time_label(stage_started, now)
+        r['stage_time_hours'] = hours_in_stage
         r['op_state']         = LEAD_OP_STATE.get(r.get('status') or '', 'new')
+        r['stage_urgency']    = _stage_urgency(hours_in_stage, r['op_state'])
 
     total_row = fetch_one(f"""
         select count(*) as total

@@ -886,7 +886,7 @@ a { color:inherit; text-decoration:none; }
   padding:10px 14px;
   font-size:13px;
   font-weight:500;
-  color:var(--t2);
+  color:var(--t3);
   text-decoration:none;
   border-bottom:2px solid transparent;
   margin-bottom:-1px;
@@ -987,11 +987,29 @@ a { color:inherit; text-decoration:none; }
   display:flex;
   gap:10px;
   align-items:center;
-  padding:10px 14px;
-  margin-bottom:14px;
+  padding:0 14px;
+  margin-bottom:0;
   background:var(--accent-bg);
   border:1px solid rgba(143,183,255,.25);
   border-radius:var(--r-sm);
+  /* Closed-by-default: collapses height + opacity; .is-open animates in */
+  max-height:0;
+  opacity:0;
+  overflow:hidden;
+  border-color:transparent;
+  transition:
+    max-height .2s var(--ease),
+    opacity .2s var(--ease),
+    padding .2s var(--ease),
+    margin .2s var(--ease),
+    border-color .2s var(--ease);
+}
+.bulkbar.is-open {
+  max-height:64px;
+  opacity:1;
+  padding:10px 14px;
+  margin-bottom:14px;
+  border-color:rgba(143,183,255,.25);
 }
 .bulkbar-count {
   font-size:13px;
@@ -1030,8 +1048,8 @@ a { color:inherit; text-decoration:none; }
   vertical-align:middle;
 }
 .leads-table tbody tr:last-child td { border-bottom:none; }
-.leads-table tbody tr.lead-tr { cursor:pointer; transition:background .12s var(--ease); }
-.leads-table tbody tr.lead-tr:hover { background:var(--s2); }
+.leads-table tbody tr.lead-tr { cursor:pointer; transition:background .15s var(--ease); }
+.leads-table tbody tr.lead-tr:hover { background:rgba(255,255,255,.02); }
 
 .col-check    { width:36px; }
 .col-grade    { width:60px; }
@@ -1046,6 +1064,8 @@ a { color:inherit; text-decoration:none; }
   display:inline-block;
   padding:1px 0;
   border-radius:3px;
+  font-size:14px;
+  font-weight:500;
 }
 .lead-name-link:hover { color:var(--accent); }
 .lead-name-link:focus-visible {
@@ -1105,25 +1125,24 @@ a { color:inherit; text-decoration:none; }
 }
 
 /* ── Leads triage view (US-021) ─────────────────────────
-   Op-state per row, driven by lead.status. The first cell carries the
-   3px coloured stripe via a left-border on the row's first td — same
-   visual idiom as the Clients roster, but applied per-row inside the
-   shared table container. */
+   The first cell carries a 2px coloured stripe driven by lead.grade —
+   subtle enough to scan without reading, distinct enough that a row of
+   Grade A leads stands apart from Grade C noise. Terminal states
+   (won/lost) keep their dim treatment via .lead-op-*. */
 .leads-table-triage tbody tr.lead-tr td:first-child {
-  border-left:3px solid transparent;
+  border-left:2px solid transparent;
 }
-.lead-op-replied   td:first-child { border-left-color:var(--amber) !important; }
-.lead-op-meeting   td:first-child { border-left-color:var(--green) !important; }
-.lead-op-new       td:first-child { border-left-color:var(--t3)    !important; }
-.lead-op-won       td:first-child { border-left-color:var(--green) !important; }
-.lead-op-lost      td:first-child { border-left-color:var(--t3)    !important; }
-/* contacted = no border */
+.lead-grade-green td:first-child { border-left-color:var(--green)  !important; }
+.lead-grade-blue  td:first-child { border-left-color:var(--accent) !important; }
+.lead-grade-amber td:first-child { border-left-color:var(--amber)  !important; }
+.lead-grade-red   td:first-child { border-left-color:#ef4444       !important; }
+.lead-grade-grey  td:first-child { border-left-color:transparent   !important; }
 
 .lead-op-won, .lead-op-lost { opacity:.78; }
 
 .lead-sub {
   margin-top:2px;
-  font-size:11.5px;
+  font-size:12px;
   color:var(--t3);
   font-weight:300;
 }
@@ -1131,11 +1150,12 @@ a { color:inherit; text-decoration:none; }
   display:inline-block;
   margin-left:8px;
   font-size:11px;
-  color:var(--amber);
   font-weight:500;
   text-transform:uppercase;
   letter-spacing:.6px;
 }
+.lead-cta-amber { color:var(--amber); }
+.lead-cta-red   { color:#ef4444; }
 
 .col-stage {
   font-size:12.5px;
@@ -1144,6 +1164,9 @@ a { color:inherit; text-decoration:none; }
   white-space:nowrap;
   width:90px;
 }
+.col-stage.stage-green { color:var(--green); }
+.col-stage.stage-amber { color:var(--amber); }
+.col-stage.stage-red   { color:#ef4444; }
 
 /* Needs-attention banner */
 .leads-attn {
@@ -1158,10 +1181,17 @@ a { color:inherit; text-decoration:none; }
   border-radius:var(--r-sm);
   font-size:12.5px;
 }
-.leads-attn-icon {
-  font-size:14px;
-  line-height:1;
+.leads-attn-amber { border-left-color:var(--amber); }
+.leads-attn-green { border-left-color:var(--green); }
+.leads-attn-dot {
+  display:inline-block;
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  flex-shrink:0;
 }
+.leads-attn-amber .leads-attn-dot { background:var(--amber); }
+.leads-attn-green .leads-attn-dot { background:var(--green); }
 .leads-attn-text {
   display:inline-flex;
   align-items:center;

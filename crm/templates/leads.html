@@ -59,8 +59,8 @@
   {% set _ = base_qs.pop('status', None) %}
   {% set rep_qs = base_qs.copy() %}{% set _ = rep_qs.update({'status': 'replied'}) %}
   {% set met_qs = base_qs.copy() %}{% set _ = met_qs.update({'status': 'meeting'}) %}
-  <div class="leads-attn">
-    <div class="leads-attn-icon" aria-hidden="true">⚡</div>
+  <div class="leads-attn leads-attn-{{ 'amber' if c.replied > 0 else 'green' }}">
+    <span class="leads-attn-dot" aria-hidden="true"></span>
     <div class="leads-attn-text">
       {% if c.replied > 0 %}
         <a class="leads-attn-link leads-attn-link-amber" href="{{ url_for('leads', **rep_qs) }}">
@@ -124,8 +124,8 @@
   </select>
 </form>
 
-{# ── Bulk-action bar (shown when rows selected) ──────── #}
-<form id="bulkForm" class="bulkbar" method="post" action="{{ url_for('leads_bulk_status') }}" hidden>
+{# ── Bulk-action bar (slides in when rows selected; closed via CSS by default) ── #}
+<form id="bulkForm" class="bulkbar" method="post" action="{{ url_for('leads_bulk_status') }}">
   <span class="bulkbar-count" data-bulk-count>0 selected</span>
   <select class="filter-select" name="status" required>
     <option value="">Change status to…</option>
@@ -154,7 +154,8 @@
     <tbody>
       {% for l in result.rows %}
         {% set href = url_for('lead_detail', lead_id=l.id) %}
-        <tr class="lead-tr lead-op-{{ l.op_state }}" data-href="{{ href }}">
+        <tr class="lead-tr lead-op-{{ l.op_state }} lead-grade-{{ l.grade_colour or 'grey' }}"
+            data-href="{{ href }}">
           <td class="col-check"><input type="checkbox" name="ids" form="bulkForm" value="{{ l.id }}" aria-label="Select {{ l.business_name }}"></td>
           <td class="col-business">
             <a class="lead-name-link" href="{{ href }}">{{ l.business_name }}</a>
@@ -166,9 +167,15 @@
           <td class="col-grade"><span class="grade grade-{{ l.grade_colour }}">{{ l.grade or '—' }}</span></td>
           <td class="col-status">
             <span class="lead-status pill-{{ l.status_colour }}">{{ l.status|capitalize }}</span>
-            {% if l.op_state == 'replied' %}<span class="lead-cta">needs response →</span>{% endif %}
+            {% if l.op_state == 'replied' and l.stage_time_hours is not none %}
+              {% if l.stage_time_hours >= 48 %}
+                <span class="lead-cta lead-cta-red">overdue →</span>
+              {% elif l.stage_time_hours >= 24 %}
+                <span class="lead-cta lead-cta-amber">needs response →</span>
+              {% endif %}
+            {% endif %}
           </td>
-          <td class="col-stage">{{ l.stage_time_label }}</td>
+          <td class="col-stage stage-{{ l.stage_urgency or 'default' }}">{{ l.stage_time_label }}</td>
           <td class="col-time">{{ l.relative }}</td>
         </tr>
       {% endfor %}
@@ -255,7 +262,7 @@
     function refresh() {
       const checked = boxes().filter(b => b.checked);
       const n = checked.length;
-      form.hidden = n === 0;
+      form.classList.toggle('is-open', n > 0);
       if (count) count.textContent = `${n} selected`;
       if (all) all.checked = n > 0 && n === boxes().length;
     }
