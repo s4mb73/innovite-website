@@ -724,12 +724,151 @@ The Outreach page keeps its identity as the **sends-side** dashboard (Today / Se
 
 ---
 
+## Epic 10 — Reports
+
+Source UI: `templates/reports.html` — per-client performance page at `/reports`. Demoable today via a fixture (`db._reports_use_fixture()` returns True when `DATABASE_URL` is unset) — every section needs to read real data before this surface can be shared with a paying client. The fixture decisions also surface the schema gaps that block the production version: where per-lead `deal_value` lives, where per-client goals live, and where an operator-edited narrative gets persisted.
+
+Stories below cover the gaps between the shipped UI and a real, sharable, single-client report.
+
+### US-030 · Wins this period reads from `crm.leads`, not the demo fixture
+
+**As** an operator
+**I want to** open the Reports page for a real client and see the actual leads who reached `meeting` or `won` status in the period, not a hard-coded list
+**So that** the report reflects work the agency actually did this month — the named outcomes are the part the client cares about most
+
+**Priority:** P0
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] `db.reports_wins(client_id, days)` selects from `crm.leads` where `client_id = %s`, `status in ('meeting','won')`, and `updated_at >= now() - interval '<days> days'`
+- [ ] Returns `decision_maker_name` as `contact`, `business_name` as `business`, the lead's status as `outcome`, and days since `updated_at` formatted by the existing `_format_days_ago()` helper as `when`
+- [ ] `deal_value` is sourced from a real per-lead column where present, falling back to `null` on the row (display dash) — never the avg estimate (US-031 covers the column)
+- [ ] Capped at 6 most-recent rows so the card stays scannable; "+ N more" hint appears below if the period contains more (links to a filtered Leads page view)
+- [ ] Empty state ("No wins yet in this window — sequence is still warming up") replaces the card silently when the query returns 0 rows
+- [ ] Fixture path is preserved for localhost demo: `_reports_use_fixture()` continues to return the existing fixture when `DATABASE_URL` is unset, so prospect-demo screenshots stay stable
+- [ ] Card title's "demo data" tag only renders when `_reports_use_fixture()` is True; production renders the title alone
+
+**Notes** — Status-change date uses `crm.leads.updated_at` for now; a follow-up may move to a dedicated `crm.lead_status_history` table so a lead that flipped meeting → lost still surfaces the meeting date in the right window. Out of scope here — `updated_at` is right ~95% of the time and the schema migration is its own decision.
+
+---
+
+### US-031 · Per-lead deal value replaces the avg-deal estimate on Pipeline KPI
+
+**As** a client receiving the report
+**I want to** see the actual deal value for each won deal and a realistic per-meeting estimate for my account, not a flat agency-wide number
+**So that** the £ figures on my report are mine — not "what the average UK B2B service deal looks like", which I have no reason to trust
+
+**Priority:** P0
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] `crm.leads` gains a nullable `deal_value` integer column (GBP, no decimals — pence don't matter at £k+ scale)
+- [ ] `crm.clients` gains a nullable `default_deal_value` integer column for the per-meeting estimate (replaces hard-coded `REPORTS_DEFAULT_AVG_DEAL_VALUE = 6000`)
+- [ ] `reports_kpis()` Pipeline value computes as: sum(`deal_value`) for `won` leads in window + (count of `meeting` leads in window × client's `default_deal_value`)
+- [ ] If `default_deal_value` is unset on the client, Pipeline value still renders but the "est. £X per meeting" subline is replaced with a `Set deal value →` link to the client detail page
+- [ ] Wins card shows the actual `deal_value` on `won` rows, dash on rows where it's unset (operator hasn't filled it yet)
+- [ ] Lead detail page gains an editable `deal_value` field on the lifecycle card — only editable when status = `won`; greyed-out otherwise with tooltip "Set when the deal closes"
+- [ ] Client detail page gains `default_deal_value` field on the targeting / commercial card
+- [ ] Migration is idempotent (`add column if not exists`) and back-fills no values — operator fills them in as deals close
+
+**Notes** — `deal_value` lives on the lead, not on a separate `crm.deals` table, because in our model a single lead can only become one deal (no upsells, no multi-product split — we sell retainers). If the model ever supports multi-deal accounts, promote to `crm.deals`. Until then, one column on `crm.leads` is the right complexity.
+
+---
+
+### US-032 · Click a win row to open the lead detail page
+
+**As** an operator
+**I want to** click a row on the Wins this period card and land on that lead's detail page
+**So that** when a client asks "tell me more about Nina Patel at Harbor Legal", I'm one click away from the conversation history and notes — not searching the Leads table
+
+**Priority:** P1
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] Each `.wins-row` becomes an `<a>` (or wraps its content in one) pointing to `/leads/<lead_id>`
+- [ ] Hover state matches the existing row-hover pattern on the Leads table (existing token, no new colour)
+- [ ] Keyboard focus state visible (focus ring in `--accent`); Enter/Space activates
+- [ ] Cursor is `pointer` on the whole row, not just the contact name
+- [ ] In `@media print`, the link styling collapses — rows render as plain text so a printed report doesn't show underlines under names
+- [ ] Fixture rows render as inert (no `<a>`) since fixture wins have no real `lead_id` — clicking them in demo would 404; keep the demo card clearly read-only
+
+**Notes** — Lead detail page already exists per US-020. This story is the connective tissue between Reports and the operator's working surface. Acceptable trade-off: the report is read-only for the client (when a public share URL exists per US-035), so "click to drill in" only matters for the operator-private view.
+
+---
+
+### US-033 · Operator-edited narrative persists per (client, period)
+
+**As** an operator
+**I want to** edit the auto-generated "What we did this period" paragraph and have my edit replace the auto version for that specific (client, period)
+**So that** I can add context the data can't show ("we paused for the holiday week", "Harbor Legal came via referral, not outbound — counted separately") before sending the report to the client
+
+**Priority:** P1
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] New table `crm.report_narratives` with columns: `client_id`, `period_slug` (`7d`/`30d`/`90d`), `body` text, `updated_at` timestamptz, `updated_by` text. Primary key `(client_id, period_slug)` — one editable narrative per cell, overwritten on each save
+- [ ] `reports_narrative()` reads from this table first; falls back to the existing auto-composed paragraph when no row exists
+- [ ] On the Reports page, the narrative paragraph gains an inline **Edit** button (Lucide-style stroked SVG, matches existing icon style)
+- [ ] Edit opens an inline textarea pre-filled with the current text (auto or saved); **Save** writes to `crm.report_narratives`; **Cancel** discards
+- [ ] **Reset to auto** button on the editor clears the saved row, so the page falls back to the auto version on next render
+- [ ] Saved narratives show a small "Edited DD MMM" timestamp under the paragraph; auto narratives show no badge (the auto version is the default, not a state worth labelling)
+- [ ] Edits are visible to the same operator immediately on save (no page reload) and to all operators on next render — no per-operator drafts
+- [ ] Mailto body uses the saved narrative if present, falls back to auto otherwise
+
+**Notes** — Period-scoped (not global) because what was true in one period (paused for holiday) isn't true in the next. Storing per-period also avoids "do I need to re-edit every time the auto text changes" — auto is the floor, edited is the ceiling, and the operator only touches it when there's something the data can't say.
+
+---
+
+### US-034 · Per-client goals replace global `REPORTS_TARGETS_MONTHLY`
+
+**As** an operator
+**I want to** set per-client targets (meetings/month, reply rate %) instead of using the agency-wide defaults
+**So that** the **target met** / **of N target** indicators on the Reports KPIs reflect what each client actually pays for — Vidora's £3,500 retainer expects more meetings/month than a £1,500 audit-day-only client
+
+**Priority:** P1
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] `crm.clients` gains a nullable `goals` JSONB column. Shape: `{"meetings_per_month": 5, "reply_rate_pct": 8.0}`. Idempotent migration (`add column if not exists`)
+- [ ] `reports_targets(days)` becomes `reports_targets(client_id, days)` — reads from `crm.clients.goals`, falls back to `REPORTS_TARGETS_MONTHLY` when the field is null or missing keys
+- [ ] Client detail page gains an editable **Performance goals** card with two inputs: meetings/month (integer, 1–50), reply rate target % (number, 1–30, one decimal)
+- [ ] Save persists to `crm.clients.goals`, no page reload, brief confirmation toast
+- [ ] Reports page **Meetings booked** tile shows the client's per-month meetings target (pro-rated for the period as today: monthly × days/30)
+- [ ] Reports page **Reply rate** tile uses the client's reply-rate target for the under/ok colour state
+- [ ] When goals are unset, both tiles fall back to the existing global defaults (5 meetings/month, 8.0% reply rate) — no UI difference, no "set targets" nag (operator can set them when they want to)
+
+**Notes** — JSONB rather than two columns because more goal fields are likely later (open rate target, deal-value target per period) and we don't want a migration per metric. Schema-on-read is acceptable here: one writer (the client edit form), one reader (`reports_targets`), both Python-typed, and the field count is small enough that a JSONB column doesn't hide the bugs it would in a multi-team codebase.
+
+---
+
+### US-035 · Sharable public report URL with single-password gate
+
+**As** a client
+**I want to** click a link in Sammy's email and see my own performance report in the browser, without logging into anything Innovite-internal
+**So that** the report I get is the live page — not a screenshot or a stale CSV — and I can revisit it during the month without asking for an updated copy
+
+**Priority:** P1
+**Status:** Draft
+
+**Acceptance criteria**
+- [ ] New table `crm.report_share_tokens` (`client_id`, `token` text unique, `created_at`, `revoked_at` nullable). Token is a 32-char URL-safe random string
+- [ ] New route `GET /report/<token>` renders the same `templates/reports.html` for the matched client, in read-only mode (no client picker, no edit affordances, no kebab menu — only the period switcher and Print)
+- [ ] Public route requires the existing single-password gate (per project Open items in `crm/CLAUDE.md`) — same password as the operator-side CRM, set in env. Auth is a one-step form, session cookie scoped to `/report/*`
+- [ ] Reports page (operator side) gains a **Share link** action in the kebab menu — generates a token if none exists for the client, copies `https://innovite-crm.onrender.com/report/<token>` to clipboard, shows a confirmation toast
+- [ ] Same kebab menu gains **Revoke share link** when a token exists — sets `revoked_at`; future hits to that URL render a clean "Link revoked — request a new one from your account manager" page
+- [ ] Mailto body (existing on the Reports page) updates to include the share URL alongside the recap text, when a non-revoked token exists
+- [ ] Public route does NOT show: client picker, the **demo data** tag (production data only), the kebab menu, edit narrative button (US-033), CSV export
+- [ ] Public route DOES show: hero, narrative, KPIs, trend chart, Wins this period, Funnel, Sequence — same content shape as the operator view, just locked-down chrome
+
+**Notes** — Single password + per-client token means the URL alone doesn't expose the report (need the password too) and the token alone scopes which client they see (one client can't see another's). Acceptable trade-off for a 1-person agency; full per-client auth (each client sets their own password, can self-revoke) is overkill at this scale and gets revisited if/when Innovite onboards a fifth client. Comment block at the top of the existing mailto code in `app.py:reports()` can be removed once this lands.
+
+---
+
 ## Out of scope for this draft
 
 These belong in later epics or separate docs — recording here so we don't lose them:
 
-- **Reports (Step 9)** — per-client performance dashboard, exportable. Has its own template stub at `templates/reports.html` but no UI surface yet.
-- **Auth** — POC has no auth (per `crm/CLAUDE.md` open items); single-password gate planned before public link-out.
+- **Auth** — POC has no auth (per `crm/CLAUDE.md` open items); single-password gate planned before public link-out (prereq for US-035).
 - **`crm.inbound_leads` vs `public.leads` reconciliation** — affects Epic 4 acceptance; needs a schema decision before US-011 is scoped.
 - **Background worker service on Render** — Epics 1, 2, 3 all assume a worker process. The decision on one-vs-two services should land before any of these are built.
 - **Lead scoring rubric** — the schema already has `grade` (A/B/C/D/F) and `overall_score` columns, but the rubric for assigning them isn't specced yet. Three pillars sketched (Viability, Reachability, Buying signal) but the per-client weights need real conversion data to tune. Revisit after ~30 contacted leads have real reply data (smallest sample to start tuning weights). Until then the Leads page (US-021) treats grade as decoration — present if set, dash if null, never load-bearing for the op-state logic.
