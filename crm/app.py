@@ -707,10 +707,12 @@ def settings():
     settings_data = {k: v for k, v in db.SETTINGS_DEFAULTS.items()}
     integrations: list[dict] = []
     status: dict = {}
+    mb_summary: dict = {'total': 0, 'healthy': 0, 'warming': 0, 'needs_attention': 0}
     try:
         settings_data = db.settings_all()
         integrations  = db.integration_keys()
         status        = db.system_status()
+        mb_summary    = db.mailboxes_summary()
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
     return render_template(
@@ -719,6 +721,7 @@ def settings():
         s=settings_data,
         integrations=integrations,
         status=status,
+        mb_summary=mb_summary,
         db_error=db_error,
     )
 
@@ -746,21 +749,19 @@ def settings_save_profile():
 
 @app.post('/settings/email')
 def settings_save_email():
+    # Cap is per-mailbox now (see crm.mailboxes.daily_cap), so this form
+    # only persists the global business-hours window.
     try:
-        # daily_send_cap and sending_hours are the two real persisted values.
-        cap_raw = (request.form.get('daily_send_cap') or '').strip()
-        cap     = int(cap_raw) if cap_raw.isdigit() else 120
-        db.settings_set('daily_send_cap', cap)
         db.settings_set('sending_hours', {
             'start':         (request.form.get('hours_start') or '09:00').strip(),
             'end':           (request.form.get('hours_end')   or '17:00').strip(),
             'tz':            'Europe/London',
             'skip_weekends': _truthy_form('skip_weekends'),
         })
-        flash('Sending settings saved.', 'success')
+        flash('Sending hours saved.', 'success')
     except Exception as e:
-        flash(f'Could not save sending settings: {e}', 'error')
-    return redirect(url_for('settings') + '#email')
+        flash(f'Could not save sending hours: {e}', 'error')
+    return redirect(url_for('settings') + '#hours')
 
 
 @app.post('/settings/cadence')
@@ -788,6 +789,30 @@ def settings_pause_all():
     except Exception as e:
         flash(f'Could not update pause: {e}', 'error')
     return redirect(url_for('settings') + '#danger')
+
+
+@app.route('/mailboxes')
+def mailboxes():
+    db_error = None
+    rows: list[dict] = []
+    domains: list[dict] = []
+    summary: dict = {'total': 0, 'healthy': 0, 'warming': 0,
+                     'needs_attention': 0, 'paused': 0,
+                     'total_capacity': 0, 'total_sent_today': 0}
+    try:
+        rows    = db.mailboxes_all()
+        domains = db.sending_domains_summary()
+        summary = db.mailboxes_summary()
+    except Exception as e:
+        db_error = str(e).splitlines()[0][:240]
+    return render_template(
+        'mailboxes.html',
+        active='mailboxes',
+        mailboxes=rows,
+        domains=domains,
+        summary=summary,
+        db_error=db_error,
+    )
 
 
 @app.route('/healthz')

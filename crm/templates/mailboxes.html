@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Mailboxes · Innovite CRM{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Mailboxes</h1>
+    <p class="page-sub">
+      {% if summary.total %}
+        {{ summary.total }} connected ·
+        <span class="state-healthy-text">{{ summary.healthy }} healthy</span>
+        {% if summary.warming %} · {{ summary.warming }} warming{% endif %}
+        {% if summary.needs_attention %}
+          · <span class="state-warn-text">{{ summary.needs_attention }} need attention</span>
+        {% endif %}
+        {% if summary.paused %} · {{ summary.paused }} paused{% endif %}
+      {% else %}
+        No mailboxes connected yet.
+      {% endif %}
+    </p>
+  </div>
+  <div class="page-actions">
+    <button type="button" class="btn btn-quiet" disabled
+            title="Add-mailbox wizard lands in the next slice">+ Add mailbox</button>
+  </div>
+</div>
+
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong> Couldn't load mailboxes.
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+{# ── Domain summary strip ───────────────────────────── #}
+{% if domains %}
+<div class="mb-domain-strip" role="list">
+  {% for d in domains %}
+    <div class="mb-domain-card" role="listitem">
+      <div class="mb-domain-name">{{ d.domain }}</div>
+      <div class="mb-domain-counts">
+        {{ d.mailbox_count }} mailbox{{ '' if d.mailbox_count == 1 else 'es' }}
+      </div>
+      <div class="mb-domain-state">
+        {% if d.needs_attention_count %}
+          <span class="status-tag state-warn">
+            <span class="status-dot"></span>{{ d.needs_attention_count }} need attention
+          </span>
+        {% elif d.warming_count %}
+          <span class="status-tag state-warming">
+            <span class="status-dot"></span>{{ d.warming_count }} warming
+          </span>
+        {% elif d.healthy_count %}
+          <span class="status-tag state-healthy">
+            <span class="status-dot"></span>healthy
+          </span>
+        {% else %}
+          <span class="status-tag state-muted">
+            <span class="status-dot"></span>idle
+          </span>
+        {% endif %}
+      </div>
+      <div class="mb-domain-dns">
+        <span class="mb-dns-pill {% if d.spf_verified %}is-ok{% else %}is-bad{% endif %}"
+              title="Sender Policy Framework">SPF {{ '✓' if d.spf_verified else '✗' }}</span>
+        <span class="mb-dns-pill {% if d.dkim_verified %}is-ok{% else %}is-bad{% endif %}"
+              title="DomainKeys Identified Mail">DKIM {{ '✓' if d.dkim_verified else '✗' }}</span>
+        <span class="mb-dns-pill {% if d.dmarc_verified %}is-ok{% else %}is-bad{% endif %}"
+              title="DMARC policy">DMARC {{ '✓' if d.dmarc_verified else '✗' }}</span>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── Mailbox table ──────────────────────────────────── #}
+{% if mailboxes %}
+<div class="card mb-table-card">
+  <table class="mb-table">
+    <thead>
+      <tr>
+        <th>Address</th>
+        <th>Domain</th>
+        <th>Assignment</th>
+        <th class="num">Sent today</th>
+        <th class="num">Cap</th>
+        <th>Warmup</th>
+        <th>State</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in mailboxes %}
+        <tr class="mb-row mb-row-{{ m.health_state }}">
+          <td class="mb-addr">{{ m.address }}</td>
+          <td class="mb-dom">{{ m.domain }}</td>
+          <td class="mb-assigned">
+            {% if m.dedicated_client_id %}
+              <span class="mb-tag mb-tag-dedicated">Dedicated</span>
+              <span class="mb-assigned-name">· {{ m.dedicated_client_name }}</span>
+            {% else %}
+              <span class="mb-tag mb-tag-pool">Pool</span>
+            {% endif %}
+          </td>
+          <td class="num mb-sent">{{ m.sent_today }}</td>
+          <td class="num mb-cap">
+            {% if m.daily_cap %}{{ m.daily_cap }}{% else %}—{% endif %}
+          </td>
+          <td class="mb-warmup">
+            {% if m.warmup_status == 'complete' %}
+              <span class="mb-warmup-done">✓ Complete</span>
+            {% elif m.warmup_status == 'warming' and m.warmup_day is not none %}
+              <span class="mb-warmup-running">
+                Day {{ m.warmup_day }}{% if m.warmup_target %} / {{ m.warmup_target }}{% endif %}
+              </span>
+              {% if m.warmup_provider %}
+                <span class="mb-warmup-provider">· {{ m.warmup_provider }}</span>
+              {% endif %}
+            {% elif m.warmup_status == 'paused' %}
+              <span class="mb-warmup-paused">Paused</span>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+          <td class="mb-state-cell">
+            <span class="status-tag state-{{ m.health_state }}">
+              <span class="status-dot"></span>{{ m.health_state|capitalize }}
+            </span>
+            {% if m.last_error %}
+              <div class="mb-err" title="{{ m.last_error }}">{{ m.last_error|truncate(50) }}</div>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif not db_error %}
+<div class="card empty-state">
+  <p class="empty-state-title">No mailboxes connected.</p>
+  <p class="empty-state-sub">
+    Add the first mailbox to start sending. The wizard will walk through
+    domain selection, credentials, and a connection test.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

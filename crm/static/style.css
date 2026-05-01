@@ -2423,11 +2423,16 @@ a { color:inherit; text-decoration:none; }
   background:currentColor;
   flex-shrink:0;
 }
-.status-tag.state-healthy { background:var(--green-bg); color:var(--green); }
-.status-tag.state-idle    { background:var(--s3);       color:var(--t3); }
-.status-tag.state-warn    { background:var(--amber-bg); color:var(--amber); }
-.status-tag.state-down    { background:rgba(239,68,68,.10); color:#fca5a5; }
-.status-tag.state-muted   { background:var(--s3);       color:var(--t3); }
+.status-tag.state-healthy      { background:var(--green-bg); color:var(--green); }
+.status-tag.state-idle         { background:var(--s3);       color:var(--t3); }
+.status-tag.state-warn         { background:var(--amber-bg); color:var(--amber); }
+.status-tag.state-warming      { background:var(--amber-bg); color:var(--amber); }
+.status-tag.state-throttled    { background:var(--amber-bg); color:var(--amber); }
+.status-tag.state-down         { background:rgba(239,68,68,.10); color:#fca5a5; }
+.status-tag.state-disconnected { background:rgba(239,68,68,.10); color:#fca5a5; }
+.status-tag.state-muted        { background:var(--s3);       color:var(--t3); }
+.status-tag.state-paused       { background:var(--s3);       color:var(--t2); }
+.status-tag.state-unassigned   { background:var(--s3);       color:var(--t3); }
 
 /* Cadence flow visual */
 .cadence-flow {
@@ -3253,5 +3258,139 @@ a { color:inherit; text-decoration:none; }
   .drawer.drawer--wide { width:100vw; }
   .composer-send-group { width:100%; }
   .composer-send-group .btn { flex:1; }
+}
+
+/* ── Mailboxes page ─────────────────────────────────────── */
+
+/* Inline state colour text — used in page-sub headers and settings summary */
+.state-healthy-text { color:var(--green); font-weight:500; }
+.state-warn-text    { color:var(--amber); font-weight:500; }
+
+/* Settings → mailboxes summary card */
+.settings-summary-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding-top:6px;
+  flex-wrap:wrap;
+}
+.settings-summary-text { color:var(--t2); font-size:13.5px; }
+.settings-summary-text strong { color:var(--t1); font-weight:500; }
+
+/* Domain summary strip — one card per sending domain */
+.mb-domain-strip {
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+  gap:14px;
+  margin-bottom:18px;
+}
+.mb-domain-card {
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  padding:14px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.mb-domain-name {
+  font-family:'SF Mono','Menlo',monospace;
+  font-size:12.5px;
+  color:var(--t1);
+  letter-spacing:.2px;
+}
+.mb-domain-counts { color:var(--t3); font-size:11.5px; }
+.mb-domain-state { margin-top:2px; }
+.mb-domain-dns { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+.mb-dns-pill {
+  font-size:10.5px;
+  padding:2px 7px;
+  border-radius:999px;
+  letter-spacing:.3px;
+  font-weight:500;
+}
+.mb-dns-pill.is-ok  { background:var(--green-bg);            color:var(--green); }
+.mb-dns-pill.is-bad { background:rgba(239,68,68,.10);        color:#fca5a5; }
+
+/* Mailbox table */
+.mb-table-card { padding:0; overflow:hidden; }
+.mb-table {
+  width:100%;
+  border-collapse:collapse;
+  font-size:12.5px;
+  font-variant-numeric:tabular-nums;
+}
+.mb-table thead th {
+  text-align:left;
+  font-weight:500;
+  color:var(--t3);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.6px;
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+  background:var(--s1);
+}
+.mb-table thead th.num { text-align:right; }
+.mb-table tbody td {
+  padding:13px 16px;
+  border-bottom:1px solid var(--border);
+  color:var(--t2);
+  vertical-align:middle;
+}
+.mb-table tbody td.num { text-align:right; }
+.mb-table tbody tr:last-child td { border-bottom:none; }
+.mb-row:hover { background:var(--s2); }
+.mb-row-paused, .mb-row-unassigned { opacity:.65; }
+
+.mb-addr {
+  font-family:'SF Mono','Menlo',monospace;
+  font-size:12px;
+  color:var(--t1);
+  letter-spacing:.2px;
+}
+.mb-dom { color:var(--t3); font-size:11.5px; }
+.mb-tag {
+  display:inline-block;
+  font-size:10.5px;
+  padding:2px 7px;
+  border-radius:999px;
+  font-weight:500;
+  letter-spacing:.3px;
+}
+.mb-tag-pool      { background:var(--accent-bg); color:var(--accent); }
+.mb-tag-dedicated { background:var(--s3);        color:var(--t1); }
+.mb-assigned-name { color:var(--t2); margin-left:2px; }
+.mb-sent { color:var(--t1); font-weight:500; }
+.mb-cap  { color:var(--t3); }
+.mb-warmup-done     { color:var(--green); }
+.mb-warmup-running  { color:var(--t1); }
+.mb-warmup-paused   { color:var(--t3); }
+.mb-warmup-provider { color:var(--t3); font-size:11px; margin-left:2px; }
+.mb-state-cell { white-space:nowrap; }
+.mb-err {
+  margin-top:4px;
+  color:var(--amber);
+  font-size:11px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:240px;
+}
+
+@media (max-width:1024px) {
+  .mb-table thead th, .mb-table tbody td { padding:11px 12px; }
+  .mb-dom { display:none; }
+  .mb-table thead th:nth-child(2) { display:none; }
+}
+@media (max-width:768px) {
+  .mb-domain-strip { grid-template-columns:1fr; }
+  .mb-table thead { display:none; }
+  .mb-table, .mb-table tbody, .mb-table tr, .mb-table td { display:block; width:100%; }
+  .mb-row { padding:14px 16px; border-bottom:1px solid var(--border); }
+  .mb-table tbody td { padding:3px 0; border-bottom:none; }
+  .mb-table tbody td.num { text-align:left; }
+  .mb-table tbody td.num::before { content:attr(data-label) ' '; color:var(--t3); }
 }
 

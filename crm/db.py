@@ -2969,3 +2969,89 @@ def integration_keys() -> list[dict]:
         'is_real':  True,
     })
     return out
+
+
+# ── Mailboxes (Step 7 backbone) ──────────────────────────────────────
+# Mailboxes are first-class. Pool vs dedicated assignment is encoded
+# by mailboxes.dedicated_client_id (NULL = pool). Daily cap is per
+# mailbox; the send scheduler picks healthy mailboxes with capacity to
+# hit each client's per-day target.
+
+_HEALTH_NEEDS_ATTENTION = ('throttled', 'disconnected')
+
+
+def mailboxes_all() -> list[dict]:
+    """Every mailbox with domain + dedicated-client name joined for display."""
+    return fetch_all("""
+        select
+          m.id,
+          m.address,
+          m.daily_cap,
+          m.sent_today,
+          m.warmup_provider,
+          m.warmup_day,
+          m.warmup_target,
+          m.warmup_status,
+          m.health_state,
+          m.last_error,
+          m.last_error_at,
+          m.paused,
+          sd.domain,
+          sd.dns_verified,
+          sd.spf_verified,
+          sd.dkim_verified,
+          sd.dmarc_verified,
+          c.id   as dedicated_client_id,
+          c.name as dedicated_client_name
+        from crm.mailboxes m
+        join crm.sending_domains sd on sd.id = m.sending_domain_id
+        left join crm.clients c on c.id = m.dedicated_client_id
+        order by sd.domain, m.address
+    """)
+
+
+def sending_domains_summary() -> list[dict]:
+    """One row per domain with mailbox-state rollups for the page strip."""
+    return fetch_all("""
+        select
+          sd.id,
+          sd.domain,
+          sd.dns_verified,
+          sd.spf_verified,
+          sd.dkim_verified,
+          sd.dmarc_verified,
+          count(m.id)                                                       as mailbox_count,
+          count(*) filter (where m.health_state = 'healthy')                as healthy_count,
+          count(*) filter (where m.health_state = 'warming')                as warming_count,
+          count(*) filter (where m.health_state in ('throttled','disconnected')) as needs_attention_count,
+          count(*) filter (where m.health_state = 'paused')                 as paused_count
+        from crm.sending_domains sd
+        left join crm.mailboxes m on m.sending_domain_id = sd.id
+        group by sd.id, sd.domain, sd.dns_verified, sd.spf_verified,
+                 sd.dkim_verified, sd.dmarc_verified
+        order by sd.domain
+    """)
+
+
+def mailboxes_summary() -> dict:
+    """Headline counts for the page sub-header and the Settings summary card."""
+    row = fetch_one("""
+        select
+          count(*)                                                          as total,
+          count(*) filter (where health_state = 'healthy')                  as healthy,
+          count(*) filter (where health_state = 'warming')                  as warming,
+          count(*) filter (where health_state in ('throttled','disconnected')) as needs_attention,
+          count(*) filter (where health_state = 'paused')                   as paused,
+          coalesce(sum(daily_cap) filter (where health_state in ('healthy','warming')), 0) as total_capacity,
+          coalesce(sum(sent_today) filter (where health_state in ('healthy','warming')), 0) as total_sent_today
+        from crm.mailboxes
+    """) or {}
+    return {
+        'total':            int(row.get('total') or 0),
+        'healthy':          int(row.get('healthy') or 0),
+        'warming':          int(row.get('warming') or 0),
+        'needs_attention':  int(row.get('needs_attention') or 0),
+        'paused':           int(row.get('paused') or 0),
+        'total_capacity':   int(row.get('total_capacity') or 0),
+        'total_sent_today': int(row.get('total_sent_today') or 0),
+    }

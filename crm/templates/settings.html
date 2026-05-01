@@ -58,38 +58,38 @@
     </form>
   </section>
 
-  {# ── Sending email ─────────────────────────────── #}
-  <section class="card settings-card" id="email">
+  {# ── Mailboxes summary ──────────────────────────── #}
+  <section class="card settings-card" id="mailboxes-summary">
     <div class="settings-card-head">
-      <h2 class="settings-card-title">Sending email · Zoho</h2>
-      <p class="settings-card-sub">Mailbox connection, daily cap, sending hours.</p>
+      <h2 class="settings-card-title">Mailboxes</h2>
+      <p class="settings-card-sub">Per-mailbox SMTP, warmup, and assignment.</p>
     </div>
-
-    <div class="settings-readonly">
-      <div class="readonly-row">
-        <span class="readonly-label">SMTP host</span>
-        <span class="readonly-value">{{ s.sending_email.smtp_host }} : {{ s.sending_email.smtp_port }}</span>
-        <span class="status-tag state-healthy"><span class="status-dot"></span> Connected</span>
+    <div class="settings-summary-row">
+      <div class="settings-summary-text">
+        {% if mb_summary.total %}
+          <strong>{{ mb_summary.total }}</strong> connected ·
+          <span class="state-healthy-text">{{ mb_summary.healthy }} healthy</span>
+          {% if mb_summary.warming %} · {{ mb_summary.warming }} warming{% endif %}
+          {% if mb_summary.needs_attention %}
+            · <span class="state-warn-text">{{ mb_summary.needs_attention }} need attention</span>
+          {% endif %}
+        {% else %}
+          No mailboxes connected yet.
+        {% endif %}
       </div>
-      <div class="readonly-row">
-        <span class="readonly-label">IMAP host</span>
-        <span class="readonly-value">{{ s.sending_email.imap_host }} : {{ s.sending_email.imap_port }}</span>
-        <span class="status-tag state-healthy"><span class="status-dot"></span> Connected</span>
-      </div>
-      <div class="readonly-row">
-        <span class="readonly-label">From address</span>
-        <span class="readonly-value">{{ s.sending_email.from_address }}</span>
-        <span class="status-tag state-muted">verified</span>
-      </div>
+      <a class="btn btn-primary" href="{{ url_for('mailboxes') }}">Manage mailboxes</a>
     </div>
+  </section>
 
+  {# ── Sending hours (global) ─────────────────────── #}
+  <section class="card settings-card" id="hours">
+    <div class="settings-card-head">
+      <h2 class="settings-card-title">Sending hours</h2>
+      <p class="settings-card-sub">Global business-hours window applied to every mailbox.</p>
+    </div>
     <form class="settings-form" method="post" action="{{ url_for('settings_save_email') }}">
-      <div class="field-row">
-        <label for="cap">Daily send cap (per client)</label>
-        <input type="number" id="cap" name="daily_send_cap" min="0" max="2000" value="{{ s.daily_send_cap }}">
-      </div>
       <div class="field-row field-row-split">
-        <label>Sending hours · Europe/London</label>
+        <label>Window · Europe/London</label>
         <div class="field-split">
           <input type="time" name="hours_start" value="{{ s.sending_hours.start }}" aria-label="Start time">
           <span class="field-split-sep">to</span>
@@ -103,7 +103,7 @@
         </label>
       </div>
       <div class="settings-form-foot">
-        <button type="submit" class="btn btn-primary">Save sending settings</button>
+        <button type="submit" class="btn btn-primary">Save sending hours</button>
       </div>
     </form>
   </section>
