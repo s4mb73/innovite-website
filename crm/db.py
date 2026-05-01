@@ -2381,19 +2381,20 @@ def reports_wins(client_id: int, days: int) -> list[dict]:
         return _reports_wins_fixture(client_id, days)
 
     sql = """
+        with w as (select now() - interval %(d)s as t_start)
         select id,
                decision_maker_name,
                business_name,
                status,
                updated_at
-          from crm.leads
+          from crm.leads, w
          where client_id = %(cid)s
            and status in ('meeting', 'won')
-           and updated_at >= now() - interval %(window)s
+           and updated_at >= t_start
          order by updated_at desc
          limit 6
     """
-    rows = fetch_all(sql, {'cid': client_id, 'window': f'{days} days'}) or []
+    rows = fetch_all(sql, {'cid': client_id, 'd': f'{days} days'}) or []
     avg = REPORTS_DEFAULT_AVG_DEAL_VALUE
     now = datetime.now(timezone.utc)
     out: list[dict] = []
