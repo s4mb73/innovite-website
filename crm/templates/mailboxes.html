@@ -36,7 +36,8 @@
 {% if domains %}
 <div class="mb-domain-strip" role="list">
   {% for d in domains %}
-    <div class="mb-domain-card" role="listitem">
+    <div class="mb-domain-card {% if d.needs_attention_count %}mb-domain-card-attention{% endif %}"
+         role="listitem">
       <div class="mb-domain-name">{{ d.domain }}</div>
       <div class="mb-domain-counts">
         {{ d.mailbox_count }} mailbox{{ '' if d.mailbox_count == 1 else 'es' }}
@@ -60,16 +61,36 @@
           </span>
         {% endif %}
       </div>
-      <div class="mb-domain-dns">
-        <span class="mb-dns-pill {% if d.spf_verified %}is-ok{% else %}is-bad{% endif %}"
-              title="Sender Policy Framework">SPF {{ '✓' if d.spf_verified else '✗' }}</span>
-        <span class="mb-dns-pill {% if d.dkim_verified %}is-ok{% else %}is-bad{% endif %}"
-              title="DomainKeys Identified Mail">DKIM {{ '✓' if d.dkim_verified else '✗' }}</span>
-        <span class="mb-dns-pill {% if d.dmarc_verified %}is-ok{% else %}is-bad{% endif %}"
-              title="DMARC policy">DMARC {{ '✓' if d.dmarc_verified else '✗' }}</span>
+      <div class="mb-domain-dns" aria-label="DNS verification">
+        <span class="mb-dns-dot {% if d.spf_verified %}is-ok{% else %}is-bad{% endif %}"
+              title="SPF: {{ 'Pass' if d.spf_verified else 'Failing' }}"
+              aria-label="SPF {{ 'pass' if d.spf_verified else 'failing' }}"></span>
+        <span class="mb-dns-dot {% if d.dkim_verified %}is-ok{% else %}is-bad{% endif %}"
+              title="DKIM: {{ 'Pass' if d.dkim_verified else 'Failing' }}"
+              aria-label="DKIM {{ 'pass' if d.dkim_verified else 'failing' }}"></span>
+        <span class="mb-dns-dot {% if d.dmarc_verified %}is-ok{% else %}is-bad{% endif %}"
+              title="DMARC: {{ 'Pass' if d.dmarc_verified else 'Failing' }}"
+              aria-label="DMARC {{ 'pass' if d.dmarc_verified else 'failing' }}"></span>
       </div>
     </div>
   {% endfor %}
+</div>
+{% endif %}
+
+{# ── Capacity summary (the number that says "can we take another client?") #}
+{% if mailboxes and summary.total_capacity %}
+  {% set used_pct = (summary.total_sent_today * 100 // summary.total_capacity)
+                    if summary.total_capacity else 0 %}
+<div class="mb-capacity-summary">
+  <span class="mb-capacity-label">Total daily capacity</span>
+  <span class="mb-capacity-num">{{ summary.total_capacity }}</span>
+  <span class="mb-capacity-sep">·</span>
+  <span class="mb-capacity-label">used today</span>
+  <span class="mb-capacity-num">{{ summary.total_sent_today }}</span>
+  <span class="mb-capacity-pct
+               {% if used_pct >= 90 %}is-full{% elif used_pct >= 75 %}is-warn{% endif %}">
+    ({{ used_pct }}%)
+  </span>
 </div>
 {% endif %}
 
@@ -95,25 +116,29 @@
           <td class="mb-dom">{{ m.domain }}</td>
           <td class="mb-assigned">
             {% if m.dedicated_client_id %}
-              <span class="mb-tag mb-tag-dedicated">Dedicated</span>
-              <span class="mb-assigned-name">· {{ m.dedicated_client_name }}</span>
-            {% else %}
-              <span class="mb-tag mb-tag-pool">Pool</span>
+              <span class="mb-assigned-dedicated">Dedicated</span>
+              <span class="mb-assigned-sep">·</span>
+              <span class="mb-assigned-name">{{ m.dedicated_client_name }}</span>
             {% endif %}
           </td>
-          <td class="num mb-sent">{{ m.sent_today }}</td>
-          <td class="num mb-cap">
+          {% set is_full = m.daily_cap and m.sent_today >= m.daily_cap %}
+          {% set is_warn = m.daily_cap and not is_full and (m.sent_today * 100) >= (m.daily_cap * 80) %}
+          <td class="num mb-sent {% if is_full %}mb-cap-full{% elif is_warn %}mb-cap-warn{% endif %}">{{ m.sent_today }}</td>
+          <td class="num mb-cap {% if is_full %}mb-cap-full{% elif is_warn %}mb-cap-warn{% endif %}">
             {% if m.daily_cap %}{{ m.daily_cap }}{% else %}—{% endif %}
           </td>
           <td class="mb-warmup">
             {% if m.warmup_status == 'complete' %}
               <span class="mb-warmup-done">✓ Complete</span>
+              {% if m.warmup_provider %}
+                <span class="mb-warmup-tag">{{ m.warmup_provider }}</span>
+              {% endif %}
             {% elif m.warmup_status == 'warming' and m.warmup_day is not none %}
               <span class="mb-warmup-running">
                 Day {{ m.warmup_day }}{% if m.warmup_target %} / {{ m.warmup_target }}{% endif %}
               </span>
               {% if m.warmup_provider %}
-                <span class="mb-warmup-provider">· {{ m.warmup_provider }}</span>
+                <span class="mb-warmup-tag">{{ m.warmup_provider }}</span>
               {% endif %}
             {% elif m.warmup_status == 'paused' %}
               <span class="mb-warmup-paused">Paused</span>

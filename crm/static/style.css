@@ -3333,30 +3333,62 @@ a { color:inherit; text-decoration:none; }
 .mb-domain-card {
   background:var(--s1);
   border:1px solid var(--border);
+  border-left:2px solid transparent;
   border-radius:var(--r-md);
   padding:14px 16px;
   display:flex;
   flex-direction:column;
   gap:8px;
+  transition:border-color .15s var(--ease);
 }
+.mb-domain-card-attention { border-left-color:#ef4444; }
 .mb-domain-name {
   font-family:'SF Mono','Menlo',monospace;
   font-size:12.5px;
   color:var(--t1);
   letter-spacing:.2px;
 }
-.mb-domain-counts { color:var(--t3); font-size:11.5px; }
+.mb-domain-counts { color:var(--t3); font-size:12px; }
 .mb-domain-state { margin-top:2px; }
-.mb-domain-dns { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
-.mb-dns-pill {
-  font-size:10.5px;
-  padding:2px 7px;
-  border-radius:999px;
-  letter-spacing:.3px;
-  font-weight:500;
+.mb-domain-dns { display:flex; gap:7px; align-items:center; margin-top:4px; }
+.mb-dns-dot {
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  flex-shrink:0;
+  cursor:help;
 }
-.mb-dns-pill.is-ok  { background:var(--green-bg);            color:var(--green); }
-.mb-dns-pill.is-bad { background:rgba(239,68,68,.10);        color:#fca5a5; }
+.mb-dns-dot.is-ok  { background:var(--green); }
+.mb-dns-dot.is-bad { background:#ef4444; }
+
+/* Capacity summary — sits between domain strip and table.
+   The number that answers "can we onboard another client?" */
+.mb-capacity-summary {
+  display:inline-flex;
+  align-items:baseline;
+  gap:6px;
+  margin-bottom:14px;
+  padding:10px 14px;
+  background:var(--s1);
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+  font-size:12.5px;
+  color:var(--t3);
+}
+.mb-capacity-num {
+  color:var(--t1);
+  font-weight:600;
+  font-variant-numeric:tabular-nums;
+}
+.mb-capacity-label { color:var(--t3); }
+.mb-capacity-sep   { color:var(--t3); margin:0 4px; }
+.mb-capacity-pct {
+  color:var(--t2);
+  font-variant-numeric:tabular-nums;
+  margin-left:2px;
+}
+.mb-capacity-pct.is-warn { color:var(--amber); font-weight:500; }
+.mb-capacity-pct.is-full { color:#ef4444;      font-weight:500; }
 
 /* Mailbox table */
 .mb-table-card { padding:0; overflow:hidden; }
@@ -3396,23 +3428,37 @@ a { color:inherit; text-decoration:none; }
   letter-spacing:.2px;
 }
 .mb-dom { color:var(--t3); font-size:11.5px; }
-.mb-tag {
+/* Pool is the default — only dedicated assignments render. Reduces
+   visual noise on a page that's typically 90% pool. */
+.mb-assigned-dedicated {
+  font-size:11px;
+  font-weight:500;
+  text-transform:uppercase;
+  letter-spacing:.6px;
+  color:var(--t3);
+}
+.mb-assigned-sep  { color:var(--t3); margin:0 2px; }
+.mb-assigned-name { color:var(--t1); }
+
+.mb-sent { color:var(--t1); font-weight:500; }
+.mb-cap  { color:var(--t3); }
+.mb-cap-warn { color:var(--amber) !important; font-weight:500; }
+.mb-cap-full { color:#ef4444     !important; font-weight:500; }
+
+.mb-warmup-done    { color:var(--green); }
+.mb-warmup-running { color:var(--t1); }
+.mb-warmup-paused  { color:var(--t3); }
+.mb-warmup-tag {
   display:inline-block;
-  font-size:10.5px;
+  margin-left:6px;
   padding:2px 7px;
   border-radius:999px;
+  background:var(--s3);
+  color:var(--t3);
+  font-size:10.5px;
   font-weight:500;
   letter-spacing:.3px;
 }
-.mb-tag-pool      { background:var(--accent-bg); color:var(--accent); }
-.mb-tag-dedicated { background:var(--s3);        color:var(--t1); }
-.mb-assigned-name { color:var(--t2); margin-left:2px; }
-.mb-sent { color:var(--t1); font-weight:500; }
-.mb-cap  { color:var(--t3); }
-.mb-warmup-done     { color:var(--green); }
-.mb-warmup-running  { color:var(--t1); }
-.mb-warmup-paused   { color:var(--t3); }
-.mb-warmup-provider { color:var(--t3); font-size:11px; margin-left:2px; }
 .mb-state-cell { white-space:nowrap; }
 .mb-err {
   margin-top:4px;
