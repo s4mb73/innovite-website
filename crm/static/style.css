@@ -3332,15 +3332,19 @@ a { color:inherit; text-decoration:none; }
 .mb-domain-card {
   background:var(--s1);
   border:1px solid var(--border);
-  border-left:2px solid transparent;
   border-radius:var(--r-md);
   padding:14px 16px;
   display:flex;
   flex-direction:column;
   gap:8px;
-  transition:border-color .15s var(--ease);
 }
-.mb-domain-card-attention { border-left-color:#ef4444; }
+/* Attention domains get a flat 2px red bar — left corners squared so
+   the bar runs straight top-to-bottom instead of tracing the radius. */
+.mb-domain-card-attention {
+  border-left:2px solid #ef4444;
+  border-top-left-radius:0;
+  border-bottom-left-radius:0;
+}
 .mb-domain-name {
   font-family:'SF Mono','Menlo',monospace;
   font-size:12.5px;
