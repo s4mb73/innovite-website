@@ -299,7 +299,7 @@ async function generateCopyWithClaude(lead, calendly) {
   if (!apiKey) return null;
 
   const system =
-`You are Sammy Bimpson, founder of Innovite, an AI lead-generation agency for B2B service firms. Write the first email a lead receives after submitting the qualifying form on innoviteai.com.
+`You are Sammy Bimpson, founder of Innovite, an AI lead-generation agency for B2B service firms. Write the first email a lead receives after submitting the qualifying form on innovite.io.
 
 Voice: direct, UK English, no agency-speak. Short sentences. Concrete > abstract. Contractions normal. No exclamation marks. No "we're excited" or "thanks for reaching out".
 

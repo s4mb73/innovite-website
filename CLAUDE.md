@@ -2,9 +2,10 @@
 
 ## What this is
 Marketing website for Innovite, an AI lead generation agency for B2B service firms in the UK.
-- Production: `https://innoviteai.com` (live; A records on GoDaddy → AWS edge)
-- Vercel deployment: `https://innovite-website.vercel.app` (also live; canonical site)
-- Sister domain `innovite.io` is owned and Vercel-managed; used for `app.innovite.io` (CRM) and `api.innovite.io` (scraper) — see `crm/CLAUDE.md` and the scraper repo
+- Production (canonical): `https://innovite.io` (Vercel-hosted)
+- `https://innoviteai.com` 301-redirects to `https://innovite.io` (DNS at GoDaddy → Vercel; MX records untouched so `sammy@innoviteai.com` email still works)
+- Vercel deployment URL: `https://innovite-website.vercel.app` (the underlying deployment; sets noindex on .vercel.app via the snippet in `index.html` so it doesn't compete with the canonical)
+- Subdomains under `innovite.io`: `app.innovite.io` (CRM) and `api.innovite.io` (scraper) — see `crm/CLAUDE.md` and the scraper repo
 - Repo: `github.com/s4mb73/innovite-website`
 
 ## Tech stack
@@ -15,7 +16,7 @@ Marketing website for Innovite, an AI lead generation agency for B2B service fir
 - Resend for transactional email — founder notification + AI auto-response (`RESEND_API_KEY`, `FROM_EMAIL`, `NOTIFY_EMAIL`)
 - Anthropic Claude Haiku for AI auto-response copy (`ANTHROPIC_API_KEY`)
 - Slack incoming webhook for new-lead pings (`SLACK_WEBHOOK_URL`)
-- Plausible for analytics (currently `data-domain="innoviteai.com"`)
+- Plausible for analytics (`data-domain="innovite.io"` — keep in sync with Plausible's site config)
 - Wistia for showcase videos (lazy-loaded via IntersectionObserver)
 - Google Fonts: Outfit (300-700) + Newsreader (400, 500, italic 400)
 
