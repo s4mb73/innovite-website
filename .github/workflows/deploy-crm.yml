@@ -1,40 +1,42 @@
+name: Deploy CRM to VPS
 
-  name: Deploy CRM to VPS
+on:
+  push:
+    branches:
+      - claude/fix-text-consistency-ocvsN
+    paths:
+      - 'crm/**'
+      - '.github/workflows/deploy-crm.yml'
+  workflow_dispatch:
 
-  on:
-    push:
-      branches:
-        - claude/fix-text-consistency-ocvsN
-      paths:
-        - 'crm/**'
-        - '.github/workflows/deploy-crm.yml'
-    workflow_dispatch:
+concurrency:
+  group: deploy-crm
+  cancel-in-progress: false
 
-  concurrency:
-    group: deploy-crm
-    cancel-in-progress: false
+jobs:
+  deploy:
+    name: Deploy to 46.225.208.85
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger deploy via SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_HOST: 46.225.208.85
+          DEPLOY_USER: deploy
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null 2>&1 || { echo "::error::SSH_PRIVATE_KEY secret is malformed — re-paste full key including BEGIN/END lines"; exit 1; }
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # The authorized_keys entry on the VPS forces this to run deploy.sh
+          # regardless of the command we send — the comment is just for the log.
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" 'deploy-via-github-actions'
 
-  jobs:
-    deploy:
-      name: Deploy to 46.225.208.85
-      runs-on: ubuntu-latest
-      timeout-minutes: 5
-      steps:
-        - name: Trigger deploy via SSH
-          env:
-            SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-            DEPLOY_HOST: 46.225.208.85
-            DEPLOY_USER: deploy
-          run: |
-            set -euo pipefail
-            mkdir -p ~/.ssh
-            chmod 700 ~/.ssh
-            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-            chmod 600 ~/.ssh/id_ed25519
-            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-            ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" 'deploy-via-github-actions'
-
-        - name: Verify production healthcheck
-          run: |
-            curl -sSf -m 10 https://app.innovite.io/healthz > /dev/null
-            echo "✓ https://app.innovite.io/healthz returned 200"
+      - name: Verify production healthcheck
+        run: |
+          curl -sSf -m 10 https://app.innovite.io/healthz > /dev/null
+          echo "✓ https://app.innovite.io/healthz returned 200"
