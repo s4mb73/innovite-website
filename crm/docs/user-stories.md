@@ -846,9 +846,184 @@ The same `interval %(d)s` binding bug existed in 6 sibling reports queries (`rep
 
 ---
 
-## Out of scope for this draft
+## Epic 11 — Mailbox infrastructure (Step 7 backbone)
 
-These belong in later epics or separate docs — recording here so we don't lose them:
+The single-mailbox model from 0005_settings.sql doesn't scale past ~5 mailboxes. With 18-25 mailboxes planned across multiple lookalike sending domains, mailbox becomes a first-class resource — its own page, its own schema, its own nav entry. This epic captures the shape we agreed on 2026-05-01 before any code shipped: hybrid pool + dedicated assignment, lookalike domains for deliverability, per-mailbox cap with rotation hitting per-client targets, third-party warmup. Slice 1 (read-only views) shipped same day; slices 2 and 3 are drafts.
+
+### US-036 · Mailboxes as a first-class resource
+
+**As** the operator running cold outbound across 18+ mailboxes
+**I want to** see every mailbox in one dedicated page — address, domain, assignment, capacity, warmup, health — instead of buried in a Settings sub-card
+**So that** I can scan the fleet at a glance and act on whichever ones need attention without clicking through
+
+**Priority:** P0
+**Status:** Shipped — slice 1 of 3 (commit 9349c66, 2026-05-01)
+
+**Acceptance criteria**
+- [x] New schema in `0009_mailboxes.sql`: `crm.sending_domains` (DNS / SPF / DKIM / DMARC verification flags) and `crm.mailboxes` (SMTP/IMAP, daily_cap, sent_today, warmup fields, health_state, dedicated_client_id)
+- [x] `/mailboxes` route renders a page with domain summary strip + sortable table
+- [x] Sidebar nav entry between Reports and Settings
+- [x] Settings page replaces the old "Sending email · Zoho" card with a summary linking to `/mailboxes` (mailbox count, healthy / warming / needs-attention counts)
+- [x] `daily_send_cap` global setting deprecated from the Settings form (per-mailbox now)
+- [x] Sending hours stays on Settings as a separate card — global business-hours window applies to every mailbox
+- [x] Empty state ("No mailboxes connected") renders when DB is reachable but `crm.mailboxes` is empty
+- [x] DB-error banner renders when `mailboxes_all()` throws
+
+**Notes** — Picked a Mailboxes nav entry over a Settings sub-tab because at 18+ rows the page becomes a daily working surface, not an admin nook. Also clears the way for slice 2 (detail drawer) and slice 3 (wizard) to live as deeper paths under `/mailboxes` without overloading Settings.
+
+---
+
+### US-037 · Hybrid pool + dedicated mailbox assignment
+
+**As** the operator
+**I want to** route most mailboxes through a shared pool that rotates across all clients, while still being able to assign specific mailboxes (e.g. `louisb@theirdomain.com`) as dedicated to one client
+**So that** clients who want a "from us, as us" identity get it, while everyone else benefits from shared deliverability across the rotating pool
+
+**Priority:** P0
+**Status:** Shipped in schema; client-side UI in slice 2 (US-042)
+
+**Acceptance criteria**
+- [x] `crm.mailboxes.dedicated_client_id` is a nullable FK to `crm.clients`. NULL = pool (sends for any client). NOT NULL = dedicated to that client (sends only for them)
+- [x] Mailboxes table on `/mailboxes` shows nothing in the Assignment column for pool rows (the default), and `DEDICATED · ClientName` for dedicated rows — pool is silent because pool is the norm
+- [x] Seed data (`0009_mailboxes.sql`) includes one dedicated mailbox per existing client (`louis@innovite-mail.com` → ROCA, `founder@innovitegroup.com` → Vidora) to exercise the path
+- [ ] Client Detail page shows "Sending from" — pooled rotation summary OR dedicated mailbox info (covered by US-042)
+- [ ] Drawer (US-041) lets operator change a mailbox's assignment between pool and dedicated
+
+**Notes** — Picked nullable FK over a join table (`mailbox_assignments`) because the simplest model — "is this mailbox locked to one client or shared with all?" — is the actual question. A join table buys explicit per-client allocation in pool mode, which we don't need at this scale. YAGNI. If pool routing later needs per-client budgets or exclusions, revisit then.
+
+---
+
+### US-038 · Multiple lookalike sending domains with verification status
+
+**As** the operator
+**I want to** spread mailboxes across 3-5 lookalike sending domains (innovite-mail.com, mail-innovite.co.uk, etc.), each with its own DNS/SPF/DKIM/DMARC posture, and see verification status at a glance
+**So that** my deliverability doesn't collapse from running 20 mailboxes off a single domain, and I can spot a misconfigured domain before it sends
+
+**Priority:** P0
+**Status:** Shipped (display)
+
+**Acceptance criteria**
+- [x] `crm.sending_domains` table — `domain`, `dns_verified`, `spf_verified`, `dkim_verified`, `dmarc_verified` boolean flags, `created_at`
+- [x] Domain summary strip on `/mailboxes` shows one card per domain: name, mailbox count, aggregate health (`N healthy` / `N warming` / `N need attention`), and three small filled dots for SPF / DKIM / DMARC (green = pass, red = fail) with hover tooltips
+- [x] Cap of 3-5 mailboxes per domain enforced by convention, not schema (no UNIQUE constraint — we may want to allow exceptions)
+- [x] Seed data demonstrates the verification states: one domain with all four DNS checks passing, one with DMARC missing, one with DKIM + DMARC missing
+- [ ] DNS check job populates the verification flags from real DNS lookups (deferred — manual entry / migration update for now; backend Step 7+)
+
+**Notes** — One domain with 20 aliases is a deliverability death sentence; spreading across multiple lookalike domains is the standard infra play (Smartlead / Instantly / Lemlist all do it). Domains are bought + warmed externally; the CRM just tracks them. The DNS verification flags are display-only at first — real DNS lookups land with the pipeline worker when that exists.
+
+---
+
+### US-039 · Per-mailbox daily cap with capacity rollup
+
+**As** the operator
+**I want to** set a daily send cap per mailbox (driven by warmup stage), see how much each mailbox has sent today against that cap, and see total fleet capacity vs used at a glance
+**So that** the system rotates across healthy mailboxes to hit each client's per-day target without burning any single mailbox, and I know whether I have headroom for another client
+
+**Priority:** P0
+**Status:** Shipped (display); send scheduler is backend, deferred
+
+**Acceptance criteria**
+- [x] `crm.mailboxes.daily_cap` (int, default 10) and `sent_today` (int, default 0) per mailbox
+- [x] Mailbox table shows `sent` and `cap` columns; both numbers turn amber at ≥80% usage and red at ≥100% — a single alert state, not just the variable
+- [x] Capacity summary line above the table: `Total daily capacity X · used today Y (Z%)` — pct turns amber at ≥75%, red at ≥90% (tighter than per-mailbox because per-client allocation isn't perfectly even)
+- [x] `mailboxes_summary()` rolls up `total_capacity` and `total_sent_today` from the healthy + warming subset (paused / unassigned / disconnected don't contribute capacity)
+- [ ] Send scheduler picks healthy mailboxes with capacity to hit per-client daily target — rotation logic, with fallback / queueing when no mailbox has capacity (Step 7+ backend)
+- [ ] `sent_today` resets at midnight Europe/London via cron (Step 7+ backend)
+
+**Notes** — Per-mailbox cap, not per-client. The send scheduler enforces per-client targets by composing across mailboxes. This is the cold-email-tooling norm (Smartlead, Instantly) — and matches how warmup providers think about caps. The capacity summary is the headline KPI on this page: it's the number that answers "can we onboard another client?"
+
+---
+
+### US-040 · Third-party warmup status display (Lemwarm, Instantly)
+
+**As** the operator
+**I want to** record which third-party warmup tool (Lemwarm, Instantly, etc.) is warming each mailbox, what day of warmup it's on, and its target — and see this surfaced on the mailbox table
+**So that** I know at a glance which mailboxes are still ramping vs fully warmed, without leaving the CRM to log into each warmup tool
+
+**Priority:** P1
+**Status:** Shipped (display, manual entry); API integration deferred
+
+**Acceptance criteria**
+- [x] `crm.mailboxes` columns: `warmup_provider` (text — e.g. "Lemwarm" / "Instantly"), `warmup_day` (int), `warmup_target` (int), `warmup_status` (CHECK in `warming` / `complete` / `paused` / `not_started`)
+- [x] Mailbox table Warmup column renders `Day N / target` with the provider as a small grey tag (visually separates progress from attribution)
+- [x] Complete warmups render `✓ Complete` with the provider tag retained
+- [x] Paused warmups render `Paused`; null-status rows render `—`
+- [ ] API pull from Lemwarm / Instantly to keep `warmup_day` / `warmup_status` fresh (deferred — manual entry via the wizard or SQL update is acceptable until a clear pain point emerges)
+
+**Notes** — Building warmup in-house is a 2-3 week side quest against mature, well-tuned products. Not worth it. We track the *fields* so the CRM is the single working surface; the actual warmup is owned by the third-party tool. API integration only buys us "no manual data entry," which is small until we have many mailboxes churning warmup states. Revisit after 20+ mailboxes are live.
+
+---
+
+### US-041 · Mailbox detail drawer
+
+**As** the operator
+**I want to** click a mailbox row and see a full-detail drawer with SMTP/IMAP config, assignment editor, warmup status, recent send / bounce / reply trend, and per-mailbox actions (send test, pause, disconnect)
+**So that** I can debug, reconfigure, or pause a mailbox without leaving the page or hunting through Settings
+
+**Priority:** P1
+**Status:** Draft — slice 2 of 3
+
+**Acceptance criteria**
+- [ ] Click any row on `/mailboxes` opens a right-side drawer (same idiom as the Inbox reply drawer)
+- [ ] Drawer header: address, domain, status tag, dedicated-client name (if any)
+- [ ] Connection block: SMTP host/port, IMAP host/port, SMTP user, password as masked env-var name (`MB_SAMMY_INVMAIL_PASS · set`), from-name, signature override
+- [ ] Assignment editor: radio (Pool / Dedicated → client picker). Save submits to a POST endpoint that updates `dedicated_client_id`
+- [ ] Warmup block: provider, day, target, status — read-only (manual update via SQL or wizard)
+- [ ] Trend sparkline: last 7 days of `sent` / `bounced` / `replied` counts (deferred to backend Step 7+ until pipeline exists; placeholder zeros are acceptable)
+- [ ] Action row: **Send test email** (sends a test through this mailbox to operator's address — needs SMTP send to land in Step 7+; until then the button is disabled with a clear hover hint), **Pause** / **Resume** (toggles `paused` boolean), **Disconnect** (sets `health_state='disconnected'`, asks for confirmation)
+- [ ] Drawer dismisses on Esc, click-outside, or the explicit close button. Page state preserved (no full reload)
+- [ ] Mobile: drawer becomes full-screen modal
+
+**Notes** — The drawer is the natural home for the per-mailbox controls that don't belong on a 18-row table. Mirrors the per-lead drawer pattern from Inbox so the operator's mental model carries over. Send-test + Disconnect are the actions worth getting right because they have real-world consequences; everything else is read or low-stakes.
+
+---
+
+### US-042 · Client Detail "Sending from" card
+
+**As** the operator looking at a single client
+**I want to** see which mailboxes are sending on their behalf — pooled rotation summary or dedicated mailbox info — without leaving the client page
+**So that** I can answer "why isn't this client's outbound moving?" or "do they have enough capacity?" in one glance
+
+**Priority:** P1
+**Status:** Draft — slice 2 of 3
+
+**Acceptance criteria**
+- [ ] New card on `/clients/<id>` titled **Sending from**
+- [ ] Pooled state (default — when no mailbox has `dedicated_client_id = client.id`): `Pooled rotation · N healthy mailboxes · X/Y daily capacity used` with a `[View rotation history →]` link
+- [ ] Dedicated state (when one or more mailboxes have `dedicated_client_id = client.id`): `Dedicated · address · daily cap N · D{warmup_day} {warmup_status}` plus a `[Manage mailbox →]` link to the drawer
+- [ ] Hybrid state (rare — pooled + one or more dedicated): show both, with the dedicated entries first
+- [ ] When zero healthy mailboxes have capacity for this client, show a warn state ("No capacity available — fleet is at cap") with a link to `/mailboxes`
+- [ ] `db.client_sending_summary(client_id)` returns the data shape for the card; route loads it alongside existing client-detail context
+- [ ] `[View rotation history]` opens a simple modal listing the mailboxes that sent for this client in the last 7 days (deferred to backend Step 7+ — placeholder modal until then)
+
+**Notes** — Lead detail already shows which mailbox sent which email (covered by lead → email join), so per-mailbox per-lead audit is already there. This card is the *aggregate* view for the client, answering capacity and identity questions. The hybrid state is rare but real — a client might have a dedicated mailbox AND ride the pool for overflow.
+
+---
+
+### US-043 · 4-step add-mailbox wizard with test connection
+
+**As** the operator
+**I want to** connect a new mailbox through a guided 4-step flow — pick domain, set address + display name, enter SMTP / IMAP credentials, run a test connection — with each step's failure clearly attributable to that step
+**So that** I'm not guessing at "save failed" errors when the wrong port or app password is the actual problem
+
+**Priority:** P1
+**Status:** Draft — slice 3 of 3
+
+**Acceptance criteria**
+- [ ] New route `GET /mailboxes/new` renders the wizard. POST endpoints per step that store partial state (session or hidden form fields)
+- [ ] **Step 1: Select domain** — dropdown of existing `crm.sending_domains`, plus `+ Add domain` inline option that creates a row (just `domain` text; verification flags default false until a DNS check job exists)
+- [ ] **Step 2: Address and display name** — local-part input (UI suffixes the domain), `from_name` input, optional `signature_override`
+- [ ] **Step 3: SMTP and IMAP credentials** — host, port, username, password env-var name (we store the env-var name; the actual secret stays in env config). Defaults pre-filled from the existing `sending_email` k/v entry (Zoho host/ports). Port dropdown rather than free text
+- [ ] **Step 4: Test connection** — runs a real SMTP login + IMAP login against the supplied creds (Python `smtplib` + `imaplib`, both stdlib). Renders pass / fail per protocol with the actual exception message on fail. **Save** disabled until both pass
+- [ ] On final save: row inserted into `crm.mailboxes` with `health_state = 'unassigned'` and `paused = false`. Operator sets assignment via the drawer (US-041)
+- [ ] Cancel at any step discards in-progress data without writing to the DB
+- [ ] Wizard is reachable from the `+ Add mailbox` button on `/mailboxes` (currently disabled with a "lands in slice 3" hover hint)
+
+**Notes** — Wizard rather than a single-page form because the test-connection step is where most failures happen — wrong port, app password vs login password, IMAP not enabled — and a single page hides which step broke. Test-connection runs synchronously in the request because mailbox creation is rare (a few times per onboarding) and stdlib `smtplib` / `imaplib` are fast enough. If we ever do bulk import, async + a results table.
+
+---
+
+
 
 - **Auth** — POC has no auth (per `crm/CLAUDE.md` open items); single-password gate planned before public link-out (prereq for US-035).
 - **`crm.inbound_leads` vs `public.leads` reconciliation** — affects Epic 4 acceptance; needs a schema decision before US-011 is scoped.
