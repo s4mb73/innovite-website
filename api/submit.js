@@ -1,6 +1,7 @@
 // POST /api/submit
 // Receives the 5-step form payload (+ optional qualifier answers), validates,
-// saves to Supabase `leads`, then in parallel:
+// saves to crm.inbound_leads via the public.submit_inbound_lead RPC (see
+// crm/migrations/0010_inbound_leads_form_fields.sql), then in parallel:
 //   - computes Hot/Warm/Cold tier from qualifier
 //   - posts a Slack notification
 //   - emails the founder a notification
@@ -81,24 +82,47 @@ export default async function handler(req, res) {
     ip: (req.headers['x-forwarded-for'] || '').split(',')[0].trim().slice(0, 64) || null
   };
 
+  // Map the in-memory `lead` shape to the DB column names that
+  // public.submit_inbound_lead expects. The RPC inserts into
+  // crm.inbound_leads — see crm/migrations/0010_inbound_leads_form_fields.sql.
+  const dbPayload = {
+    source:          lead.source,
+    name:            lead.name,
+    email:           lead.email,
+    company:         lead.company,
+    phone:           lead.phone,
+    industry:        lead.industry,
+    deal_value:      lead.deal_value,
+    current_method:  lead.current_method,
+    clients_wanted:  lead.target_clients,    // form `s4` → DB column
+    qualifier_q1:    lead.qualifier_q1,
+    qualifier_q2:    lead.qualifier_q2,
+    qualifier_q3:    lead.qualifier_q3,
+    qualifier_q4:    lead.qualifier_q4,
+    qualifier_score: lead.qualifier_score,
+    score:           lead.tier,              // 'hot' | 'warm' | 'cold' | 'no-fit' | null
+    raw_data:        lead.raw_data,
+    user_agent:      lead.user_agent,
+    ip:              lead.ip
+  };
+
   let savedId;
   try {
-    const dbRes = await fetch(`${supaUrl}/rest/v1/leads`, {
+    const dbRes = await fetch(`${supaUrl}/rest/v1/rpc/submit_inbound_lead`, {
       method: 'POST',
       headers: {
         'apikey': supaKey,
         'Authorization': `Bearer ${supaKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation'
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify(lead)
+      body: JSON.stringify({ payload: dbPayload })
     });
     if (!dbRes.ok) {
-      console.error('Supabase insert failed', dbRes.status, await dbRes.text());
+      console.error('Supabase RPC failed', dbRes.status, await dbRes.text());
       return res.status(502).json({ error: 'Could not save lead' });
     }
-    const [saved] = await dbRes.json();
-    savedId = saved?.id;
+    // The RPC returns the new id as a bare number/string.
+    savedId = await dbRes.json();
   } catch (err) {
     console.error('Submit handler DB error', err);
     return res.status(500).json({ error: 'Unexpected server error' });
