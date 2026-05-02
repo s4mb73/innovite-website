@@ -1,0 +1,40 @@
+
+  name: Deploy CRM to VPS
+
+  on:
+    push:
+      branches:
+        - claude/fix-text-consistency-ocvsN
+      paths:
+        - 'crm/**'
+        - '.github/workflows/deploy-crm.yml'
+    workflow_dispatch:
+
+  concurrency:
+    group: deploy-crm
+    cancel-in-progress: false
+
+  jobs:
+    deploy:
+      name: Deploy to 46.225.208.85
+      runs-on: ubuntu-latest
+      timeout-minutes: 5
+      steps:
+        - name: Trigger deploy via SSH
+          env:
+            SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+            DEPLOY_HOST: 46.225.208.85
+            DEPLOY_USER: deploy
+          run: |
+            set -euo pipefail
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+            ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "${DEPLOY_USER}@${DEPLOY_HOST}" 'deploy-via-github-actions'
+
+        - name: Verify production healthcheck
+          run: |
+            curl -sSf -m 10 https://app.innovite.io/healthz > /dev/null
+            echo "✓ https://app.innovite.io/healthz returned 200"
