@@ -2,8 +2,9 @@
 
 ## What this is
 Marketing website for Innovite, an AI lead generation agency for B2B service firms in the UK.
-- Production target: `https://innoviteai.com` (custom domain, pending DNS)
-- Vercel deployment: `https://innovite-website.vercel.app` (active)
+- Production: `https://innoviteai.com` (live; A records on GoDaddy → AWS edge)
+- Vercel deployment: `https://innovite-website.vercel.app` (also live; canonical site)
+- Sister domain `innovite.io` is owned and Vercel-managed; used for `app.innovite.io` (CRM) and `api.innovite.io` (scraper) — see `crm/CLAUDE.md` and the scraper repo
 - Repo: `github.com/s4mb73/innovite-website`
 
 ## Tech stack

@@ -2,10 +2,12 @@
 
 ## What this is
 Internal lead-management + outreach platform for the Innovite agency.
-Lives inside the marketing-site repo at `/crm/`; deploys separately to Render.
+Lives inside the marketing-site repo at `/crm/`; deploys to a self-hosted VPS.
 
-- Production: `https://innovite-crm.onrender.com`
-- Hosting: Render web service, root directory `crm/`, branch `claude/fix-text-consistency-ocvsN` (production) / `claude/code-feedback-Zua33` (mirror)
+- Production: `https://app.innovite.io`
+- Hosting: Hetzner ARM VPS at `46.225.208.85` (Ubuntu 24.04). nginx reverse-proxies to gunicorn (`crm-web.service`, systemd, bind `127.0.0.1:8080`, 2 workers). Working dir on the box: `/srv/innovite/innovite-website/crm/`. Env file: `/etc/innovite/crm-web.env` (perms 600, owner `deploy`).
+- Branches: `claude/fix-text-consistency-ocvsN` (production) / `claude/code-feedback-Zua33` (mirror).
+- Deploy: GitHub Actions workflow `.github/workflows/deploy-crm.yml` triggers on push to the production branch when `crm/**` changes — SSHes into the VPS with a restricted deploy key that forces `/srv/innovite/deploy.sh` (git fetch + reset, pip install, systemctl restart, `/healthz` check).
 - Repo: `s4mb73/innovite-website`
 - Database: Supabase Postgres, schema `crm`. Same project as the marketing site (`api/submit.js` writes inbound form leads to `public.leads`).
 
@@ -14,7 +16,7 @@ Lives inside the marketing-site repo at `/crm/`; deploys separately to Render.
 - psycopg 3 with raw SQL — **no ORM**. Decision: SQLAlchemy adds tax we haven't earned. Reconsider only when the schema starts fighting the SQL.
 - Jinja2 templates + small JS islands. Chart.js via CDN for the dashboard.
 - Supabase pooler at port 6543 (transaction pooler) via `DATABASE_URL`
-- Render deploys from GitHub on push. Health check at `/healthz` (does not touch DB — important: changing this breaks the circuit-breaker recovery flow).
+- Health check at `/healthz` (does not touch DB — important: changing this breaks the circuit-breaker recovery flow). Polled by deploy.sh after every restart, also by external uptime monitoring.
 - Anthropic Claude API for AI features (drafting, sentiment) — env `ANTHROPIC_API_KEY`. May share the marketing site's key or use a separate one (decision pending).
 - Email infrastructure (planned, Step 7+): Zoho SMTP + IMAP via env vars.
 
@@ -46,7 +48,7 @@ crm/
     plan-2026-04-30.txt       day-1-of-Step-7 daily plan
   requirements.txt
   Procfile                    web: gunicorn app:app -b 0.0.0.0:$PORT --workers 2
-  runtime.txt + .python-version  pin Python to 3.11.10 (Render default is 3.14, breaks psycopg wheel)
+  runtime.txt + .python-version  pin Python (legacy from Render-era; VPS uses system Python 3.12 via venv)
   .env.example
   .gitignore
   README.md
@@ -151,14 +153,14 @@ JSONB for `target_industries`, `target_locations`, `weakness_profile`. CHECK con
 | GET | `/inbound` | placeholder (Step 8) |
 | GET | `/reports` | placeholder (Step 9) |
 | GET | `/settings` | placeholder (Step 10) |
-| GET | `/healthz` | health probe — must not touch DB (Render polls this every 5s; if it touches DB, breaker re-trips) |
+| GET | `/healthz` | health probe — must not touch DB (deploy.sh and uptime monitors poll this; if it touches DB, breaker re-trips) |
 | GET | `/favicon.ico` | 204 — silences Chrome request that ignores the data-URI in `<link rel="icon">` |
 
 ## Open items
 
 - **Auth**: POC has no auth. Single-password gate planned before public link-out.
 - **`crm.inbound_leads` vs `public.leads`**: marketing form writes to `public.leads`; CRM has parallel `crm.inbound_leads`. Inbound page (Step 8) will read from `public.leads` until consolidated.
-- **Background worker** for Step 7+ (pipeline, scheduler, IMAP poller) lives in a second Render service later.
+- **Background worker** for Step 7+ (pipeline, scheduler, IMAP poller) will be a second systemd unit (`crm-worker.service`) on the same VPS, sharing the venv. Env file already provisioned at `/etc/innovite/crm-worker.env` with `COMPANIES_HOUSE_API_KEY` and `SCRAPER_API_TOKEN`. Apscheduler-based, single process, all four engines (pipeline / outreach / reply / reporting) co-resident.
 - **Pricing tier on `crm.clients`** is internal — never displayed on the marketing site (see root `CLAUDE.md`).
 
 ## Before completing any task
