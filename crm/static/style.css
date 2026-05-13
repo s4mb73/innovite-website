@@ -3579,4 +3579,46 @@ a { color:inherit; text-decoration:none; }
   .kv-row { grid-template-columns:1fr; gap:6px; }
 }
 
+/* ── Schedule form on client detail (US-002) ───────────── */
+.schedule-form .field-row { padding:8px 0; }
+.schedule-form .field-input-inline { gap:14px; align-items:center; flex-wrap:wrap; }
+.schedule-form input[type="time"] {
+  padding:7px 10px;
+  font-size:14px;
+  border-radius:var(--r);
+  background:var(--s3);
+  color:var(--t1);
+  border:1px solid var(--border);
+}
+.schedule-foot { display:flex; justify-content:flex-end; padding-top:6px; }
+
+/* ── Enrichment notes on lead detail ────────────────────── */
+.enrich-block { padding:8px 0; }
+.enrich-block + .enrich-block { border-top:1px solid var(--border); margin-top:8px; padding-top:14px; }
+.enrich-label {
+  font-size:11.5px;
+  color:var(--t3);
+  text-transform:uppercase;
+  letter-spacing:.4px;
+  margin-bottom:6px;
+}
+.enrich-list {
+  list-style:none;
+  padding:0;
+  margin:0;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  font-size:13px;
+  color:var(--t1);
+}
+.enrich-list code {
+  font-size:12px;
+  background:var(--s3);
+  padding:1px 7px;
+  border-radius:4px;
+  color:var(--t2);
+}
+.enrich-list strong { color:var(--t2); text-transform:uppercase; font-size:11.5px; letter-spacing:.3px; }
+
 

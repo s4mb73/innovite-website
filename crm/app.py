@@ -254,6 +254,46 @@ def client_edit(client_id: int):
     return redirect(url_for('client_detail', client_id=client_id))
 
 
+@app.route('/clients/<int:client_id>/schedule', methods=['POST'])
+def client_schedule(client_id: int):
+    """Set/clear the daily pipeline schedule for a client (US-002).
+
+    Form fields:
+      run_at        — 'HH:MM' or '' to disable
+      paused        — checkbox truthy to pause without losing the time
+    """
+    existing = db.get_client_schedule(client_id)
+    if existing is None:
+        abort(404)
+
+    raw = (request.form.get('run_at') or '').strip()
+    paused = _truthy_form('paused')
+
+    run_at: str | None
+    if not raw:
+        run_at = None
+    else:
+        # Accept HH:MM or HH:MM:SS; reject anything else cleanly.
+        parts = raw.split(':')
+        if len(parts) < 2 or not all(p.isdigit() for p in parts[:2]):
+            flash('Schedule time must be HH:MM (24-hour).', 'error')
+            return redirect(url_for('client_detail', client_id=client_id))
+        h, m = int(parts[0]), int(parts[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            flash('Schedule time must be 00:00 – 23:59.', 'error')
+            return redirect(url_for('client_detail', client_id=client_id))
+        run_at = f'{h:02d}:{m:02d}'
+
+    db.set_client_schedule(client_id, run_at, paused)
+    if run_at and not paused:
+        flash(f'Daily run scheduled at {run_at} Europe/London.', 'success')
+    elif run_at and paused:
+        flash(f'Schedule {run_at} saved but paused.', 'success')
+    else:
+        flash('Daily schedule cleared.', 'success')
+    return redirect(url_for('client_detail', client_id=client_id))
+
+
 @app.route('/clients/<int:client_id>')
 def client_detail(client_id: int):
     db_error = None

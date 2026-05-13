@@ -39,6 +39,7 @@ import sys
 import time
 import traceback
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import psycopg
 
@@ -46,6 +47,7 @@ import db
 from pipeline import runner
 
 POLL_INTERVAL_S = int(os.environ.get("WORKER_POLL_INTERVAL_S", "5"))
+LONDON = ZoneInfo("Europe/London")
 
 logger = logging.getLogger("crm.worker")
 
@@ -78,6 +80,57 @@ def _claim_next_run() -> int | None:
     return row["id"] if row else None
 
 
+def _maybe_run_schedule(state: dict) -> None:
+    """Enqueue pipeline runs for clients whose daily schedule fires now (US-002).
+
+    Throttled to once per minute via state['last_check_minute'] — the worker
+    poll cadence is 5s but the schedule resolution is per-minute, so most
+    ticks are no-ops.
+
+    Idempotent: skips clients that already have a pipeline_run today
+    (in Europe/London local date). Belt-and-braces against (a) the
+    worker restarting mid-minute, (b) clock skew, (c) operator manually
+    triggering a run earlier in the day.
+    """
+    now = datetime.now(LONDON)
+    minute_key = now.strftime("%Y-%m-%dT%H:%M")
+    if state.get("last_check_minute") == minute_key:
+        return
+    state["last_check_minute"] = minute_key
+
+    sql = """
+        select c.id, c.name
+        from crm.clients c
+        where c.status = 'active'
+          and c.pipeline_paused = false
+          and c.daily_pipeline_run_at is not null
+          and to_char(c.daily_pipeline_run_at, 'HH24:MI') = %s
+          and not exists (
+            select 1 from crm.pipeline_runs pr
+            where pr.client_id = c.id
+              and (pr.created_at at time zone 'Europe/London')::date
+                  = (now() at time zone 'Europe/London')::date
+          )
+    """
+    try:
+        due = db.fetch_all(sql, (now.strftime("%H:%M"),))
+    except Exception:
+        logger.exception("Schedule check failed — will retry next minute")
+        return
+
+    for r in due:
+        try:
+            db.execute(
+                "insert into crm.pipeline_runs (client_id, status, mode, triggered_by) "
+                "values (%s, 'pending', 'scheduled', 'cron')",
+                (r["id"],),
+            )
+            logger.info("Scheduled pipeline_run enqueued for client %s (%s)",
+                        r["id"], r["name"])
+        except Exception:
+            logger.exception("Failed to enqueue scheduled run for client %s", r["id"])
+
+
 def _mark_failed(run_id: int, err: str) -> None:
     try:
         db.execute(
@@ -99,8 +152,12 @@ def main() -> int:
     signal.signal(signal.SIGINT, _shutdown)
 
     logger.info("crm-worker starting (poll=%ss)", POLL_INTERVAL_S)
+    schedule_state: dict = {}
 
     while _running:
+        # Once-per-minute: enqueue any clients whose daily schedule fires now.
+        _maybe_run_schedule(schedule_state)
+
         try:
             run_id = _claim_next_run()
         except psycopg.OperationalError as e:

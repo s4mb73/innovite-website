@@ -170,6 +170,40 @@
   {% endif %}
 </div>
 
+{# ── Schedule (US-002) ────────────────────────────────── #}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Schedule <span class="card-head-meta">europe/london</span></div>
+  </div>
+  {% set has_sched = client.daily_pipeline_run_at is not none %}
+  <form method="post" action="{{ url_for('client_schedule', client_id=client.id) }}" class="schedule-form">
+    <div class="field-row">
+      <label for="schedule-time">Daily run at</label>
+      <div class="field-input field-input-inline">
+        <input type="time" id="schedule-time" name="run_at"
+               value="{% if has_sched %}{{ client.daily_pipeline_run_at.strftime('%H:%M') }}{% endif %}">
+        <span class="field-hint field-hint-inline">
+          {% if has_sched %}
+            Currently {% if client.pipeline_paused %}paused{% else %}active{% endif %}.
+            Clear the time to disable.
+          {% else %}
+            No schedule. Pipeline runs only when you click Find new leads.
+          {% endif %}
+        </span>
+      </div>
+    </div>
+    <div class="field-row field-row-checkbox">
+      <label class="checkbox">
+        <input type="checkbox" name="paused" {% if client.pipeline_paused %}checked{% endif %}>
+        <span>Pause schedule — keeps the time saved but skips the auto-run</span>
+      </label>
+    </div>
+    <div class="schedule-foot">
+      <button type="submit" class="btn btn-primary btn-sm">Save schedule</button>
+    </div>
+  </form>
+</div>
+
 {# ── Pipeline runs (US-003) ───────────────────────────── #}
 <div class="card">
   <div class="card-head">

@@ -1003,6 +1003,41 @@ def create_client(
     return new_id
 
 
+def get_client_schedule(client_id: int) -> dict | None:
+    return fetch_one(
+        "select id, name, daily_pipeline_run_at, pipeline_paused from crm.clients where id = %s",
+        (client_id,),
+    )
+
+
+def set_client_schedule(client_id: int, run_at: str | None, paused: bool) -> None:
+    """Update the daily pipeline schedule for a client.
+
+    run_at: 'HH:MM' string (Europe/London local) or None to disable.
+    paused: True to pause without losing the saved time.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            if run_at:
+                cur.execute(
+                    "update crm.clients set daily_pipeline_run_at = %s::time, "
+                    "pipeline_paused = %s where id = %s",
+                    (run_at, paused, client_id),
+                )
+            else:
+                cur.execute(
+                    "update crm.clients set daily_pipeline_run_at = null, "
+                    "pipeline_paused = %s where id = %s",
+                    (paused, client_id),
+                )
+            cur.execute(
+                "insert into crm.activity_log (client_id, action, detail) "
+                "values (%s, 'client_schedule_updated', %s)",
+                (client_id, f"schedule={run_at or 'off'} paused={paused}"),
+            )
+        conn.commit()
+
+
 def client_pipeline_runs(client_id: int, days: int = 30, limit: int = 100) -> list[dict]:
     """Recent pipeline_runs for a client. Newest first. Used by the client
     detail page Pipeline runs section (US-003)."""

@@ -305,6 +305,12 @@ def run(run_id: int) -> dict:
                 # Score.
                 score = scoring.grade(biz)
 
+                # Preserve per-source error trail on the lead so the operator
+                # can see why a particular enrichment was skipped (US-046).
+                src_errors = biz.get("source_errors")
+                if src_errors:
+                    score["weakness_profile"]["source_errors"] = dict(src_errors)
+
                 # Persist lead.
                 try:
                     lead_id = _insert_lead(client_id, biz, score)

@@ -194,6 +194,38 @@
   </div>
 </div>
 
+{# ── Enrichment notes (source_errors from pipeline run) ── #}
+{% set wp = lead.weakness_profile or {} %}
+{% set src_errs = wp.get('source_errors') if wp is mapping else {} %}
+{% set weaknesses = wp.get('weaknesses') if wp is mapping else [] %}
+{% if src_errs or weaknesses %}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Enrichment notes <span class="card-title-sub">why this score</span></div>
+  </div>
+  {% if weaknesses %}
+    <div class="enrich-block">
+      <div class="enrich-label">Weakness signals</div>
+      <ul class="enrich-list">
+        {% for w in weaknesses %}
+          <li><code>{{ w }}</code></li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+  {% if src_errs %}
+    <div class="enrich-block">
+      <div class="enrich-label">Source gaps</div>
+      <ul class="enrich-list">
+        {% for src, msg in src_errs.items() %}
+          <li><strong>{{ src }}:</strong> {{ msg }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
 {# ── Notes (debounced live save) ─────────────────────── #}
 <div class="card">
   <div class="card-head">
