@@ -93,37 +93,7 @@ def client_new():
             errors={},
         )
 
-    form_in = {
-        'name':               (request.form.get('name')          or '').strip(),
-        'industry':           (request.form.get('industry')      or '').strip(),
-        'contact_name':       (request.form.get('contact_name')  or '').strip(),
-        'contact_email':      (request.form.get('contact_email') or '').strip(),
-        'target_industries':  (request.form.get('target_industries') or '').strip(),
-        'target_locations':   (request.form.get('target_locations')  or '').strip(),
-        'min_company_age':    (request.form.get('min_company_age')   or '').strip(),
-        'employee_bands':     request.form.getlist('employee_bands'),
-        'active_filing_only': _truthy_form('active_filing_only'),
-        'exclusion_list':     (request.form.get('exclusion_list') or '').strip(),
-    }
-    industries = _split_chips(form_in['target_industries'])
-    locations  = _split_chips(form_in['target_locations'])
-    exclusions = _split_chips(form_in['exclusion_list'])
-    age_raw    = form_in['min_company_age']
-    age        = int(age_raw) if age_raw.isdigit() else None
-    bands      = [b for b in form_in['employee_bands'] if b in db.EMPLOYEE_BANDS]
-
-    errors: dict[str, str] = {}
-    if not form_in['name']:
-        errors['name'] = 'Name is required.'
-    if not industries:
-        errors['target_industries'] = 'Add at least one target industry.'
-    if not locations:
-        errors['target_locations'] = 'Add at least one target location.'
-    if form_in['contact_email'] and '@' not in form_in['contact_email']:
-        errors['contact_email'] = "That doesn't look like an email address."
-    if age is not None and (age < 0 or age > 200):
-        errors['min_company_age'] = 'Pick a value between 0 and 200.'
-
+    form_in, errors, industries, locations, targeting_filters = _parse_client_form(request)
     if errors:
         return render_template(
             'client_new.html',
@@ -132,13 +102,6 @@ def client_new():
             form=form_in,
             errors=errors,
         ), 400
-
-    targeting_filters = {
-        'min_company_age_years': age,
-        'employee_bands':        bands,
-        'active_filing_only':    form_in['active_filing_only'],
-        'exclusion_list':        exclusions,
-    }
     try:
         new_id = db.create_client(
             name=form_in['name'],
@@ -172,6 +135,125 @@ def client_new():
     return redirect(url_for('client_detail', client_id=new_id))
 
 
+def _parse_client_form(request):
+    """Extract + validate the new/edit client form. Returns (form_in, errors,
+    industries, locations, targeting_filters). Used by both client_new and
+    client_edit so the validation rules can't drift between them."""
+    form_in = {
+        'name':               (request.form.get('name')          or '').strip(),
+        'industry':           (request.form.get('industry')      or '').strip(),
+        'contact_name':       (request.form.get('contact_name')  or '').strip(),
+        'contact_email':      (request.form.get('contact_email') or '').strip(),
+        'target_industries':  (request.form.get('target_industries') or '').strip(),
+        'target_locations':   (request.form.get('target_locations')  or '').strip(),
+        'min_company_age':    (request.form.get('min_company_age')   or '').strip(),
+        'employee_bands':     request.form.getlist('employee_bands'),
+        'active_filing_only': _truthy_form('active_filing_only'),
+        'exclusion_list':     (request.form.get('exclusion_list') or '').strip(),
+    }
+    industries = _split_chips(form_in['target_industries'])
+    locations  = _split_chips(form_in['target_locations'])
+    exclusions = _split_chips(form_in['exclusion_list'])
+    age_raw    = form_in['min_company_age']
+    age        = int(age_raw) if age_raw.isdigit() else None
+    bands      = [b for b in form_in['employee_bands'] if b in db.EMPLOYEE_BANDS]
+
+    errors: dict[str, str] = {}
+    if not form_in['name']:
+        errors['name'] = 'Name is required.'
+    if not industries:
+        errors['target_industries'] = 'Add at least one target industry.'
+    if not locations:
+        errors['target_locations'] = 'Add at least one target location.'
+    if form_in['contact_email'] and '@' not in form_in['contact_email']:
+        errors['contact_email'] = "That doesn't look like an email address."
+    if age is not None and (age < 0 or age > 200):
+        errors['min_company_age'] = 'Pick a value between 0 and 200.'
+
+    targeting_filters = {
+        'min_company_age_years': age,
+        'employee_bands':        bands,
+        'active_filing_only':    form_in['active_filing_only'],
+        'exclusion_list':        exclusions,
+    }
+    return form_in, errors, industries, locations, targeting_filters
+
+
+@app.route('/clients/<int:client_id>/edit', methods=['GET', 'POST'])
+def client_edit(client_id: int):
+    """Edit a client's basics + targeting. Mirrors /clients/new but updates
+    in place. Re-uses client_new.html via the is_edit flag."""
+    existing = db.get_client(client_id)
+    if existing is None:
+        abort(404)
+
+    if request.method == 'GET':
+        # Pre-fill the form from the existing client's saved values.
+        tf = existing.get('targeting_filters') or {}
+        form = {
+            'name':               existing.get('name') or '',
+            'industry':           existing.get('industry') or '',
+            'contact_name':       existing.get('contact_name') or '',
+            'contact_email':      existing.get('contact_email') or '',
+            'target_industries':  ','.join(existing.get('target_industries') or []),
+            'target_locations':   ','.join(existing.get('target_locations') or []),
+            'min_company_age':    str(tf.get('min_company_age_years')) if tf.get('min_company_age_years') is not None else '',
+            'employee_bands':     tf.get('employee_bands') or [],
+            'active_filing_only': bool(tf.get('active_filing_only')) if 'active_filing_only' in tf else True,
+            'exclusion_list':     ','.join(tf.get('exclusion_list') or []),
+        }
+        return render_template(
+            'client_new.html',
+            active='clients',
+            employee_bands=db.EMPLOYEE_BANDS,
+            form=form,
+            errors={},
+            is_edit=True,
+            client_id=client_id,
+            client_name=existing['name'],
+        )
+
+    form_in, errors, industries, locations, targeting_filters = _parse_client_form(request)
+    if errors:
+        return render_template(
+            'client_new.html',
+            active='clients',
+            employee_bands=db.EMPLOYEE_BANDS,
+            form=form_in,
+            errors=errors,
+            is_edit=True,
+            client_id=client_id,
+            client_name=existing['name'],
+        ), 400
+
+    try:
+        db.update_client(
+            client_id,
+            name=form_in['name'],
+            industry=form_in['industry'],
+            contact_name=form_in['contact_name'],
+            contact_email=form_in['contact_email'],
+            target_industries=industries,
+            target_locations=locations,
+            targeting_filters=targeting_filters,
+        )
+    except psycopg_errors.UniqueViolation:
+        errors['name'] = 'Another client already has this name.'
+        return render_template(
+            'client_new.html',
+            active='clients',
+            employee_bands=db.EMPLOYEE_BANDS,
+            form=form_in,
+            errors=errors,
+            is_edit=True,
+            client_id=client_id,
+            client_name=existing['name'],
+        ), 400
+
+    flash(f"{form_in['name']} updated.", 'success')
+    return redirect(url_for('client_detail', client_id=client_id))
+
+
 @app.route('/clients/<int:client_id>')
 def client_detail(client_id: int):
     db_error = None
@@ -182,12 +264,14 @@ def client_detail(client_id: int):
         'meetings_month': 0, 'meetings_month_delta': 0,
     }
     leads: list[dict] = []
+    pipeline_runs: list[dict] = []
     try:
         client = db.get_client(client_id)
         if client is None:
             abort(404)
         stats = db.client_stats(client_id)
         leads = db.client_recent_leads(client_id, 10)
+        pipeline_runs = db.client_pipeline_runs(client_id, days=30, limit=20)
     except Exception as e:
         # 404s should propagate; everything else degrades gracefully.
         if hasattr(e, 'code') and e.code == 404:
@@ -199,6 +283,7 @@ def client_detail(client_id: int):
         client=client,
         stats=stats,
         leads=leads,
+        pipeline_runs=pipeline_runs,
         db_error=db_error,
     )
 

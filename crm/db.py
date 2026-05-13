@@ -291,6 +291,7 @@ def get_client(client_id: int) -> dict | None:
     sql = """
         select id, name, industry, contact_name, contact_email,
                monthly_fee, pricing_tier, status,
+               target_industries, target_locations, targeting_filters,
                onboarded_at, created_at
         from crm.clients
         where id = %s
@@ -365,7 +366,6 @@ STATUS_COLOUR = {
     'meeting':   'green',
     'won':       'green',
     'lost':      'red',
-    'closed':    'grey',
 }
 
 
@@ -1001,6 +1001,97 @@ def create_client(
             )
         conn.commit()
     return new_id
+
+
+def client_pipeline_runs(client_id: int, days: int = 30, limit: int = 100) -> list[dict]:
+    """Recent pipeline_runs for a client. Newest first. Used by the client
+    detail page Pipeline runs section (US-003)."""
+    sql = """
+        select id, status, mode, leads_added, leads_skipped, leads_errored,
+               progress, error_msg,
+               started_at, finished_at, created_at,
+               case
+                 when finished_at is not null and started_at is not null
+                   then extract(epoch from (finished_at - started_at))::int
+                 else null
+               end as duration_s
+        from crm.pipeline_runs
+        where client_id = %s
+          and created_at >= now() - make_interval(days => %s)
+        order by created_at desc
+        limit %s
+    """
+    rows = fetch_all(sql, (client_id, days, limit))
+    for r in rows:
+        # Decorate for the template — relative time + a short error hint.
+        if r.get('progress') and isinstance(r['progress'], dict):
+            errs = r['progress'].get('errors') or []
+            if errs and not r.get('error_msg'):
+                r['error_hint'] = errs[0]
+            elif r.get('error_msg'):
+                r['error_hint'] = r['error_msg']
+            else:
+                r['error_hint'] = None
+        else:
+            r['error_hint'] = r.get('error_msg')
+    return rows
+
+
+def update_client(
+    client_id: int,
+    *,
+    name: str,
+    industry: str | None,
+    contact_name: str | None,
+    contact_email: str | None,
+    target_industries: list[str],
+    target_locations: list[str],
+    targeting_filters: dict,
+) -> None:
+    """Update an existing client's basics + targeting. Idempotent.
+
+    The schema's updated_at trigger only fires on the leads table — clients
+    has no updated_at column, so we don't try to maintain one. An activity_log
+    entry records the edit for audit instead.
+    """
+    import json
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                update crm.clients
+                set name              = %s,
+                    industry          = %s,
+                    contact_name      = %s,
+                    contact_email     = %s,
+                    target_industries = %s::jsonb,
+                    target_locations  = %s::jsonb,
+                    targeting_filters = %s::jsonb
+                where id = %s
+                """,
+                (
+                    name,
+                    industry or None,
+                    contact_name or None,
+                    contact_email or None,
+                    json.dumps(target_industries),
+                    json.dumps(target_locations),
+                    json.dumps(targeting_filters),
+                    client_id,
+                ),
+            )
+            if cur.rowcount == 0:
+                raise LookupError(f'No client {client_id}')
+            cur.execute(
+                "insert into crm.activity_log (client_id, action, detail)"
+                " values (%s, 'client_updated', %s)",
+                (
+                    client_id,
+                    f"targeting edited — {len(target_industries)} "
+                    f"industry/industries, {len(target_locations)} location(s)",
+                ),
+            )
+        conn.commit()
 
 
 def set_client_outreach_paused(client_id: int, paused: bool) -> dict:

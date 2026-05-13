@@ -32,6 +32,7 @@
     </p>
   </div>
   <div class="page-actions">
+    <a class="btn btn-quiet" href="{{ url_for('client_edit', client_id=client.id) }}">Edit</a>
     <button class="btn" type="button" data-find-leads-single data-client-id="{{ client.id }}" data-client-name="{{ client.name }}">
       <span class="btn-icon">⟳</span> Find new leads
     </button>
@@ -109,12 +110,95 @@
   {% endif %}
 </div>
 
-{# ── Pipeline config (placeholder until Step 7) ─────────── #}
+{# ── Targeting summary ────────────────────────────────── #}
 <div class="card">
   <div class="card-head">
-    <div class="card-title">Pipeline config</div>
+    <div class="card-title">Targeting</div>
+    <a class="card-head-link" href="{{ url_for('client_edit', client_id=client.id) }}">Edit →</a>
   </div>
-  <div class="empty">Pipeline config arrives in Step 7 — once outbound is wired up, this is where target industries, locations, filters, and email settings live.</div>
+  {% set inds = client.target_industries or [] %}
+  {% set locs = client.target_locations or [] %}
+  {% set tf = client.targeting_filters or {} %}
+  {% if not inds and not locs %}
+    <div class="empty">
+      No targeting set — pipeline runs will fail until at least one industry and one location are configured.
+      <a href="{{ url_for('client_edit', client_id=client.id) }}">Set targeting →</a>
+    </div>
+  {% else %}
+    <div class="kv-grid">
+      <div class="kv-row">
+        <div class="kv-key">Industries</div>
+        <div class="kv-val">
+          {% for i in inds %}<span class="chip chip-static">{{ i }}</span>{% endfor %}
+          {% if not inds %}<span class="t-muted">none</span>{% endif %}
+        </div>
+      </div>
+      <div class="kv-row">
+        <div class="kv-key">Locations</div>
+        <div class="kv-val">
+          {% for l in locs %}<span class="chip chip-static">{{ l }}</span>{% endfor %}
+          {% if not locs %}<span class="t-muted">none</span>{% endif %}
+        </div>
+      </div>
+      {% if tf.min_company_age_years is not none and tf.min_company_age_years != '' %}
+      <div class="kv-row">
+        <div class="kv-key">Min company age</div>
+        <div class="kv-val">{{ tf.min_company_age_years }} years</div>
+      </div>
+      {% endif %}
+      {% if tf.employee_bands %}
+      <div class="kv-row">
+        <div class="kv-key">Employee size</div>
+        <div class="kv-val">
+          {% for b in tf.employee_bands %}<span class="chip chip-static">{{ b }}</span>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="kv-row">
+        <div class="kv-key">Active filing</div>
+        <div class="kv-val">{% if tf.active_filing_only %}Yes — dormant excluded{% else %}No — include dormant{% endif %}</div>
+      </div>
+      {% if tf.exclusion_list %}
+      <div class="kv-row">
+        <div class="kv-key">Exclusions</div>
+        <div class="kv-val">
+          {% for x in tf.exclusion_list %}<span class="chip chip-static">{{ x }}</span>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+{# ── Pipeline runs (US-003) ───────────────────────────── #}
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">Pipeline runs <span class="card-head-meta">last 30 days</span></div>
+  </div>
+  {% if pipeline_runs %}
+    <div class="run-rows">
+      {% for r in pipeline_runs %}
+        <div class="run-row run-{{ r.status }}">
+          <span class="run-status run-pill-{{ r.status }}">{{ r.status }}</span>
+          <span class="run-time">
+            {{ r.created_at.strftime('%d %b %H:%M') if r.created_at else '—' }}
+            {% if r.duration_s is not none %} · {{ r.duration_s }}s{% endif %}
+          </span>
+          <span class="run-counts">
+            <strong>{{ r.leads_added or 0 }}</strong> added
+            {% if r.leads_skipped %} · {{ r.leads_skipped }} skipped{% endif %}
+            {% if r.leads_errored %} · {{ r.leads_errored }} errored{% endif %}
+          </span>
+          <span class="run-mode">{{ r.mode }}</span>
+          {% if r.error_hint %}
+            <span class="run-err" title="{{ r.error_hint }}">{{ r.error_hint|truncate(80) }}</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">No runs yet. Click <strong>Find new leads</strong> above to trigger one.</div>
+  {% endif %}
 </div>
 {% endif %}
 

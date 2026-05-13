@@ -1,19 +1,29 @@
 {% extends "base.html" %}
-{% block title %}New client · Innovite CRM{% endblock %}
+{% block title %}{% if is_edit %}Edit {{ client_name }}{% else %}New client{% endif %} · Innovite CRM{% endblock %}
 
 {% block content %}
+{% if is_edit %}
+<a href="{{ url_for('client_detail', client_id=client_id) }}" class="back-link">
+{% else %}
 <a href="{{ url_for('clients') }}" class="back-link">
+{% endif %}
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
        stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <polyline points="15 18 9 12 15 6"/>
   </svg>
-  Clients
+  {% if is_edit %}{{ client_name }}{% else %}Clients{% endif %}
 </a>
 
 <div class="page-head">
   <div>
-    <h1 class="page-title">New client</h1>
-    <p class="page-sub">Add a client and their targeting profile so the pipeline knows who to look for.</p>
+    <h1 class="page-title">{% if is_edit %}Edit {{ client_name }}{% else %}New client{% endif %}</h1>
+    <p class="page-sub">
+      {% if is_edit %}
+        Update basics or refine targeting. Saved changes apply on the next pipeline run.
+      {% else %}
+        Add a client and their targeting profile so the pipeline knows who to look for.
+      {% endif %}
+    </p>
   </div>
 </div>
 
@@ -27,7 +37,9 @@
   {% endif %}
 {% endwith %}
 
-<form class="settings-stack" method="post" action="{{ url_for('client_new') }}" novalidate>
+<form class="settings-stack" method="post"
+      action="{% if is_edit %}{{ url_for('client_edit', client_id=client_id) }}{% else %}{{ url_for('client_new') }}{% endif %}"
+      novalidate>
 
   {# ── Basics ─────────────────────────────────── #}
   <section class="card settings-card">
@@ -176,14 +188,21 @@
     </div>
   </section>
 
+  {% if not is_edit %}
   <p class="settings-card-sub form-foot-hint">
     Status will be set to <strong>Active</strong>. No pipeline runs automatically — trigger
     the first <strong>Find new leads</strong> from the client detail page when ready.
   </p>
+  {% endif %}
 
   <div class="settings-form-foot client-new-foot">
-    <a class="btn btn-quiet" href="{{ url_for('clients') }}">Cancel</a>
-    <button type="submit" class="btn btn-primary">Create client</button>
+    {% if is_edit %}
+      <a class="btn btn-quiet" href="{{ url_for('client_detail', client_id=client_id) }}">Cancel</a>
+      <button type="submit" class="btn btn-primary">Save changes</button>
+    {% else %}
+      <a class="btn btn-quiet" href="{{ url_for('clients') }}">Cancel</a>
+      <button type="submit" class="btn btn-primary">Create client</button>
+    {% endif %}
   </div>
 </form>
 
