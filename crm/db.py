@@ -1003,6 +1003,32 @@ def create_client(
     return new_id
 
 
+def suppress_address(address: str, reason: str = 'manual',
+                     added_by: str | None = None,
+                     detail: str | None = None) -> bool:
+    """Add an address to the suppression list (US-007).
+
+    Idempotent: if the address already exists, returns False without raising.
+    Returns True if a new row was created.
+    """
+    if not address:
+        return False
+    norm = address.strip()
+    if not norm:
+        return False
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """insert into crm.suppressed_addresses (address, reason, added_by, detail)
+                   values (%s, %s, %s, %s)
+                   on conflict ((lower(address))) do nothing""",
+                (norm, reason, added_by, detail),
+            )
+            created = cur.rowcount > 0
+        conn.commit()
+    return created
+
+
 def get_client_schedule(client_id: int) -> dict | None:
     return fetch_one(
         "select id, name, daily_pipeline_run_at, pipeline_paused from crm.clients where id = %s",

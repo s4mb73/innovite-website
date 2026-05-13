@@ -209,7 +209,12 @@
               <span class="bounce-detail">{{ r.bounce_reason or 'No reason captured' }}</span>
             </td>
             <td class="col-action">
-              <button type="button" class="btn btn-quiet" disabled title="Suppress lands with the Step 7 backend">Suppress</button>
+              <form method="post" action="{{ url_for('outreach_suppress') }}" class="inline-form"
+                    onsubmit="return confirm('Suppress {{ r.to_address }} across all clients?');">
+                <input type="hidden" name="address" value="{{ r.to_address }}">
+                <input type="hidden" name="reason" value="{% if r.severity == 'hard' %}hard_bounce{% else %}manual{% endif %}">
+                <button type="submit" class="btn btn-quiet">Suppress</button>
+              </form>
             </td>
           {% endif %}
         </tr>

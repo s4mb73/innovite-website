@@ -45,8 +45,10 @@ import psycopg
 
 import db
 from pipeline import runner
+from outreach import engine as outreach_engine
 
 POLL_INTERVAL_S = int(os.environ.get("WORKER_POLL_INTERVAL_S", "5"))
+OUTREACH_TICK_S = int(os.environ.get("WORKER_OUTREACH_TICK_S", "300"))
 LONDON = ZoneInfo("Europe/London")
 
 logger = logging.getLogger("crm.worker")
@@ -151,12 +153,27 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    logger.info("crm-worker starting (poll=%ss)", POLL_INTERVAL_S)
+    logger.info("crm-worker starting (poll=%ss, outreach_tick=%ss)",
+                POLL_INTERVAL_S, OUTREACH_TICK_S)
     schedule_state: dict = {}
+    outreach_state: dict = {"last_tick_at": 0.0}
 
     while _running:
         # Once-per-minute: enqueue any clients whose daily schedule fires now.
         _maybe_run_schedule(schedule_state)
+
+        # Every OUTREACH_TICK_S (default 5 min): pass through the
+        # scheduled-emails queue. Default mode is dry-run — see
+        # outreach/engine.py module doc for the switch.
+        now_mono = time.monotonic()
+        if now_mono - outreach_state["last_tick_at"] >= OUTREACH_TICK_S:
+            outreach_state["last_tick_at"] = now_mono
+            try:
+                result = outreach_engine.tick()
+                logger.info("outreach tick %s", result)
+            except Exception:
+                logger.exception("outreach tick failed — will retry in %ss",
+                                 OUTREACH_TICK_S)
 
         try:
             run_id = _claim_next_run()

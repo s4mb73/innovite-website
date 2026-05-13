@@ -57,7 +57,7 @@ Internally the action runs the scraper / enrichment / scoring pipeline. The user
 **So that** new leads are discovered overnight and the queue is full before the sending window opens
 
 **Priority:** P0
-**Status:** Draft
+**Status:** Built — migration 0012 adds `daily_pipeline_run_at TIME` + `pipeline_paused BOOLEAN`. Worker `_maybe_run_schedule` ticks once per minute and enqueues runs. Schedule card on client detail with inline POST. Operator summary email not yet built (defer; activity_log + Discord cover the "did it run" question).
 **Acceptance criteria**
 - [ ] Daily schedule is configurable per client in **Settings → Clients** (or on the client detail page)
 - [ ] Schedule respects Europe/London timezone (matches existing **Sending hours** field in `templates/settings.html`)
@@ -78,7 +78,7 @@ Internally the action runs the scraper / enrichment / scoring pipeline. The user
 **So that** I can spot a silently failing schedule without waiting for the lead pipeline to dry up
 
 **Priority:** P1
-**Status:** Draft
+**Status:** Built (per-client view) — pipeline runs section on the client detail page lists last 30 days with status pill, counts, duration, mode (manual / scheduled / onboarding), error hint. Cross-client roll-up deferred until there are >3 active clients.
 **Acceptance criteria**
 - [ ] Last 30 days of runs visible on the client detail page under a **Pipeline runs** section
 - [ ] Each row shows: started at, duration, leads added, leads skipped (duplicates), errors, status (success / partial / failed)
@@ -122,7 +122,7 @@ Source UI: `templates/outreach.html` — **Today / Sent / Follow-ups / Bounces**
 **So that** outbound goes out without me clicking anything, and we never exceed the daily cap that protects sender reputation
 
 **Priority:** P0
-**Status:** Draft
+**Status:** Built — dry-run mode. `crm/outreach/engine.py` + `policy.py` ship the gates (system pause, sending hours, weekend skip, client pause, lead-replied, suppression, mailbox capacity, 2-min jitter). Worker ticks every 5 minutes. Every action audited to `crm.outreach_actions` so rotation + caps can be verified before flipping to live. `OUTREACH_MODE=live` env var enables real SMTP; Zoho creds need to be provisioned in mailbox env-var slots before flipping.
 **Acceptance criteria**
 - [ ] Sender reads from the existing Zoho SMTP settings shown on Settings (host, port, from address)
 - [ ] Sends only between the configured **Sending hours · Europe/London** start and end times
@@ -143,7 +143,7 @@ Source UI: `templates/outreach.html` — **Today / Sent / Follow-ups / Bounces**
 **So that** the canonical Innovite cadence (Day 1 → Day 3 → Day 7) runs without manual intervention
 
 **Priority:** P0
-**Status:** Draft
+**Status:** Built — `outreach/engine.py:_maybe_schedule_followup` writes the next-step row when a Day-N transitions to sent or dry_run_ready. Day-1 sent → Day-3 at +3 days; Day-3 sent → Day-7 at +4 days. Weekend-skip honoured via `cadence.skip_weekends`. Cadence toggles (`day3_enabled` / `day7_enabled`) gate scheduling.
 **Acceptance criteria**
 - [ ] When a Day 1 email is sent, a Day 3 row is created in `crm.emails` with `scheduled_at = sent_at + 3 days` (skipping weekends if **cadence_skip_weekends** is on)
 - [ ] When a Day 3 email is sent, a Day 7 row is similarly scheduled at +4 days from Day 3
@@ -178,7 +178,7 @@ Source UI: `templates/outreach.html` — **Today / Sent / Follow-ups / Bounces**
 **So that** repeat hard bounces stop hurting our domain reputation, and soft bounces get a configurable retry policy
 
 **Priority:** P1
-**Status:** Draft
+**Status:** Built — migration 0014 + `crm.suppressed_addresses` (case-insensitive unique on `lower(address)`). Suppress button on Bounces tab wired to `POST /outreach/suppress`. Outreach engine loads the set on every tick and cancels queued sends to suppressed addresses with `cancel_reason='suppressed_address'`. Auto-suppression on hard bounces wires up when Reply Engine lands and parses DSNs.
 **Acceptance criteria**
 - [ ] **Suppress** button on `outreach.html` (currently disabled, line 211) is enabled and writes to a `crm.suppressed_addresses` table
 - [ ] Hard bounces (severity = `hard`) auto-suppress without manual click

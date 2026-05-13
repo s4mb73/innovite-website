@@ -940,6 +940,27 @@ def mailboxes():
     )
 
 
+@app.route('/outreach/suppress', methods=['POST'])
+def outreach_suppress():
+    """Suppress an email address across all clients (US-007).
+
+    Form fields:
+      address  — email address to suppress (required)
+      reason   — 'manual' / 'hard_bounce' / 'soft_bounce_x2' / 'unsubscribe' / 'complaint'
+    """
+    address = (request.form.get('address') or '').strip()
+    reason = (request.form.get('reason') or 'manual').strip()
+    if reason not in ('manual', 'hard_bounce', 'soft_bounce_x2', 'unsubscribe', 'complaint'):
+        reason = 'manual'
+    if not address or '@' not in address:
+        flash('Need a valid address.', 'error')
+        return redirect(url_for('outreach'))
+    created = db.suppress_address(address, reason=reason, added_by='operator')
+    flash(f'Suppressed {address}.' if created else f'{address} was already suppressed.',
+          'success')
+    return redirect(request.referrer or url_for('outreach', tab='bounces'))
+
+
 # ── Pipeline runner (US-001 — Find new leads) ────────────────────────
 # Two endpoints:
 #   POST /api/pipeline/run         — enqueue a run for one or more clients
