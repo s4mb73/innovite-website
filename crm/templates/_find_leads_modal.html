@@ -48,8 +48,8 @@
     </div>
 
     <div class="picker-disclaimer">
-      <strong>POC mode</strong> — confirming below shows the run flow but does not contact
-      any external service yet. Real lead generation lands with the Step 7 backend.
+      Each client runs in its own pipeline. New leads land in the Leads table once
+      done; no emails go out — sending is gated separately.
     </div>
   </div>
 
@@ -132,7 +132,7 @@
     });
     checks.forEach(c => c.addEventListener('change', recount));
 
-    // Confirm — fake the run flow.
+    // Confirm — real run flow against /api/pipeline/run.
     confirm.addEventListener('click', () => {
       const ticked = Array.from(checks).filter(c => c.checked && !c.disabled);
       if (!ticked.length) return;
@@ -141,18 +141,23 @@
         name:  c.closest('.picker-row').querySelector('.picker-name').textContent.trim(),
       }));
       close();
-      runFake(targets);
+      runReal(targets);
     });
 
-    function runFake(targets) {
+    // ── Real run: POST one run per client, then poll each in parallel. ─
+    const TERMINAL = new Set(['succeeded', 'partial', 'failed', 'cancelled']);
+
+    async function runReal(targets) {
       progress.hidden = false;
       progDism.hidden = true;
       progTitle.textContent = 'Finding leads…';
       progSub.textContent   = `Running across ${targets.length} client${targets.length === 1 ? '' : 's'}`;
       progRows.innerHTML    = '';
-      const rowEls = targets.map((t, i) => {
+
+      const rowEls = targets.map(t => {
         const r = document.createElement('div');
         r.className = 'progress-row';
+        r.dataset.clientId = t.id;
         r.innerHTML = `
           <span class="progress-row-state state-queued">◌</span>
           <span class="progress-row-name">${t.name}</span>
@@ -161,29 +166,85 @@
         progRows.appendChild(r);
         return r;
       });
-      // Sequential fake — each client takes ~1.2s. Total fits the demo.
-      let i = 0;
-      function step() {
-        if (i >= rowEls.length) {
-          progTitle.textContent = 'Pipeline finished';
-          progSub.textContent   = `Done — refresh to see new leads (POC mode)`;
-          progDism.hidden       = false;
-          return;
-        }
-        const r = rowEls[i];
-        r.querySelector('.progress-row-state').className = 'progress-row-state state-running';
-        r.querySelector('.progress-row-state').textContent = '⟳';
-        r.querySelector('.progress-row-meta').textContent  = 'finding…';
-        setTimeout(() => {
-          const fakeNew = Math.floor(8 + Math.random() * 18);
-          r.querySelector('.progress-row-state').className = 'progress-row-state state-done';
-          r.querySelector('.progress-row-state').textContent = '✓';
-          r.querySelector('.progress-row-meta').textContent  = `${fakeNew} new leads · POC`;
-          i += 1;
-          step();
-        }, 1200);
+
+      let resp;
+      try {
+        resp = await fetch('/api/pipeline/run', {
+          method:  'POST',
+          headers: {'Content-Type': 'application/json'},
+          body:    JSON.stringify({client_ids: targets.map(t => t.id), mode: 'manual'}),
+        });
+      } catch (e) {
+        rowEls.forEach(r => failRow(r, 'Network error'));
+        progDism.hidden = false;
+        return;
       }
-      step();
+      if (!resp.ok) {
+        rowEls.forEach(r => failRow(r, `Server ${resp.status}`));
+        progDism.hidden = false;
+        return;
+      }
+      const data = await resp.json();
+      const runByClient = {};
+      (data.runs || []).forEach(r => { runByClient[r.client_id] = r.id; });
+
+      // Poll each client run in parallel.
+      const tasks = targets.map(t => {
+        const rowEl = rowEls.find(el => el.dataset.clientId === String(t.id));
+        const runId = runByClient[Number(t.id)] || runByClient[t.id];
+        if (!runId) { failRow(rowEl, 'No run id returned'); return Promise.resolve(); }
+        return pollRun(runId, rowEl);
+      });
+
+      await Promise.all(tasks);
+      progTitle.textContent = 'Pipeline finished';
+      progSub.textContent   = 'Refresh the Leads page to see the new rows.';
+      progDism.hidden = false;
+    }
+
+    function pollRun(runId, rowEl) {
+      const state = rowEl.querySelector('.progress-row-state');
+      const meta  = rowEl.querySelector('.progress-row-meta');
+      state.className = 'progress-row-state state-running';
+      state.textContent = '⟳';
+      meta.textContent = 'finding…';
+
+      return new Promise(resolve => {
+        let attempts = 0;
+        const tick = async () => {
+          attempts++;
+          try {
+            const r = await fetch(`/api/pipeline/run/${runId}`);
+            if (!r.ok) throw new Error('http ' + r.status);
+            const j = await r.json();
+            const phase = (j.progress && j.progress.phase) || j.status;
+            const current = (j.progress && j.progress.current) || '';
+            meta.textContent = current
+              ? `${phase} · ${current} · ${j.leads_added || 0} found`
+              : `${phase} · ${j.leads_added || 0} found`;
+            if (TERMINAL.has(j.status)) {
+              const ok = (j.status === 'succeeded' || j.status === 'partial');
+              state.className = `progress-row-state state-${ok ? 'done' : 'failed'}`;
+              state.textContent = ok ? '✓' : '✗';
+              meta.textContent = `${j.leads_added || 0} new · ${j.leads_skipped || 0} skipped · ${j.leads_errored || 0} errored`;
+              resolve();
+              return;
+            }
+          } catch (e) {
+            if (attempts > 240) { failRow(rowEl, 'Polling timeout'); resolve(); return; }
+          }
+          setTimeout(tick, 2500);
+        };
+        tick();
+      });
+    }
+
+    function failRow(rowEl, msg) {
+      const state = rowEl.querySelector('.progress-row-state');
+      const meta  = rowEl.querySelector('.progress-row-meta');
+      state.className = 'progress-row-state state-failed';
+      state.textContent = '✗';
+      meta.textContent = msg;
     }
 
     progDism.addEventListener('click', () => { progress.hidden = true; });

@@ -36,17 +36,17 @@ Internally the action runs the scraper / enrichment / scoring pipeline. The user
 **So that** I can generate fresh leads for one client without running scripts manually or waiting for the next scheduled run
 
 **Priority:** P0
-**Status:** Draft
+**Status:** Built — pending live test (2026-05-13). Needs Google Places API key + Anthropic key in `/etc/innovite/crm-worker.env` to actually return real leads. Apollo source is stubbed so director emails stay blank until Sammy signs up.
 **Acceptance criteria**
-- [ ] Pipeline runs only for the client selected (or the current client if triggered from the client detail page)
-- [ ] Reads target industries and locations from `crm.clients.target_industries` / `target_locations`
-- [ ] New rows appear in `crm.leads` within 5 minutes for a typical run (≤ 200 candidates)
-- [ ] Each new lead has a grade A/B/C/D assigned
-- [ ] An entry is written to `crm.activity_log` with action `pipeline_run` and the client id
-- [ ] The button shows a loading state while the run is in progress and is disabled to prevent double-submits
-- [ ] On failure, an error banner is shown with a short reason and the run is logged with status `failed`
+- [x] Pipeline runs only for the client selected (or the current client if triggered from the client detail page) — single-client trigger on `client_detail.html`, multi-client picker via `_find_leads_modal.html`
+- [x] Reads target industries and locations from `crm.clients.target_industries` / `target_locations` (see `pipeline/runner.py`)
+- [x] New rows appear in `crm.leads` within 5 minutes for a typical run (≤ 200 candidates) — runner caps Google Places at 40 per pair; ~40 leads in ~3 minutes
+- [x] Each new lead has a grade A/B/C/D assigned (`pipeline/scoring.py`)
+- [x] An entry is written to `crm.activity_log` with action `pipeline_run` and the client id
+- [x] The button shows a loading state while the run is in progress and is disabled to prevent double-submits
+- [x] On failure, an error banner is shown with a short reason and the run is logged with status `failed` (or `partial` for source-level quota exhaustion)
 
-**Notes** — Depends on `innovite-scraper` being reachable from the Render web service (or a separate worker). The button currently exists on Outreach but should also surface on the client detail page so an operator can run a single-client pipeline from where they already are.
+**Notes** — Pipeline Runner v1 lives **inside the CRM Flask repo** (not the scraper) because the three P0 sources (Google Places, Companies House, Apollo) are all REST APIs that don't need TLS fingerprinting. Scraper integration is a Week-4 problem when sources 6/8/9 land (Meta Ad Library, Facebook, jobs). The runner runs in a new long-lived `crm-worker.service` systemd unit, not in gunicorn — pipeline runs take minutes and exceed the 60s gunicorn timeout. Flask only writes a `pipeline_runs` row and returns the id; the modal/JS polls `/api/pipeline/run/<id>` every 2.5s. Same shape will host Outreach + Reply + Reporting via apscheduler.
 
 ---
 

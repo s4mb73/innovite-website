@@ -32,7 +32,7 @@
     </p>
   </div>
   <div class="page-actions">
-    <button class="btn" disabled title="Available from Step 7">
+    <button class="btn" type="button" data-find-leads-single data-client-id="{{ client.id }}" data-client-name="{{ client.name }}">
       <span class="btn-icon">⟳</span> Find new leads
     </button>
     <button class="btn" disabled title="Available from Step 9">
@@ -117,4 +117,138 @@
   <div class="empty">Pipeline config arrives in Step 7 — once outbound is wired up, this is where target industries, locations, filters, and email settings live.</div>
 </div>
 {% endif %}
+
+{# ── Pipeline run progress card (US-001) ──────────────────── #}
+{# Hidden until the Find new leads button is clicked. The JS below
+   POSTs to /api/pipeline/run, then polls /api/pipeline/run/<id>
+   every 2.5s until status is terminal (succeeded/partial/failed). #}
+<div class="progress-card" id="cdPipelineProgress" hidden>
+  <div class="progress-card-head">
+    <div>
+      <div class="progress-card-title" id="cdProgressTitle">Finding leads…</div>
+      <div class="progress-card-sub" id="cdProgressSub"></div>
+    </div>
+    <button type="button" class="btn btn-quiet btn-sm" id="cdProgressDismiss" hidden>Dismiss</button>
+  </div>
+  <div class="progress-rows" id="cdProgressRows"></div>
+</div>
+
+<script>
+  // ── Find new leads (single client) — US-001 ─────────────
+  (function () {
+    const trigger = document.querySelector('[data-find-leads-single]');
+    const card    = document.getElementById('cdPipelineProgress');
+    const title   = document.getElementById('cdProgressTitle');
+    const sub     = document.getElementById('cdProgressSub');
+    const rows    = document.getElementById('cdProgressRows');
+    const dismiss = document.getElementById('cdProgressDismiss');
+    if (!trigger || !card) return;
+
+    const TERMINAL = new Set(['succeeded', 'partial', 'failed', 'cancelled']);
+
+    async function start(clientId, clientName) {
+      trigger.disabled = true;
+      trigger.classList.add('is-running');
+      card.hidden = false;
+      dismiss.hidden = true;
+      title.textContent = 'Finding leads…';
+      sub.textContent = `Running for ${clientName}`;
+      rows.innerHTML = `
+        <div class="progress-row">
+          <span class="progress-row-state state-queued">◌</span>
+          <span class="progress-row-name">${clientName}</span>
+          <span class="progress-row-meta" id="cdRowMeta">queued</span>
+        </div>
+      `;
+      const meta = document.getElementById('cdRowMeta');
+      const state = card.querySelector('.progress-row-state');
+
+      let resp;
+      try {
+        resp = await fetch('/api/pipeline/run', {
+          method:  'POST',
+          headers: {'Content-Type': 'application/json'},
+          body:    JSON.stringify({client_id: clientId, mode: 'manual'}),
+        });
+      } catch (e) {
+        finishUI('failed', state, meta, 'Network error');
+        return;
+      }
+      if (!resp.ok) {
+        finishUI('failed', state, meta, `Server ${resp.status}`);
+        return;
+      }
+      const data = await resp.json();
+      const runId = (data.runs && data.runs[0] && data.runs[0].id);
+      if (!runId) {
+        finishUI('failed', state, meta, 'No run id returned');
+        return;
+      }
+      poll(runId, state, meta);
+    }
+
+    async function poll(runId, state, meta) {
+      let attempts = 0;
+      const tick = async () => {
+        attempts++;
+        let resp;
+        try {
+          resp = await fetch(`/api/pipeline/run/${runId}`);
+        } catch (e) {
+          // Transient network blip — keep polling unless we exceed budget.
+          if (attempts > 240) { finishUI('failed', state, meta, 'Polling timeout'); return; }
+          setTimeout(tick, 2500); return;
+        }
+        if (!resp.ok) {
+          if (attempts > 240) { finishUI('failed', state, meta, 'Polling failed'); return; }
+          setTimeout(tick, 2500); return;
+        }
+        const r = await resp.json();
+        renderProgress(r, state, meta);
+        if (TERMINAL.has(r.status)) {
+          finishUI(r.status, state, meta,
+            `${r.leads_added || 0} new · ${r.leads_skipped || 0} skipped · ${r.leads_errored || 0} errored`);
+          // Reload after a short pause so the new leads appear on the page.
+          if (r.status === 'succeeded' || r.status === 'partial') {
+            setTimeout(() => location.reload(), 1500);
+          }
+          return;
+        }
+        setTimeout(tick, 2500);
+      };
+      tick();
+    }
+
+    function renderProgress(r, state, meta) {
+      const phase = (r.progress && r.progress.phase) || r.status;
+      const current = (r.progress && r.progress.current) || '';
+      const added = r.leads_added || 0;
+      state.className = 'progress-row-state state-running';
+      state.textContent = '⟳';
+      const label = current ? `${phase} · ${current}` : phase;
+      meta.textContent = `${label} · ${added} found so far`;
+    }
+
+    function finishUI(status, state, meta, summary) {
+      trigger.disabled = false;
+      trigger.classList.remove('is-running');
+      const ok = (status === 'succeeded' || status === 'partial');
+      state.className = `progress-row-state state-${ok ? 'done' : 'failed'}`;
+      state.textContent = ok ? '✓' : '✗';
+      meta.textContent = summary;
+      title.textContent = status === 'succeeded' ? 'Pipeline finished'
+                        : status === 'partial'   ? 'Pipeline finished with warnings'
+                        : status === 'failed'    ? 'Pipeline failed'
+                                                 : 'Pipeline cancelled';
+      sub.textContent = (status === 'succeeded' || status === 'partial')
+                        ? 'New leads will appear after refresh' : '';
+      dismiss.hidden = false;
+    }
+
+    trigger.addEventListener('click', () => {
+      start(trigger.dataset.clientId, trigger.dataset.clientName);
+    });
+    dismiss.addEventListener('click', () => { card.hidden = true; });
+  })();
+</script>
 {% endblock %}

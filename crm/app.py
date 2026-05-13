@@ -7,7 +7,7 @@ import csv
 import io
 import os
 import time
-from flask import Flask, Response, abort, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, abort, flash, jsonify, redirect, render_template, request, session, url_for
 from psycopg import errors as psycopg_errors
 
 import db
@@ -813,6 +813,59 @@ def mailboxes():
         summary=summary,
         db_error=db_error,
     )
+
+
+# ── Pipeline runner (US-001 — Find new leads) ────────────────────────
+# Two endpoints:
+#   POST /api/pipeline/run         — enqueue a run for one or more clients
+#   GET  /api/pipeline/run/<id>    — poll for status / progress
+# The actual work happens in crm-worker.service (pipeline.runner.run).
+# This route is intentionally thin: write a row, return the id, get out.
+
+
+@app.route('/api/pipeline/run', methods=['POST'])
+def pipeline_run_create():
+    payload = request.get_json(silent=True) or {}
+    raw_ids = payload.get('client_ids') or ([payload['client_id']] if payload.get('client_id') else [])
+    try:
+        client_ids = [int(x) for x in raw_ids]
+    except (TypeError, ValueError):
+        return jsonify({'error': 'client_ids must be integers'}), 400
+    if not client_ids:
+        return jsonify({'error': 'client_ids required'}), 400
+
+    mode = payload.get('mode') or 'manual'
+    if mode not in ('manual', 'scheduled', 'onboarding'):
+        return jsonify({'error': 'invalid mode'}), 400
+
+    runs = []
+    for cid in client_ids:
+        row = db.fetch_one(
+            """insert into crm.pipeline_runs (client_id, status, mode, triggered_by)
+               values (%s, 'pending', %s, %s)
+               returning id, client_id, status""",
+            (cid, mode, 'operator'),
+        )
+        if row:
+            runs.append(row)
+    return jsonify({'runs': runs}), 202
+
+
+@app.route('/api/pipeline/run/<int:run_id>')
+def pipeline_run_status(run_id: int):
+    row = db.fetch_one(
+        """select id, client_id, status, mode, leads_added, leads_skipped,
+                  leads_errored, progress, error_msg, started_at, finished_at, created_at
+           from crm.pipeline_runs where id = %s""",
+        (run_id,),
+    )
+    if not row:
+        return jsonify({'error': 'not found'}), 404
+    # Datetimes → ISO so the JS poll doesn't need a date parser.
+    for k in ('started_at', 'finished_at', 'created_at'):
+        if row.get(k) is not None:
+            row[k] = row[k].isoformat()
+    return jsonify(row)
 
 
 @app.route('/healthz')
