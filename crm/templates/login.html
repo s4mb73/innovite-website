@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Sign in · Innovite CRM</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231a1c25'/><rect x='5' y='13' width='14' height='6' rx='3' fill='%238FB7FF'/><circle cx='25' cy='16' r='3' fill='%238FB7FF'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-body">
+
+<main class="login-main">
+  <div class="login-card">
+    <div class="login-brand">
+      <svg class="login-mark" viewBox="0 0 60 12" fill="none" aria-hidden="true">
+        <rect x="0" y="0" width="42" height="12" rx="6" fill="currentColor"/>
+        <circle cx="54" cy="6" r="6" fill="currentColor"/>
+      </svg>
+      <span class="login-word">innovite</span>
+      <span class="login-eyebrow">CRM</span>
+    </div>
+
+    <h1 class="login-title">Sign in</h1>
+    <p class="login-sub">Enter the operator password to continue.</p>
+
+    {% if error %}
+      <div class="login-error" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('login') }}{% if next %}?next={{ next | urlencode }}{% endif %}" class="login-form">
+      <label class="login-label" for="password">Password</label>
+      <input
+        class="login-input"
+        type="password"
+        id="password"
+        name="password"
+        autocomplete="current-password"
+        autofocus
+        required
+      >
+      <button class="btn btn-primary login-submit" type="submit">Sign in</button>
+    </form>
+  </div>
+</main>
+
+</body>
+</html>

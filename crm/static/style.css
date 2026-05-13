@@ -3637,3 +3637,97 @@ a { color:inherit; text-decoration:none; }
 }
 
 
+
+/* ── Login page ────────────────────────────────────────────────
+   Standalone screen, no sidebar. Centered card on the same dark
+   ground used by the rest of the app.
+   ──────────────────────────────────────────────────────────── */
+.login-body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg, #0e0f14);
+  font-family: 'Outfit', system-ui, sans-serif;
+  color: var(--fg, #e6e9f2);
+}
+.login-main {
+  width: 100%;
+  max-width: 380px;
+  padding: 24px;
+}
+.login-card {
+  background: var(--card, #1a1c25);
+  border: 1px solid var(--line, #262936);
+  border-radius: 14px;
+  padding: 32px 28px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.login-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 24px;
+  color: #8FB7FF;
+}
+.login-mark { width: 60px; height: 12px; }
+.login-word {
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--fg, #e6e9f2);
+  letter-spacing: -0.01em;
+}
+.login-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted, #7d8295);
+  font-weight: 500;
+}
+.login-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.login-sub {
+  margin: 0 0 20px;
+  color: var(--muted, #7d8295);
+  font-size: 13px;
+}
+.login-error {
+  background: rgba(239, 76, 92, 0.10);
+  border: 1px solid rgba(239, 76, 92, 0.35);
+  color: #ff8d96;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.login-form { display: flex; flex-direction: column; gap: 6px; }
+.login-label {
+  font-size: 12px;
+  color: var(--muted, #7d8295);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.login-input {
+  background: var(--bg, #0e0f14);
+  border: 1px solid var(--line, #262936);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--fg, #e6e9f2);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+.login-input:focus {
+  border-color: #8FB7FF;
+}
+.login-submit {
+  margin-top: 14px;
+  width: 100%;
+  justify-content: center;
+}

@@ -1,14 +1,18 @@
 """Innovite CRM — Flask web UI.
 
-POC stage: no auth (Railway URL stays unguessable).
-TODO: add single-password session gate before this is publicly linked.
+Single-password session auth via the APP_PASSWORD env var. Sessions are
+signed with FLASK_SECRET_KEY, served Secure+HttpOnly+SameSite=Lax over
+HTTPS (nginx terminates TLS; ProxyFix trusts X-Forwarded-Proto).
 """
 import csv
 import io
 import os
 import time
+from hmac import compare_digest
+
 from flask import Flask, Response, abort, flash, jsonify, redirect, render_template, request, session, url_for
 from psycopg import errors as psycopg_errors
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import db
 
@@ -16,6 +20,59 @@ UNDO_TTL_SECONDS = 60
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-only-change-in-prod')
+
+# Session cookie hardening. Safe behind nginx → 127.0.0.1:8080 with TLS at the edge.
+app.config['SESSION_COOKIE_SECURE']   = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# nginx sends X-Forwarded-Proto=https; ProxyFix makes url_for / request.is_secure honour it.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+# Endpoint names (not URL paths) that don't require auth.
+_PUBLIC_ENDPOINTS = {'login', 'logout', 'healthz', 'static'}
+
+
+@app.before_request
+def _require_login():
+    # Skip if the endpoint is public (login page, healthz for monitoring, static).
+    if request.endpoint in _PUBLIC_ENDPOINTS:
+        return None
+    # Already authed — let the request through.
+    if session.get('auth') is True:
+        return None
+    # API endpoints get a 401 (so fetch() callers see the failure cleanly);
+    # everything else gets bounced to the login page with `next` set.
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'unauthorized'}), 401
+    return redirect(url_for('login', next=request.full_path if request.query_string else request.path))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    expected = os.environ.get('APP_PASSWORD') or ''
+    error = None
+    if request.method == 'POST':
+        attempted = (request.form.get('password') or '').encode('utf-8')
+        if expected and compare_digest(attempted, expected.encode('utf-8')):
+            session.clear()
+            session['auth'] = True
+            session.permanent = True
+            # Honour the `next` param but only if it's a local path (open-redirect guard).
+            nxt = request.args.get('next') or request.form.get('next') or url_for('overview')
+            if not nxt.startswith('/') or nxt.startswith('//'):
+                nxt = url_for('overview')
+            return redirect(nxt)
+        # Constant-ish delay to dampen brute-force feedback.
+        time.sleep(0.3)
+        error = 'Wrong password.'
+    return render_template('login.html', error=error, next=request.args.get('next', ''))
+
+
+@app.route('/logout', methods=['POST', 'GET'])
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 
 @app.route('/')
