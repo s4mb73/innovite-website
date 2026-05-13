@@ -199,7 +199,7 @@ Source UI: `templates/outreach.html` — the **Reply rate · 7d** KPI (line 38) 
 **So that** the **Replied** dot, the reply-rate KPI, and the inbound response queue all reflect reality without manual reconciliation
 
 **Priority:** P0
-**Status:** Draft
+**Status:** Built — dry-run mode. `crm/reply/engine.py` polls IMAP per mailbox; `matcher.py` does header-based outbound match (Message-ID / In-Reply-To / References) with a soft from_address fallback; UID cursor in `crm.mailbox_state` for exactly-once. `REPLY_MODE=live` env var enables real IMAP. Worker ticks every 10 minutes.
 **Acceptance criteria**
 - [ ] IMAP connection uses the host / port already shown on Settings (`s.sending_email.imap_host` / `imap_port`)
 - [ ] Poller runs at least every 5 minutes
@@ -218,7 +218,7 @@ Source UI: `templates/outreach.html` — the **Reply rate · 7d** KPI (line 38) 
 **So that** we never send "just bumping this" after someone has already responded — that's the single fastest way to lose a deal
 
 **Priority:** P0
-**Status:** Draft
+**Status:** Built — `reply/engine.py:_persist_reply` sets `lead.status='replied'` and updates all scheduled emails for the lead to `status='cancelled', cancel_reason='reply_received'`. OOO replies are deliberately exempted (lead stays active, cadence continues).
 **Acceptance criteria**
 - [ ] When a reply is recorded against a lead, all `crm.emails` rows for that lead with `status='scheduled'` move to `status='cancelled'` with reason `reply_received`
 - [ ] The cancelled rows disappear from the **Follow-ups this week** tab on Outreach
@@ -234,7 +234,7 @@ Source UI: `templates/outreach.html` — the **Reply rate · 7d** KPI (line 38) 
 **So that** I can spend my morning on the replies that are warm, not on every "unsubscribe" or auto-responder
 
 **Priority:** P1
-**Status:** Draft
+**Status:** Built — `reply/sentiment.py` calls Anthropic Haiku, returns one of positive/neutral/negative/ooo with a cheap OOO short-circuit on common autoreply phrases. Falls back to 'neutral' when key absent or call fails. Negative replies auto-suppress the lead's address with reason='unsubscribe'.
 **Acceptance criteria**
 - [ ] `crm.replies.sentiment` is populated by a Claude Haiku call on the reply body
 - [ ] Positive replies appear in the **Needs your response** panel within 10 minutes of detection

@@ -154,6 +154,76 @@ def _build_prompt(business: dict, hook_type: str) -> str:
     )
 
 
+FOLLOWUP_GUIDANCE = {
+    2:  ("Day-3 bump",
+         "Short — 40-80 words. No new pitch. One sentence that adds value or a "
+         "specific second question. Open with something other than 'just bumping' "
+         "or 'circling back'. Reference the original message in subject only — body "
+         "should sound like a natural follow-up, not a template."),
+    3:  ("Day-7 final",
+         "Last touch — 30-60 words. Acknowledge this is the last attempt without "
+         "being passive-aggressive. One clear ask: yes / no / 'wrong time, follow "
+         "up in N months'. Confident close, no apology."),
+}
+
+
+def _build_followup_prompt(business: dict, parent_subject: str, parent_body: str | None,
+                           day_number: int, guidance: str) -> str:
+    parts = [
+        f"Business: {business.get('business_name', '')}",
+        f"City: {business.get('city', '')}",
+        f"Decision maker: {business.get('decision_maker_name', '')}",
+        f"Day-1 subject: {parent_subject}",
+    ]
+    if parent_body:
+        parts.append("Day-1 body (for context — do not quote it):")
+        parts.append(parent_body[:1200])
+
+    return (
+        f"Write the Day-{day_number * 2 + 1 if day_number == 3 else day_number * 3 - 3} "
+        f"follow-up to this conversation.\n\n"
+        + "\n".join(parts)
+        + f"\n\nGuidance: {guidance}\n\nOutput the JSON object only."
+    )
+
+
+def _templated_followup(business: dict, parent_subject: str, day_number: int) -> dict:
+    name = business.get("decision_maker_name") or "there"
+    re_subject = parent_subject if parent_subject.lower().startswith("re:") else f"Re: {parent_subject}"
+    if day_number == 2:
+        body = (
+            f"Hi {name},\n\n"
+            f"Following up on the note I sent earlier — happy to send over a one-pager "
+            f"on how this works in practice if that's easier than a call.\n\n"
+            f"Sammy\n\n[Templated fallback — Anthropic call did not complete.]"
+        )
+    else:
+        body = (
+            f"Hi {name},\n\n"
+            f"Last message from me on this. If now isn't the time, no problem — happy "
+            f"to revisit in a few months. Otherwise a 15-minute call this week?\n\n"
+            f"Sammy\n\n[Templated fallback — Anthropic call did not complete.]"
+        )
+    return {"subject": re_subject, "body": body}
+
+
+def _parse_haiku_json(raw: str) -> dict | None:
+    """Extract the {subject, body} JSON from a Haiku response. Tolerant of
+    accidental code-fences. Returns None if unparseable."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.startswith("json"):
+            raw = raw[4:].strip()
+    try:
+        out = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(out, dict) or "subject" not in out or "body" not in out:
+        return None
+    return {"subject": str(out["subject"]), "body": str(out["body"])}
+
+
 def draft_day1(business: dict, hook_type: str) -> dict:
     """Returns {"subject": "...", "body": "..."}. Never raises."""
     if not _api_key():
@@ -163,19 +233,37 @@ def draft_day1(business: dict, hook_type: str) -> dict:
     if not raw:
         return _templated_fallback(business, hook_type)
 
-    # Try to parse the JSON — Haiku sometimes wraps it.
-    raw = raw.strip()
-    if raw.startswith("```"):
-        # Strip fences if the model added them despite the prompt.
-        raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:].strip()
-    try:
-        out = json.loads(raw)
-    except json.JSONDecodeError:
+    parsed = _parse_haiku_json(raw)
+    if parsed is None:
         return _templated_fallback(business, hook_type)
+    return parsed
 
-    if not isinstance(out, dict) or "subject" not in out or "body" not in out:
-        return _templated_fallback(business, hook_type)
 
-    return {"subject": str(out["subject"]), "body": str(out["body"])}
+def draft_followup(business: dict, parent_subject: str, parent_body: str | None,
+                   day_number: int) -> dict:
+    """Generate Day-3 or Day-7 follow-up. day_number is the cadence step (2 or 3).
+
+    Returns {"subject", "body"}. Falls back to a templated message if Anthropic
+    is unavailable. Subject is always 'Re: <parent_subject>' so Zoho threading
+    holds — Anthropic may rewrite the subject but the engine overrides it.
+    """
+    if day_number not in (2, 3):
+        return _templated_followup(business, parent_subject, day_number)
+
+    if not _api_key():
+        return _templated_followup(business, parent_subject, day_number)
+
+    label, guidance = FOLLOWUP_GUIDANCE[day_number]
+    raw = _call_anthropic(_build_followup_prompt(business, parent_subject,
+                                                  parent_body, day_number, guidance))
+    if not raw:
+        return _templated_followup(business, parent_subject, day_number)
+    parsed = _parse_haiku_json(raw)
+    if parsed is None:
+        return _templated_followup(business, parent_subject, day_number)
+
+    # Threading subject — force Re: prefix even if Haiku rewrote it.
+    subj = parsed["subject"]
+    if not subj.lower().startswith("re:"):
+        subj = f"Re: {parent_subject}"
+    return {"subject": subj, "body": parsed["body"]}

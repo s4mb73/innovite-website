@@ -184,7 +184,10 @@
             <td class="col-step"><span class="step-pill step-{{ r.email_number }}">{{ r.step_label }}</span></td>
             <td class="col-subject">{{ r.subject }}</td>
           {% elif tab == 'sent' %}
-            <td class="col-time" title="{{ r.sent_at.isoformat() if r.sent_at else '' }}">{{ r.sent_at_short }}</td>
+            <td class="col-time" title="{{ r.sent_at.isoformat() if r.sent_at else '' }}">
+              {{ r.sent_at_short }}
+              {% if r.is_dry_run %}<span class="dryrun-pill" title="Outreach engine in dry-run mode — no SMTP">dry-run</span>{% endif %}
+            </td>
             <td><a class="lead-name-link" href="{{ href }}">{{ r.business_name }}</a></td>
             <td class="col-client">{{ r.client_name }}</td>
             <td class="col-step"><span class="step-pill step-{{ r.email_number }}">{{ r.step_label }}</span></td>

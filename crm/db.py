@@ -1225,9 +1225,15 @@ def outreach_today(client_id: int | None = None, search: str | None = None) -> l
 
 def outreach_sent(client_id: int | None = None, search: str | None = None,
                   limit: int = 200) -> list[dict]:
-    """Recently sent emails — last 30 days, capped at `limit` rows."""
+    """Recently sent emails — last 30 days, capped at `limit` rows.
+
+    Includes dry_run_ready rows (the outreach engine's output while it's
+    in dry-run mode) so the operator can verify the engine end-to-end
+    without flipping live. Real sends and dry-runs share the same row
+    shape; the template decorates dry-run rows with a pill.
+    """
     extra = [
-        "e.status = 'sent'",
+        "e.status in ('sent','dry_run_ready')",
         "e.sent_at >= now() - interval '30 days'",
     ]
     params: dict = {'lim': limit}
@@ -1240,6 +1246,7 @@ def outreach_sent(client_id: int | None = None, search: str | None = None,
         r['step_label'] = EMAIL_STEP_LABEL.get(r.get('email_number'), '—')
         r['sent_at_short'] = r['sent_at'].strftime('%-d %b %H:%M') if r.get('sent_at') else ''
         r['relative'] = relative_time(r['sent_at']) if r.get('sent_at') else ''
+        r['is_dry_run'] = (r.get('status') == 'dry_run_ready')
     return rows
 
 
@@ -1647,22 +1654,32 @@ def _inbox_snippet(text: str | None, limit: int = 140) -> str:
 
 
 def _reply_to_inbox_item(r: dict) -> dict:
-    """Normalise a crm.replies + parent lead/client row into the inbox shape."""
+    """Normalise a crm.replies + parent lead/client row into the inbox shape.
+
+    Orphan replies (no matched lead_id) still render — the matcher didn't
+    find an outbound to attach them to, so the operator handles them
+    manually. We badge them 'Orphan' and link to /inbox itself rather
+    than a 404'ing lead page.
+    """
     sentiment = r.get('sentiment') or 'neutral'
+    is_orphan = r.get('lead_id') is None
     return {
         'kind':         'reply',
         'id':           f"r:{r['id']}",
-        'href':         f"/leads/{r.get('lead_id')}",
-        'display_name': r.get('decision_maker_name') or r.get('business_name') or 'Unknown',
-        'company':      r.get('business_name') or '',
+        'href':         '/inbox' if is_orphan else f"/leads/{r.get('lead_id')}",
+        'display_name': (r.get('decision_maker_name')
+                         or r.get('business_name')
+                         or r.get('from_address')
+                         or 'Unknown sender'),
+        'company':      r.get('business_name') or ('Orphan reply' if is_orphan else ''),
         'subject':      r.get('subject') or '',
         'snippet':      _inbox_snippet(r.get('body')),
         'received_at':  r.get('detected_at'),
         'relative':     relative_time(r['detected_at']) if r.get('detected_at') else '—',
-        'signal_label': sentiment.capitalize(),
-        'signal_class': sentiment,            # positive / neutral / negative
+        'signal_label': 'Orphan' if is_orphan else sentiment.capitalize(),
+        'signal_class': 'orphan' if is_orphan else sentiment,
         'client_name':  r.get('client_name') or '',
-        'lead_status':  r.get('lead_status') or '',
+        'lead_status':  r.get('lead_status') or ('orphan' if is_orphan else ''),
     }
 
 
@@ -1747,9 +1764,11 @@ def inbox_items(*, tab: str = 'needs_you', limit: int = 200) -> list[dict]:
         items.sort(key=lambda x: x.get('received_at') or datetime.min, reverse=True)
         return items[:limit]
 
-    # Replies — join through to lead + client.
+    # Replies — left-join through to lead + client so orphan replies
+    # (no matched lead, from the reply engine matcher) still surface in
+    # 'Needs you' for manual triage.
     if tab == 'needs_you':
-        reply_where = "l.status = 'replied'"
+        reply_where = "(l.status = 'replied' or r.lead_id is null)"
         form_where  = "status = 'new'"
     else:  # done
         reply_where = "l.status in ('meeting','won','lost')"
@@ -1759,11 +1778,12 @@ def inbox_items(*, tab: str = 'needs_you', limit: int = 200) -> list[dict]:
     try:
         replies = fetch_all(f"""
             select r.id, r.lead_id, r.subject, r.body, r.sentiment, r.detected_at,
+                   r.from_address,
                    l.business_name, l.decision_maker_name, l.status as lead_status,
                    l.client_id, c.name as client_name
               from crm.replies r
-              join crm.leads   l on l.id = r.lead_id
-              join crm.clients c on c.id = l.client_id
+              left join crm.leads   l on l.id = r.lead_id
+              left join crm.clients c on c.id = l.client_id
              where {reply_where}
              order by r.detected_at desc
              limit %(lim)s
