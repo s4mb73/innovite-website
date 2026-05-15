@@ -59,9 +59,9 @@ def login():
             session['auth'] = True
             session.permanent = True
             # Honour the `next` param but only if it's a local path (open-redirect guard).
-            nxt = request.args.get('next') or request.form.get('next') or url_for('overview')
+            nxt = request.args.get('next') or request.form.get('next') or url_for('inbox')
             if not nxt.startswith('/') or nxt.startswith('//'):
-                nxt = url_for('overview')
+                nxt = url_for('inbox')
             return redirect(nxt)
         # Constant-ish delay to dampen brute-force feedback.
         time.sleep(0.3)
@@ -76,6 +76,13 @@ def logout():
 
 
 @app.route('/')
+def home():
+    # Inbox is the new daily entry. Overview lives on at /overview for the
+    # deeper "state of every client" view (chart + activity feed).
+    return redirect(url_for('inbox'))
+
+
+@app.route('/overview')
 def overview():
     db_error = None
     metrics = {
@@ -670,7 +677,11 @@ def inbox():
     """Unified Inbox — replies + form submissions awaiting operator action.
     Renamed from /inbound. Two tabs (needs_you / done). Drafts tab
     deferred until AI auto-reply backend exists (US-023); ?tab=drafts
-    falls back to needs_you via the INBOX_TABS membership check below."""
+    falls back to needs_you via the INBOX_TABS membership check below.
+
+    Also surfaces the dashboard 'Today' KPI strip — Overview's role as
+    the daily entry has been folded in here so the operator gets context
+    + the queue on one screen."""
     db_error = None
     tab = (request.args.get('tab') or 'needs_you').lower()
     if tab not in db.INBOX_TABS:
@@ -678,9 +689,14 @@ def inbox():
 
     counts = {k: 0 for k in db.INBOX_TABS}
     items: list[dict] = []
+    metrics = {
+        'total_leads': 0, 'emails_week': 0,
+        'reply_rate': 0.0, 'meetings_month': 0,
+    }
     try:
-        counts = db.inbox_tab_counts()
-        items  = db.inbox_items(tab=tab)
+        counts  = db.inbox_tab_counts()
+        items   = db.inbox_items(tab=tab)
+        metrics = db.dashboard_metrics()
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
 
@@ -690,6 +706,7 @@ def inbox():
         tab=tab,
         counts=counts,
         items=items,
+        metrics=metrics,
         db_error=db_error,
     )
 

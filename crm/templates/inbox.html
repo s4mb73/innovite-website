@@ -2,19 +2,41 @@
 {% block title %}Inbox · Innovite CRM{% endblock %}
 
 {% block content %}
-<div class="page-head">
-  <div>
-    <h1 class="page-title">Inbox</h1>
-    <p class="page-sub">Replies and form submissions waiting on you. One queue, one place.</p>
-  </div>
-</div>
-
 {% if db_error %}
 <div class="banner banner-err">
   <strong>Database unavailable.</strong>
   <span class="banner-detail">{{ db_error }}</span>
 </div>
 {% endif %}
+
+{# ── Today strip — KPIs that used to live on Overview ────── #}
+{% if metrics %}
+<div class="today-strip" aria-label="Today's headline metrics">
+  <div class="today-stat">
+    <span class="today-stat-num">{{ '{:,}'.format(metrics.emails_week or 0) }}</span>
+    <span class="today-stat-label">Sent · 7d</span>
+  </div>
+  <div class="today-stat">
+    <span class="today-stat-num">{{ metrics.reply_rate or 0 }}%</span>
+    <span class="today-stat-label">Reply rate · 7d</span>
+  </div>
+  <div class="today-stat">
+    <span class="today-stat-num">{{ '{:,}'.format(metrics.meetings_month or 0) }}</span>
+    <span class="today-stat-label">Meetings · 30d</span>
+  </div>
+  <div class="today-stat">
+    <span class="today-stat-num">{{ '{:,}'.format(metrics.total_leads or 0) }}</span>
+    <span class="today-stat-label">Total leads</span>
+  </div>
+</div>
+{% endif %}
+
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Inbox</h1>
+    <p class="page-sub">Replies and form submissions waiting on you. One queue, one place.</p>
+  </div>
+</div>
 
 {# ── Tabs ─────────────────────────────────────────────── #}
 {# Drafts tab deferred until AI auto-reply backend exists (US-023) #}
