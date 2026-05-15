@@ -72,10 +72,12 @@ crm/
 - `--red: #ef4444`
 
 ### Type
-- Outfit (300–700) for UI, Newsreader (400, 500) for headlines + metric numbers — both from Google Fonts.
-- Body 13–14px, eyebrow 11–11.5px uppercase letterspaced, metric numbers in Newsreader 22–32px tabular figures.
+- **Switzer** (variable axis, ITF / Fontshare) for UI — neo-grotesque, less ubiquitous than Outfit. CRM has diverged here from the marketing site (which still uses Outfit) — accept this until the marketing site is refreshed.
+- **Newsreader** (Google Fonts, 400 / 500 + italic) for page titles + metric numbers ONLY. Do not spread the serif to card titles, badges, tab labels, or anything < 17px — it loses meaning when over-applied.
+- **Body baseline**: Switzer 14px / weight 350 / line-height 1.6 / letter-spacing 0.005em. The 350 weight + extra tracking is dark-mode compensation (light text on dark reads heavier than the same weight on light).
+- **Type scale (6 sizes only)**: `11.5 / 13 / 14 / 17 / 22 / 28`. Never invent intermediate sizes. The cluster between 10 and 14 (10 / 10.5 / 11 / 12 / 12.5 / 13.5) is the classic "AI-slop" fuzzy-hierarchy tell — pick 11.5 or 13.
 - **Tabular figures** (`font-variant-numeric: tabular-nums`) on every metric, every table column.
-- Min font size 11.5px. **Never** Inter, Arial, system-default.
+- Min font size 11.5px. **Never** Inter, Arial, system-default. Never Outfit-look-alikes (DM Sans, Plus Jakarta, Manrope) — the whole point of Switzer is escaping that tier.
 
 ### Radii
 - `--r-sm: 10px` (buttons, inputs, pills)
