@@ -178,6 +178,18 @@ def _mark_failed(run_id: int, err: str) -> None:
         logger.exception("Failed to mark run %s as failed", run_id)
 
 
+def _write_heartbeat() -> None:
+    """Stamp crm.settings.worker_heartbeat once per tick. Never raises —
+    a DB blip mustn't take the loop down."""
+    try:
+        db.settings_set("worker_heartbeat", {
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+            "pid": os.getpid(),
+        })
+    except Exception:
+        logger.exception("heartbeat write failed (continuing)")
+
+
 def main() -> int:
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -194,6 +206,10 @@ def main() -> int:
     reset_state:    dict = {}
 
     while _running:
+        # Heartbeat first thing — if anything below crashes the loop, the
+        # last_seen still reflects when we were last alive.
+        _write_heartbeat()
+
         # Once-per-day at the first tick of a new London date.
         _maybe_reset_sent_today(reset_state)
 

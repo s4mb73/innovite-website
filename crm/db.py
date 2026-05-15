@@ -3009,6 +3009,57 @@ def settings_all() -> dict:
     return {k: settings_get(k) for k in SETTINGS_DEFAULTS}
 
 
+# ── Worker heartbeat ─────────────────────────────────────────────────
+# The crm-worker process upserts crm.settings.worker_heartbeat once per
+# poll tick (every 5s). This is the only signal /settings has that the
+# background loop is alive. /healthz deliberately stays DB-free, so we
+# can't piggyback on that.
+
+WORKER_HEARTBEAT_STALE_S = 180  # 3 minutes — generous given a 5s tick
+
+
+def worker_heartbeat() -> dict:
+    """Return {'last_seen': datetime|None, 'pid': int|None, 'stale': bool}.
+
+    Stale when last_seen is older than WORKER_HEARTBEAT_STALE_S or
+    missing entirely. Never raises — settings_get returns None on fixture
+    mode and we treat it as stale.
+    """
+    val = None
+    try:
+        val = settings_get('worker_heartbeat')
+    except Exception:
+        pass
+
+    if not isinstance(val, dict) or not val.get('last_seen'):
+        return {'last_seen': None, 'pid': None, 'stale': True}
+
+    last_seen: datetime | None = None
+    try:
+        raw = val['last_seen']
+        # Postgres can hand back already-parsed datetime via jsonb -> Python
+        # depending on the driver path; handle both.
+        if isinstance(raw, datetime):
+            last_seen = raw
+        else:
+            last_seen = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
+    except Exception:
+        last_seen = None
+
+    if last_seen is None:
+        return {'last_seen': None, 'pid': val.get('pid'), 'stale': True}
+
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+
+    age = (datetime.now(timezone.utc) - last_seen).total_seconds()
+    return {
+        'last_seen': last_seen,
+        'pid':       val.get('pid'),
+        'stale':     age > WORKER_HEARTBEAT_STALE_S,
+    }
+
+
 # ── System status ────────────────────────────────────────────────────
 # Surfaced read-only on the Settings page. Avoid heavy queries here —
 # the page is a glance-and-go status board, not a metrics dashboard.
@@ -3058,16 +3109,22 @@ def system_status() -> dict:
         except Exception:
             pass
 
-    # Last activity
-    try:
-        last = None
-        if not _settings_use_fixture():
-            r = fetch_one('select created_at from crm.activity_log order by created_at desc limit 1')
-            last = r.get('created_at') if r else None
-        if last:
-            snap['worker']['detail'] = f'Last activity {relative_time(last)} · 0 errors'
-    except Exception:
-        pass
+    # Worker — heartbeat is the source of truth. The activity_log fallback
+    # only mattered when there was no worker process; now that crm-worker
+    # runs continuously, a missing heartbeat is a real signal it's down.
+    if not _settings_use_fixture():
+        hb = worker_heartbeat()
+        if hb['stale']:
+            detail = 'No heartbeat in 3 min — check `systemctl status crm-worker`'
+            if hb['last_seen']:
+                detail = f'Stale · last seen {relative_time(hb["last_seen"])}'
+            snap['worker'] = {'state': 'down', 'detail': detail}
+        else:
+            pid_suffix = f' · pid {hb["pid"]}' if hb.get('pid') else ''
+            snap['worker'] = {
+                'state':  'healthy',
+                'detail': f'Last beat {relative_time(hb["last_seen"])}{pid_suffix}',
+            }
 
     return snap
 
