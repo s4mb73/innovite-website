@@ -17,9 +17,9 @@
 {% endif %}
 
 {# ── Tabs ─────────────────────────────────────────────── #}
+{# Drafts tab deferred until AI auto-reply backend exists (US-023) #}
 {% set tabs = [
   ('needs_you', 'Needs you', counts.needs_you),
-  ('drafts',    'Drafts',    counts.drafts),
   ('done',      'Done',      counts.done),
 ] %}
 <div class="tabbar" role="tablist" aria-label="Inbox view">
@@ -33,7 +33,10 @@
   {% endfor %}
 </div>
 
-{# ── Drafts tab — stub until AI auto-reply lands ─────── #}
+{# ── Drafts tab deferred (US-023) — the `tab == 'drafts'` branch below
+     is now unreachable from normal flow because db.INBOX_TABS no longer
+     contains 'drafts' and the route falls back to 'needs_you'. Kept for
+     when the AI auto-reply backend lands and the tab is re-enabled. #}
 {% if tab == 'drafts' %}
   <div class="empty">
     <strong>No drafts yet.</strong>

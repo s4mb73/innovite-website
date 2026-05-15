@@ -663,8 +663,9 @@ def outreach_toggle_pause(client_id: int):
 @app.route('/inbox')
 def inbox():
     """Unified Inbox — replies + form submissions awaiting operator action.
-    Renamed from /inbound. Three tabs (needs_you / drafts / done).
-    Drafts is stubbed until AI auto-reply generation lands."""
+    Renamed from /inbound. Two tabs (needs_you / done). Drafts tab
+    deferred until AI auto-reply backend exists (US-023); ?tab=drafts
+    falls back to needs_you via the INBOX_TABS membership check below."""
     db_error = None
     tab = (request.args.get('tab') or 'needs_you').lower()
     if tab not in db.INBOX_TABS:

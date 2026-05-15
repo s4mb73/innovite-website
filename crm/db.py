@@ -1645,7 +1645,7 @@ def _reply_thread_fixture(reply_id: int) -> dict | None:
 # replies (crm.replies) and inbound form submissions (crm.inbound_leads)
 # into a single shape. Drafts tab is stubbed — AI auto-reply generation
 # is a separate story when the backend lands.
-INBOX_TABS = ('needs_you', 'drafts', 'done')
+INBOX_TABS = ('needs_you', 'done')  # Drafts tab deferred until AI auto-reply backend exists (US-023)
 
 
 def _inbox_snippet(text: str | None, limit: int = 140) -> str:
@@ -1707,8 +1707,10 @@ def _form_to_inbox_item(r: dict) -> dict:
 
 
 def inbox_tab_counts() -> dict:
-    """Counts for the three Inbox tabs. Drafts is always 0 in POC mode."""
-    counts = {'needs_you': 0, 'drafts': 0, 'done': 0}
+    """Counts for the visible Inbox tabs (needs_you, done).
+
+    Drafts tab deferred until AI auto-reply backend exists (US-023)."""
+    counts = {'needs_you': 0, 'done': 0}
     if _inbound_use_fixture():
         forms = _inbound_local_fixture()
         replies = _replies_local_fixture()
@@ -1745,12 +1747,13 @@ def inbox_tab_counts() -> dict:
 
 
 def inbox_items(*, tab: str = 'needs_you', limit: int = 200) -> list[dict]:
-    """Unified inbox: replies + form submissions. Drafts tab returns []
-    until AI auto-reply generation lands (Epic 9 follow-up)."""
+    """Unified inbox: replies + form submissions.
+
+    Drafts tab deferred until AI auto-reply backend exists (US-023);
+    anything that arrives with tab='drafts' is normalised to 'needs_you'
+    via the INBOX_TABS membership check below."""
     if tab not in INBOX_TABS:
         tab = 'needs_you'
-    if tab == 'drafts':
-        return []
     if _inbound_use_fixture():
         forms = _inbound_local_fixture()
         replies = _replies_local_fixture()
