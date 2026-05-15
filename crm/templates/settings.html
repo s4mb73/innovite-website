@@ -183,6 +183,7 @@
             <span class="status-tag state-{{ it.state }}">
               <span class="status-dot"></span>
               {% if it.state == 'healthy' %}Active
+              {% elif it.state == 'missing' %}Missing — pipeline will not run
               {% elif it.state == 'idle' %}Idle
               {% elif it.state == 'down' %}Down
               {% else %}{{ it.state|capitalize }}{% endif %}

@@ -3154,20 +3154,32 @@ def _build_signature() -> str:
 
 # (env_name, friendly label, hostname/short identifier, prefix retained)
 _INTEGRATION_KEYS = [
-    ('ANTHROPIC_API_KEY', 'Anthropic Claude',     'api.anthropic.com',  'sk-ant-'),
-    ('DATABASE_URL',      'Supabase Postgres',    'pooler.supabase.co', ''),
-    ('RESEND_API_KEY',    'Resend (transactional)', 'api.resend.com',   're_'),
-    ('SLACK_WEBHOOK_URL', 'Slack webhook',        'hooks.slack.com',    ''),
-    ('COMPANIES_HOUSE_API_KEY', 'Companies House API', 'api.gov.uk',    ''),
+    ('ANTHROPIC_API_KEY',       'Anthropic Claude',       'api.anthropic.com',                     'sk-ant-'),
+    ('GOOGLE_PLACES_API_KEY',   'Google Places',          'maps.googleapis.com',                   'AIza'),
+    ('APOLLO_API_KEY',          'Apollo (decision-makers)', 'api.apollo.io',                       ''),
+    ('COMPANIES_HOUSE_API_KEY', 'Companies House API',    'api.company-information.service.gov.uk',''),
+    ('DATABASE_URL',            'Supabase Postgres',      'pooler.supabase.co',                    ''),
+    ('RESEND_API_KEY',          'Resend (transactional)', 'api.resend.com',                        're_'),
+    ('SLACK_WEBHOOK_URL',       'Slack webhook',          'hooks.slack.com',                       ''),
 ]
+
+# Keys whose absence blocks real pipeline runs. Surface these as 'missing'
+# (red) instead of 'idle' (grey) so an operator can't ship without them.
+_REQUIRED_FOR_PIPELINE = {
+    'ANTHROPIC_API_KEY',
+    'GOOGLE_PLACES_API_KEY',
+    'APOLLO_API_KEY',
+}
 
 # Plausible mock suffixes shown when the env var isn't set (POC demo)
 _INTEGRATION_MOCKS = {
-    'ANTHROPIC_API_KEY': '3f2a',
-    'RESEND_API_KEY':    'd29a',
+    'ANTHROPIC_API_KEY':       '3f2a',
+    'GOOGLE_PLACES_API_KEY':   'b8d1',
+    'APOLLO_API_KEY':          'e4a7',
+    'RESEND_API_KEY':          'd29a',
     'COMPANIES_HOUSE_API_KEY': '7c4b',
-    'SLACK_WEBHOOK_URL': '#sammy-leads',
-    'DATABASE_URL':      'innovite.db',
+    'SLACK_WEBHOOK_URL':       '#sammy-leads',
+    'DATABASE_URL':            'innovite.db',
 }
 
 
@@ -3206,6 +3218,8 @@ def integration_keys() -> list[dict]:
         masked, is_real = _mask_key(env_name, prefix)
         if is_real:
             state, detail = 'healthy', 'Active'
+        elif env_name in _REQUIRED_FOR_PIPELINE:
+            state, detail = 'missing', 'Missing — pipeline will not run'
         else:
             state, detail = 'idle', 'Not configured (using mock for demo)'
         out.append({

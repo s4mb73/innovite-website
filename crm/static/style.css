@@ -2472,6 +2472,7 @@ a { color:inherit; text-decoration:none; }
 .status-tag.state-throttled    { background:var(--amber-bg); color:var(--amber); }
 .status-tag.state-down         { background:rgba(239,68,68,.10); color:#fca5a5; }
 .status-tag.state-disconnected { background:rgba(239,68,68,.10); color:#fca5a5; }
+.status-tag.state-missing      { background:rgba(239,68,68,.10); color:#fca5a5; }
 .status-tag.state-muted        { background:var(--s3);       color:var(--t3); }
 .status-tag.state-paused       { background:var(--s3);       color:var(--t2); }
 .status-tag.state-unassigned   { background:var(--s3);       color:var(--t3); }
