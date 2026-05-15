@@ -27,14 +27,46 @@
   </div>
 
   <nav class="sb-nav" aria-label="Primary">
-    <a class="sb-item {% if active=='overview' %}is-active{% endif %}"  href="{{ url_for('overview') }}">Overview</a>
-    <a class="sb-item {% if active=='inbox'    %}is-active{% endif %}"  href="{{ url_for('inbox') }}">Inbox</a>
-    <a class="sb-item {% if active=='leads'    %}is-active{% endif %}"  href="{{ url_for('leads') }}">Leads</a>
-    <a class="sb-item {% if active=='outreach' %}is-active{% endif %}"  href="{{ url_for('outreach') }}">Outreach</a>
-    <a class="sb-item {% if active=='clients'  %}is-active{% endif %}"  href="{{ url_for('clients') }}">Clients</a>
-    <a class="sb-item {% if active=='reports'  %}is-active{% endif %}"  href="{{ url_for('reports') }}">Reports</a>
-    <a class="sb-item {% if active=='mailboxes' %}is-active{% endif %}" href="{{ url_for('mailboxes') }}">Mailboxes</a>
-    <a class="sb-item {% if active=='settings' %}is-active{% endif %}"  href="{{ url_for('settings') }}">Settings</a>
+    <div class="sb-group" data-section="daily">
+      <button class="sb-group-head" type="button" aria-expanded="true" aria-controls="sb-group-daily">
+        <span class="sb-group-label">Daily</span>
+        <svg class="sb-group-caret" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M3 4.5 L6 7.5 L9 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="sb-group-body" id="sb-group-daily">
+        <a class="sb-item {% if active=='inbox'    %}is-active{% endif %}"  href="{{ url_for('inbox') }}">Inbox</a>
+        <a class="sb-item {% if active=='overview' %}is-active{% endif %}"  href="{{ url_for('overview') }}">Overview</a>
+      </div>
+    </div>
+
+    <div class="sb-group" data-section="pipeline">
+      <button class="sb-group-head" type="button" aria-expanded="true" aria-controls="sb-group-pipeline">
+        <span class="sb-group-label">Pipeline</span>
+        <svg class="sb-group-caret" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M3 4.5 L6 7.5 L9 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="sb-group-body" id="sb-group-pipeline">
+        <a class="sb-item {% if active=='clients'  %}is-active{% endif %}"  href="{{ url_for('clients') }}">Clients</a>
+        <a class="sb-item {% if active=='leads'    %}is-active{% endif %}"  href="{{ url_for('leads') }}">Leads</a>
+        <a class="sb-item {% if active=='outreach' %}is-active{% endif %}"  href="{{ url_for('outreach') }}">Outreach</a>
+        <a class="sb-item {% if active=='reports'  %}is-active{% endif %}"  href="{{ url_for('reports') }}">Reports</a>
+      </div>
+    </div>
+
+    <div class="sb-group" data-section="setup">
+      <button class="sb-group-head" type="button" aria-expanded="true" aria-controls="sb-group-setup">
+        <span class="sb-group-label">Setup</span>
+        <svg class="sb-group-caret" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M3 4.5 L6 7.5 L9 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="sb-group-body" id="sb-group-setup">
+        <a class="sb-item {% if active=='mailboxes' %}is-active{% endif %}" href="{{ url_for('mailboxes') }}">Mailboxes</a>
+        <a class="sb-item {% if active=='settings'  %}is-active{% endif %}" href="{{ url_for('settings') }}">Settings</a>
+      </div>
+    </div>
   </nav>
 
   <div class="sb-foot">
@@ -46,6 +78,39 @@
 <main class="main">
   {% block content %}{% endblock %}
 </main>
+
+<script>
+  (function () {
+    var KEY = 'crm.sidebar.collapsed';
+    var collapsed;
+    try { collapsed = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); }
+    catch (e) { collapsed = new Set(); }
+
+    document.querySelectorAll('.sb-group').forEach(function (group) {
+      var section = group.dataset.section;
+      var head = group.querySelector('.sb-group-head');
+      var body = group.querySelector('.sb-group-body');
+      if (!head || !body) return;
+
+      var hasActive = !!body.querySelector('.is-active');
+      var shouldCollapse = collapsed.has(section) && !hasActive;
+      setState(head, body, !shouldCollapse);
+
+      head.addEventListener('click', function () {
+        var expanded = head.getAttribute('aria-expanded') === 'true';
+        setState(head, body, !expanded);
+        if (expanded) collapsed.add(section); else collapsed.delete(section);
+        try { localStorage.setItem(KEY, JSON.stringify(Array.from(collapsed))); }
+        catch (e) {}
+      });
+    });
+
+    function setState(head, body, expanded) {
+      head.setAttribute('aria-expanded', String(expanded));
+      body.hidden = !expanded;
+    }
+  })();
+</script>
 
 {% if undo_available %}
 <div class="undo-banner" role="status" aria-live="polite">
