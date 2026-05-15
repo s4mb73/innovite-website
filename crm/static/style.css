@@ -3649,7 +3649,7 @@ a { color:inherit; text-decoration:none; }
   align-items: center;
   justify-content: center;
   background: var(--bg, #0e0f14);
-  font-family: 'Outfit', system-ui, sans-serif;
+  font-family: 'Outfit', sans-serif;
   color: var(--fg, #e6e9f2);
 }
 .login-main {
