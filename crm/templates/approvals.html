@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}Approvals · Innovite CRM{% endblock %}
+
+{% block content %}
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong>
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+<div class="page-head">
+  <div>
+    <h1 class="page-title">
+      Approvals
+      {% if rows %}<span class="page-title-count">{{ rows|length }}</span>{% endif %}
+    </h1>
+    <p class="page-sub">Day-1 drafts waiting on you. Approve to ship on the next outreach tick. Follow-ups (Day 3, Day 7) ship automatically once the thread is approved.</p>
+  </div>
+</div>
+
+{% if client_pills %}
+<div class="approvals-pills" role="tablist" aria-label="Filter by client">
+  <a class="approvals-pill {% if not active_client_id %}is-active{% endif %}"
+     href="{{ url_for('approvals') }}">
+    All
+    {% set total_pending = client_pills | sum(attribute='pending') %}
+    <span class="approvals-pill-count">{{ total_pending }}</span>
+  </a>
+  {% for p in client_pills %}
+    <a class="approvals-pill {% if active_client_id == p.id %}is-active{% endif %}"
+       href="{{ url_for('approvals', client=p.id) }}">
+      {{ p.name }} <span class="approvals-pill-count">{{ p.pending }}</span>
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if rows %}
+<form method="post" action="{{ url_for('approvals_approve') }}" id="approvalsForm">
+  <div class="approvals-bulkbar">
+    <label class="approvals-selectall">
+      <input type="checkbox" id="approvalsSelectAll">
+      <span>Select all</span>
+    </label>
+    <div class="approvals-bulkbar-actions">
+      <button type="submit" class="btn btn-primary" id="approvalsApproveBtn" disabled>
+        Approve selected
+      </button>
+    </div>
+  </div>
+
+  <div class="approvals-list">
+    {% for r in rows %}
+    <article class="approvals-row" data-email-id="{{ r.id }}">
+      <header class="approvals-row-head">
+        <label class="approvals-check">
+          <input type="checkbox" name="ids" value="{{ r.id }}" class="approvals-row-check">
+        </label>
+        <div class="approvals-row-meta">
+          <div class="approvals-row-recipient">
+            <strong>{{ r.business_name }}</strong>
+            {% if r.decision_maker_name %}<span class="approvals-row-dm">· {{ r.decision_maker_name }}{% if r.decision_maker_title %}, {{ r.decision_maker_title }}{% endif %}</span>{% endif %}
+          </div>
+          <div class="approvals-row-tags">
+            <span class="approvals-tag approvals-tag-client">{{ r.client_name }}</span>
+            {% if r.grade %}<span class="approvals-tag approvals-tag-grade approvals-tag-grade-{{ r.grade|lower }}">Grade {{ r.grade }}</span>{% endif %}
+            {% if r.hook_type %}<span class="approvals-tag">{{ r.hook_type|replace('_', ' ') }}</span>{% endif %}
+            <span class="approvals-tag approvals-tag-addr">{{ r.to_address or 'no address' }}</span>
+            <span class="approvals-tag approvals-tag-time">{{ r.relative }}</span>
+          </div>
+        </div>
+        <div class="approvals-row-rowactions">
+          <button type="button" class="btn btn-quiet" data-action="edit">Edit</button>
+          <button type="button" class="btn btn-quiet" data-action="skip">Skip</button>
+        </div>
+      </header>
+
+      <div class="approvals-row-body">
+        <div class="approvals-row-subject">{{ r.subject }}</div>
+        <div class="approvals-row-snippet">{{ r.snippet }}{% if r.snippet|length >= 220 %}…{% endif %}</div>
+      </div>
+
+      <div class="approvals-row-edit" hidden>
+        <div class="approvals-edit-row">
+          <label class="approvals-edit-label">Subject</label>
+          <input type="text" class="approvals-edit-subject" value="{{ r.subject }}">
+        </div>
+        <div class="approvals-edit-row approvals-edit-row--body">
+          <label class="approvals-edit-label">Body</label>
+          <textarea class="approvals-edit-body" rows="12">{{ r.body }}</textarea>
+        </div>
+        <div class="approvals-edit-error" hidden></div>
+        <div class="approvals-edit-actions">
+          <button type="button" class="btn btn-quiet" data-edit-cancel>Cancel</button>
+          <button type="button" class="btn btn-primary" data-edit-save>Save and approve</button>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</form>
+
+<script>
+(function () {
+  const form       = document.getElementById('approvalsForm');
+  const selectAll  = document.getElementById('approvalsSelectAll');
+  const approveBtn = document.getElementById('approvalsApproveBtn');
+  const checks     = Array.from(document.querySelectorAll('.approvals-row-check'));
+
+  function updateBulkBtn() {
+    const any = checks.some(c => c.checked && !c.disabled);
+    approveBtn.disabled = !any;
+    if (selectAll) {
+      const visible = checks.filter(c => !c.disabled);
+      const allOn   = visible.length > 0 && visible.every(c => c.checked);
+      selectAll.checked = allOn;
+    }
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      checks.filter(c => !c.disabled).forEach(c => { c.checked = selectAll.checked; });
+      updateBulkBtn();
+    });
+  }
+  checks.forEach(c => c.addEventListener('change', updateBulkBtn));
+
+  document.querySelectorAll('.approvals-row').forEach(row => {
+    const id       = row.dataset.emailId;
+    const editArea = row.querySelector('.approvals-row-edit');
+    const bodyArea = row.querySelector('.approvals-row-body');
+    const errEl    = row.querySelector('.approvals-edit-error');
+    const rowCheck = row.querySelector('.approvals-row-check');
+
+    function removeRow() {
+      row.classList.add('approvals-row--leaving');
+      setTimeout(() => {
+        row.remove();
+        // Refresh bulk button state in case the only-checked row left.
+        updateBulkBtn();
+        // If list is now empty, prompt a reload so the empty state shows.
+        if (!document.querySelector('.approvals-row')) {
+          window.location.reload();
+        }
+      }, 220);
+    }
+
+    function showErr(msg) {
+      if (!errEl) return;
+      errEl.textContent = msg;
+      errEl.hidden = false;
+    }
+
+    row.querySelectorAll('[data-action="edit"]').forEach(b =>
+      b.addEventListener('click', () => {
+        editArea.hidden = false;
+        bodyArea.hidden = true;
+        const ta = editArea.querySelector('.approvals-edit-body');
+        if (ta) ta.focus();
+      }));
+
+    row.querySelectorAll('[data-edit-cancel]').forEach(b =>
+      b.addEventListener('click', () => {
+        editArea.hidden = true;
+        bodyArea.hidden = false;
+        if (errEl) errEl.hidden = true;
+      }));
+
+    row.querySelectorAll('[data-edit-save]').forEach(b =>
+      b.addEventListener('click', async () => {
+        const subj = editArea.querySelector('.approvals-edit-subject').value.trim();
+        const body = editArea.querySelector('.approvals-edit-body').value.trim();
+        if (!subj || !body) {
+          showErr('Subject and body are both required.');
+          return;
+        }
+        const fd = new FormData();
+        fd.append('subject', subj);
+        fd.append('body', body);
+        b.disabled = true;
+        try {
+          const res = await fetch(`/approvals/${id}/edit-approve`, {method: 'POST', body: fd});
+          const j   = await res.json().catch(() => ({ok: false, error: 'bad_response'}));
+          if (res.ok && j.ok) {
+            removeRow();
+          } else {
+            showErr('Could not save: ' + (j.error || 'unknown'));
+            b.disabled = false;
+          }
+        } catch (e) {
+          showErr('Network error — your text is preserved. Try again.');
+          b.disabled = false;
+        }
+      }));
+
+    row.querySelectorAll('[data-action="skip"]').forEach(b =>
+      b.addEventListener('click', async () => {
+        if (!confirm('Skip this draft? The send will be cancelled. The lead stays in its current status.')) return;
+        b.disabled = true;
+        try {
+          const res = await fetch(`/approvals/${id}/skip`, {method: 'POST'});
+          const j   = await res.json().catch(() => ({ok: false}));
+          if (res.ok && j.ok) {
+            if (rowCheck) { rowCheck.checked = false; rowCheck.disabled = true; }
+            removeRow();
+          } else {
+            alert('Could not skip: ' + (j.error || 'unknown'));
+            b.disabled = false;
+          }
+        } catch (e) {
+          alert('Network error. Try again.');
+          b.disabled = false;
+        }
+      }));
+  });
+
+  updateBulkBtn();
+})();
+</script>
+
+{% else %}
+  <div class="empty">
+    {% if active_client_name %}
+      <strong>Nothing waiting on you for {{ active_client_name }}.</strong>
+      New drafts will appear here after the next pipeline run completes.
+    {% else %}
+      <strong>Inbox zero on Approvals.</strong>
+      When the pipeline produces new Day-1 drafts, they'll surface here for review before sending. Day 3 and Day 7 follow-ups ship automatically once a thread is approved.
+    {% endif %}
+  </div>
+{% endif %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-stack" aria-live="polite">
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+{% endblock %}

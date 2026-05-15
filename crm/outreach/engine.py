@@ -214,11 +214,15 @@ def _maybe_schedule_followup(email_row: dict, settings: dict, mode: str) -> None
         next_step,
     )
 
+    # Follow-ups inherit approval from the thread — the Day-1 cold touch
+    # already passed the operator's gate, so Day-3 / Day-7 ship without
+    # a second click. (See /approvals — only Day-1 goes through the gate.)
     db.execute(
         """insert into crm.emails
              (lead_id, client_id, email_number, subject, body, to_address,
-              status, scheduled_at, kind)
-           values (%s, %s, %s, %s, %s, %s, 'scheduled', %s, 'cadence')""",
+              status, scheduled_at, kind, needs_approval, approved_at, approved_by)
+           values (%s, %s, %s, %s, %s, %s, 'scheduled', %s, 'cadence',
+                   false, now(), 'cadence_inherit')""",
         (
             email_row["lead_id"],
             email_row["client_id"],
@@ -238,6 +242,11 @@ def _ready_emails(limit: int = 50) -> list[dict]:
     Joins lead + client for the gate inputs. lead.status='replied' is the
     canonical 'lead has replied' signal — Reply Engine sets it when an
     inbound match lands.
+
+    needs_approval=true rows are filtered here (not in policy) because
+    they are explicitly *not ready* — they're sitting in /approvals
+    waiting on the operator. They'll surface here on the next tick after
+    approval, with no further gate logic required.
     """
     return db.fetch_all("""
         select e.id, e.lead_id, e.client_id, e.email_number, e.subject, e.body,
@@ -248,6 +257,7 @@ def _ready_emails(limit: int = 50) -> list[dict]:
         join crm.leads l on l.id = e.lead_id
         join crm.clients c on c.id = e.client_id
         where e.status = 'scheduled'
+          and e.needs_approval = false
           and (e.scheduled_at is null or e.scheduled_at <= now())
         order by coalesce(e.scheduled_at, e.created_at)
         limit %s

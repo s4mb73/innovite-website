@@ -195,8 +195,32 @@ def client_new():
             errors=errors,
         ), 500
 
-    flash(f"{form_in['name']} added. Run Find new leads when you're ready.", 'success')
-    return redirect(url_for('client_detail', client_id=new_id))
+    # Save & run: enqueue the first pipeline run immediately so the
+    # operator lands on /approvals already populating instead of having
+    # to click 'Find new leads' from client detail. The worker picks the
+    # row up; the new-client redirect doesn't wait on it.
+    try:
+        db.fetch_one(
+            """insert into crm.pipeline_runs (client_id, status, mode, triggered_by)
+               values (%s, 'pending', 'onboarding', 'operator')
+               returning id""",
+            (new_id,),
+        )
+        flash(
+            f"{form_in['name']} added. First pipeline run queued — "
+            f"drafts will appear in Approvals as the run completes.",
+            'success',
+        )
+        return redirect(url_for('approvals', client=new_id))
+    except Exception as e:
+        # Client was created; only the run-enqueue failed. Land on the
+        # client page so the operator can retry from there.
+        flash(
+            f"{form_in['name']} added, but couldn't queue the first pipeline run: {e}. "
+            f"Click Find new leads from the client page when ready.",
+            'error',
+        )
+        return redirect(url_for('client_detail', client_id=new_id))
 
 
 def _parse_client_form(request):
@@ -532,6 +556,17 @@ def leads_undo():
     except Exception as e:
         flash(f'Undo failed: {e}', 'error')
     return redirect(request.referrer or url_for('leads'))
+
+
+@app.context_processor
+def inject_approvals_count():
+    """Surface the pending-approvals count to the sidebar on every page.
+    Cheap query (partial index on needs_approval=true); a single int."""
+    try:
+        return {'approvals_pending_count': db.approvals_total()}
+    except Exception:
+        # Never break the sidebar on a DB blip — just hide the badge.
+        return {'approvals_pending_count': 0}
 
 
 @app.context_processor
@@ -1039,6 +1074,99 @@ def outreach_suppress():
     flash(f'Suppressed {address}.' if created else f'{address} was already suppressed.',
           'success')
     return redirect(request.referrer or url_for('outreach', tab='bounces'))
+
+
+# ── Approvals (Week 2 — outbound draft review queue) ────────────────
+# /approvals lists every Day-1 draft the pipeline produced that has not
+# yet been approved by the operator. The outreach engine refuses to send
+# rows where needs_approval=true, so this screen is the gate between
+# the pipeline and the SMTP path.
+
+
+@app.route('/approvals')
+def approvals():
+    db_error = None
+    client_raw = request.args.get('client')
+    client_id  = int(client_raw) if (client_raw or '').isdigit() else None
+    search     = (request.args.get('q') or '').strip() or None
+
+    rows: list[dict] = []
+    client_pills: list[dict] = []
+    try:
+        client_pills = db.approvals_count_per_client()
+        rows         = db.approvals_pending(client_id=client_id, search=search)
+    except Exception as e:
+        db_error = str(e).splitlines()[0][:240]
+
+    active_client_name = None
+    if client_id:
+        for p in client_pills:
+            if p['id'] == client_id:
+                active_client_name = p['name']
+                break
+
+    return render_template(
+        'approvals.html',
+        active='approvals',
+        rows=rows,
+        client_pills=client_pills,
+        active_client_id=client_id,
+        active_client_name=active_client_name,
+        search=search or '',
+        db_error=db_error,
+    )
+
+
+@app.post('/approvals/approve')
+def approvals_approve():
+    """Bulk approve N drafts. Form field `ids` is a list of email ids."""
+    ids_raw = request.form.getlist('ids')
+    ids = [int(x) for x in ids_raw if x.isdigit()]
+    if not ids:
+        flash('Pick at least one draft to approve.', 'error')
+        return redirect(request.referrer or url_for('approvals'))
+    try:
+        result = db.approvals_bulk_approve(ids, operator='operator')
+        n = result['approved']
+        if n == 0:
+            flash('No drafts approved — they may have been handled already.', 'info')
+        else:
+            flash(
+                f'Approved {n} draft{"s" if n != 1 else ""}. '
+                f'The outreach engine will pick {"them" if n != 1 else "it"} up on the next tick.',
+                'success',
+            )
+    except Exception as e:
+        flash(f'Approve failed: {e}', 'error')
+    return redirect(request.referrer or url_for('approvals'))
+
+
+@app.post('/approvals/<int:email_id>/skip')
+def approvals_skip(email_id: int):
+    """Cancel a single queued draft without sending."""
+    try:
+        db.approvals_skip(email_id, operator='operator')
+        return {'ok': True}
+    except LookupError:
+        return {'ok': False, 'error': 'not_found'}, 404
+    except Exception as e:
+        return {'ok': False, 'error': str(e)[:200]}, 500
+
+
+@app.post('/approvals/<int:email_id>/edit-approve')
+def approvals_edit_approve(email_id: int):
+    """Update subject + body, approve in one transaction."""
+    subject = (request.form.get('subject') or '').strip()
+    body    = (request.form.get('body') or '').strip()
+    try:
+        db.approvals_edit_and_approve(email_id, subject, body, operator='operator')
+        return {'ok': True}
+    except ValueError as e:
+        return {'ok': False, 'error': str(e)}, 400
+    except LookupError:
+        return {'ok': False, 'error': 'not_found'}, 404
+    except Exception as e:
+        return {'ok': False, 'error': str(e)[:200]}, 500
 
 
 # ── Pipeline runner (US-001 — Find new leads) ────────────────────────

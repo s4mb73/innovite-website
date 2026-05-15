@@ -1210,9 +1210,14 @@ _OUTREACH_SELECT = """
 
 
 def outreach_today(client_id: int | None = None, search: str | None = None) -> list[dict]:
-    """Scheduled sends for today (calendar day, Europe/London)."""
+    """Scheduled sends for today (calendar day, Europe/London).
+
+    Excludes rows still awaiting approval — those live in /approvals,
+    not in the Outreach scheduled queue, so the operator doesn't see
+    them in two places."""
     extra = [
         "e.status = 'scheduled'",
+        "e.needs_approval = false",
         "e.scheduled_at >= date_trunc('day', now() at time zone 'Europe/London') at time zone 'Europe/London'",
         "e.scheduled_at <  (date_trunc('day', now() at time zone 'Europe/London') + interval '1 day') at time zone 'Europe/London'",
     ]
@@ -1253,9 +1258,13 @@ def outreach_sent(client_id: int | None = None, search: str | None = None,
 
 
 def outreach_followups(client_id: int | None = None, search: str | None = None) -> list[dict]:
-    """Day-3 / Day-7 emails scheduled within the next 7 days (excluding today)."""
+    """Day-3 / Day-7 emails scheduled within the next 7 days (excluding today).
+
+    Follow-ups inherit approval from the thread (Day 1 already passed the
+    operator's gate) so they're always needs_approval=false."""
     extra = [
         "e.status = 'scheduled'",
+        "e.needs_approval = false",
         "e.email_number in (2, 3)",
         "e.scheduled_at >= (date_trunc('day', now() at time zone 'Europe/London') + interval '1 day') at time zone 'Europe/London'",
         "e.scheduled_at <  (date_trunc('day', now() at time zone 'Europe/London') + interval '8 days') at time zone 'Europe/London'",
@@ -1289,6 +1298,175 @@ def outreach_bounces(client_id: int | None = None, search: str | None = None,
         head   = reason.split('—', 1)[0].strip().lower() if '—' in reason else ''
         r['severity'] = head if head in ('hard', 'soft') else 'unknown'
     return rows
+
+
+# ── Approvals (Week 2) ───────────────────────────────────────────────
+# The gate between drafted Day-1 emails and the outreach engine. New
+# drafts default to needs_approval=true (column default in migration
+# 0018). Day-3 / Day-7 follow-ups inherit approval from the thread.
+#
+# The approvals queue surfaces rows where status='scheduled' AND
+# needs_approval=true. The outreach engine refuses to ship them until
+# approved. Bulk approve flips needs_approval=false + stamps approved_at;
+# the engine picks them up on its next tick.
+
+def approvals_pending(client_id: int | None = None, search: str | None = None,
+                      limit: int = 200) -> list[dict]:
+    """Drafts waiting on a human. Newest first — the operator catches up
+    on the most recent pipeline run first."""
+    extra = [
+        "e.status = 'scheduled'",
+        "e.needs_approval = true",
+    ]
+    params: dict = {'lim': limit}
+    where = _outreach_where(extra, params, client_id, search)
+    rows = fetch_all(f"""
+        select e.id, e.email_number, e.subject, e.body, e.to_address,
+               e.scheduled_at, e.created_at,
+               l.id as lead_id, l.business_name, l.decision_maker_name,
+               l.decision_maker_title, l.hook_type, l.grade,
+               c.id as client_id, c.name as client_name
+          from crm.emails e
+          join crm.leads   l on l.id = e.lead_id
+          join crm.clients c on c.id = e.client_id
+         where {where}
+         order by e.created_at desc
+         limit %(lim)s
+    """, params)
+    for r in rows:
+        r['relative'] = relative_time(r['created_at']) if r.get('created_at') else ''
+        body = (r.get('body') or '').strip()
+        # Snippet: first 220 chars of body, single-spaced. The full body
+        # is on the row for the inline editor; this is for the list view.
+        r['snippet'] = ' '.join(body.split())[:220]
+    return rows
+
+
+def approvals_count_per_client() -> list[dict]:
+    """Per-client pending counts for the client filter pills.
+
+    Returns only clients that have at least one pending row — keeps the
+    pill row tight and avoids zero-count clutter."""
+    return fetch_all("""
+        select c.id, c.name, count(*) as pending
+          from crm.emails e
+          join crm.clients c on c.id = e.client_id
+         where e.status = 'scheduled'
+           and e.needs_approval = true
+         group by c.id, c.name
+         order by pending desc, c.name asc
+    """)
+
+
+def approvals_total() -> int:
+    """Total pending approvals across all clients — used by the sidebar
+    badge and the page header count."""
+    row = fetch_one("""
+        select count(*) as n
+          from crm.emails
+         where status = 'scheduled'
+           and needs_approval = true
+    """)
+    return int(row['n']) if row else 0
+
+
+def approvals_bulk_approve(email_ids: list[int],
+                           operator: str = 'operator') -> dict:
+    """Flip needs_approval=false on N rows. Stamps approved_at/approved_by
+    and writes an activity_log row per email. Returns {approved: int}.
+
+    Idempotent: rows already approved are no-ops (the where clause
+    filters them out)."""
+    if not email_ids:
+        return {'approved': 0}
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                update crm.emails
+                   set needs_approval = false,
+                       approved_at    = now(),
+                       approved_by    = %s
+                 where id = any(%s)
+                   and needs_approval = true
+                   and status = 'scheduled'
+                returning id, lead_id, client_id
+            """, (operator, email_ids))
+            updated = cur.fetchall()
+            for r in updated:
+                cur.execute(
+                    "insert into crm.activity_log (client_id, lead_id, action, detail) "
+                    "values (%s, %s, 'email_approved', %s)",
+                    (r['client_id'], r['lead_id'], f"Day-1 draft approved (email {r['id']})"),
+                )
+        conn.commit()
+    return {'approved': len(updated)}
+
+
+def approvals_skip(email_id: int, operator: str = 'operator',
+                   reason: str = 'operator_skipped') -> dict:
+    """Cancel a queued draft without sending. Used by the Skip action.
+
+    The lead stays in 'new' status — the operator just decided this one
+    draft wasn't worth sending; they can re-run the pipeline or change
+    the lead status manually."""
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                update crm.emails
+                   set status        = 'cancelled',
+                       cancel_reason = %s,
+                       skip_reason   = %s,
+                       approved_at   = now(),
+                       approved_by   = %s
+                 where id = %s
+                   and status = 'scheduled'
+                returning id, lead_id, client_id
+            """, (reason, reason, operator, email_id))
+            row = cur.fetchone()
+            if not row:
+                raise LookupError(f'No pending email {email_id}')
+            cur.execute(
+                "insert into crm.activity_log (client_id, lead_id, action, detail) "
+                "values (%s, %s, 'email_skipped', %s)",
+                (row['client_id'], row['lead_id'], f"draft skipped — {reason}"),
+            )
+        conn.commit()
+    return {'skipped': 1, 'email_id': email_id}
+
+
+def approvals_edit_and_approve(email_id: int, subject: str, body: str,
+                               operator: str = 'operator') -> dict:
+    """Update subject + body, then approve in one transaction. The most
+    common flow when a draft is 80% right and needs a line tweaked."""
+    if not (subject or '').strip():
+        raise ValueError('subject_required')
+    if not (body or '').strip():
+        raise ValueError('body_required')
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                update crm.emails
+                   set subject        = %s,
+                       body           = %s,
+                       needs_approval = false,
+                       approved_at    = now(),
+                       approved_by    = %s
+                 where id = %s
+                   and needs_approval = true
+                   and status = 'scheduled'
+                returning id, lead_id, client_id
+            """, (subject.strip(), body.strip(), operator, email_id))
+            row = cur.fetchone()
+            if not row:
+                raise LookupError(f'No pending email {email_id}')
+            cur.execute(
+                "insert into crm.activity_log (client_id, lead_id, action, detail) "
+                "values (%s, %s, 'email_edited_approved', %s)",
+                (row['client_id'], row['lead_id'],
+                 f"draft edited and approved (email {row['id']})"),
+            )
+        conn.commit()
+    return {'approved': 1, 'email_id': email_id}
 
 
 def leads_for_csv(
