@@ -144,7 +144,10 @@ mock_client = {'id': 1, 'name': 'ROCA', 'industry': 'Pro services',
                'locations_extra': 0,
                'last_find_relative': '14h ago',
                'last_find_days': 0,
-               'op_state': 'healthy'}
+               'op_state': 'healthy',
+               # ↓ added in cc2fc96 (client schedule card)
+               'daily_pipeline_run_at': None,
+               'pipeline_paused': False}
 mock_lead = {**{c: None for c in [
     'id','business_name','address','city','phone','email','website',
     'google_rating','google_review_count','google_maps_url',
