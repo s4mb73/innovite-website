@@ -211,6 +211,19 @@ a { color:inherit; text-decoration:none; }
   color:#fca5a5;
 }
 .banner-err strong { color:#fda4a4; font-weight:600; }
+.banner-warn {
+  background:var(--amber-bg);
+  border:1px solid rgba(232,164,58,.20);
+  color:var(--amber);
+}
+.banner-warn strong { color:var(--amber); font-weight:600; }
+.banner-warn code {
+  font-family:'SF Mono','Menlo',monospace;
+  font-size:12px;
+  background:rgba(255,255,255,.04);
+  padding:1px 5px;
+  border-radius:3px;
+}
 .banner-detail { font-family:'SF Mono','Menlo',monospace; font-size:11.5px; color:var(--t3); }
 
 /* ── Page head ───────────────────────────────────────── */

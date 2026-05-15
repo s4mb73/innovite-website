@@ -628,6 +628,10 @@ def outreach():
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
 
+    outreach_is_live = (
+        os.environ.get('OUTREACH_MODE', 'dry_run') == 'live'
+    )
+
     return render_template(
         'outreach.html',
         active='outreach',
@@ -639,6 +643,7 @@ def outreach():
         finder_clients=finder_clients,
         rows=rows,
         f={'client_id': client_id, 'search': search},
+        outreach_is_live=outreach_is_live,
         db_error=db_error,
     )
 

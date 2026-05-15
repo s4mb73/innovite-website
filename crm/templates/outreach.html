@@ -22,6 +22,14 @@
 </div>
 {% endif %}
 
+{% if not outreach_is_live %}
+<div class="banner banner-warn">
+  <strong>Dry-run mode.</strong>
+  Outreach is running in dry-run — no emails are being sent.
+  Set <code>OUTREACH_MODE=live</code> in <code>/etc/innovite/crm-worker.env</code> to enable sending.
+</div>
+{% endif %}
+
 {# ── KPIs ─────────────────────────────────────────────── #}
 {% set k = kpis %}
 <div class="metrics">
