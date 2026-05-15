@@ -252,6 +252,43 @@
     });
   })();
 
+  // Keyboard nav on the leads table: j/k to move, x to toggle select,
+  // enter to open. Suspended while typing in an input.
+  (function () {
+    const rows = Array.from(document.querySelectorAll('.lead-tr'));
+    if (!rows.length) return;
+    let idx = -1;
+    function paint() {
+      rows.forEach((r, i) => r.classList.toggle('is-kb-focus', i === idx));
+      if (idx >= 0) rows[idx].scrollIntoView({block: 'nearest'});
+    }
+    function isTyping(e) {
+      const t = e.target;
+      return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    }
+    document.addEventListener('keydown', e => {
+      if (isTyping(e)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'j') {
+        e.preventDefault();
+        idx = idx < 0 ? 0 : Math.min(idx + 1, rows.length - 1);
+        paint();
+      } else if (e.key === 'k') {
+        e.preventDefault();
+        idx = idx < 0 ? 0 : Math.max(idx - 1, 0);
+        paint();
+      } else if (e.key === 'x' && idx >= 0) {
+        e.preventDefault();
+        const cb = rows[idx].querySelector('input[type="checkbox"][name="ids"]');
+        if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event('change', {bubbles: true})); }
+      } else if (e.key === 'Enter' && idx >= 0) {
+        e.preventDefault();
+        const href = rows[idx].dataset.href;
+        if (href) window.location = href;
+      }
+    });
+  })();
+
   // Bulk-action bar: show when any checkbox is ticked.
   (function () {
     const form  = document.getElementById('bulkForm');

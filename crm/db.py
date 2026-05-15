@@ -575,6 +575,38 @@ def all_clients_min() -> list[dict]:
     return fetch_all("select id, name from crm.clients order by name")
 
 
+def quick_search(q: str, limit_per_kind: int = 8) -> dict:
+    """Cross-resource search for the ⌘K palette.
+
+    Returns {'clients': [...], 'leads': [...]} — small, ranked lists
+    suitable for an interactive picker. Empty query → empty results
+    (recent items are surfaced by the palette frontend separately if
+    we ever add that)."""
+    q = (q or '').strip()
+    if not q:
+        return {'clients': [], 'leads': []}
+    pattern = f'%{q}%'
+    clients = fetch_all("""
+        select id, name
+          from crm.clients
+         where name ilike %s
+         order by name
+         limit %s
+    """, (pattern, limit_per_kind))
+    leads = fetch_all("""
+        select l.id, l.business_name, l.decision_maker_name, l.status,
+               c.name as client_name
+          from crm.leads l
+          left join crm.clients c on c.id = l.client_id
+         where l.business_name        ilike %s
+            or l.decision_maker_name  ilike %s
+            or l.email                ilike %s
+         order by l.created_at desc
+         limit %s
+    """, (pattern, pattern, pattern, limit_per_kind))
+    return {'clients': clients, 'leads': leads}
+
+
 def leads_count_per_client(*, status: str | None = None,
                            search: str | None = None) -> list[dict]:
     """Active clients with their lead counts under the current visible
@@ -2737,6 +2769,56 @@ def reports_clients_min() -> list[dict]:
         return [{'id': c['id'], 'name': c['name']}
                 for c in _REPORTS_CLIENTS_FIXTURE]
     return all_clients_min()
+
+
+def reports_rollup(days: int = 30) -> dict:
+    """Cross-client headline numbers for the top of /reports.
+
+    Deliberately a thin counts+sum query — not a replacement for the
+    per-client reports_kpis, just the 'how is the agency doing overall'
+    glance that the previous IA forced operators to compute by clicking
+    through every client tab.
+    """
+    if _reports_use_fixture():
+        # Sum the fixture across clients so the demo strip lights up too.
+        meetings = 0
+        won = 0
+        pipeline = 0
+        for cid in (1, 2):
+            for row in _reports_wins_fixture(cid, days):
+                if row['outcome'] == 'meeting':
+                    meetings += 1
+                elif row['outcome'] == 'won':
+                    won += 1
+                    pipeline += int(row.get('deal_value') or 0)
+        return {
+            'clients':        len(_REPORTS_CLIENTS_FIXTURE),
+            'meetings':       meetings,
+            'won':            won,
+            'pipeline_value': pipeline,
+            'days':           days,
+        }
+
+    # No deal_value column on crm.leads — pipeline is estimated as
+    # won_count × avg deal value, the same convention used in the
+    # per-client reports_kpis path.
+    row = fetch_one("""
+        with w as (select now() - make_interval(days => %(d)s) as t_start)
+        select
+          (select count(*) from crm.clients)                                  as clients,
+          (select count(*) from crm.leads, w
+              where status = 'meeting' and updated_at >= t_start)             as meetings,
+          (select count(*) from crm.leads, w
+              where status = 'won'     and updated_at >= t_start)             as won
+    """, {'d': days}) or {}
+    won = int(row.get('won') or 0)
+    return {
+        'clients':        int(row.get('clients') or 0),
+        'meetings':       int(row.get('meetings') or 0),
+        'won':            won,
+        'pipeline_value': won * REPORTS_DEFAULT_AVG_DEAL_VALUE,
+        'days':           days,
+    }
 
 
 def reports_client_summary(client_id: int) -> dict | None:

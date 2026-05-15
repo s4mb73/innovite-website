@@ -844,8 +844,10 @@ def reports():
     targets: dict        = db.reports_targets(days)
     narrative: str       = ''
 
+    rollup: dict = {'clients': 0, 'meetings': 0, 'won': 0, 'pipeline_value': 0, 'days': days}
     try:
         clients_min = db.reports_clients_min()
+        rollup      = db.reports_rollup(days)
         client_raw = request.args.get('client')
         client_id = int(client_raw) if (client_raw or '').isdigit() else None
         if client_id is None and clients_min:
@@ -905,6 +907,7 @@ def reports():
         sequence=sequence,
         wins=wins,
         targets=targets,
+        rollup=rollup,
         mailto_url=mailto_url,
         db_error=db_error,
     )
@@ -1220,6 +1223,20 @@ def pipeline_run_status(run_id: int):
         if row.get(k) is not None:
             row[k] = row[k].isoformat()
     return jsonify(row)
+
+
+@app.get('/api/search')
+def api_search():
+    """JSON-only endpoint that powers the ⌘K command palette.
+
+    Returns {'clients': [...], 'leads': [...]} — capped at 8 each so
+    the palette stays scannable. Empty query → empty result set
+    (the palette's empty state advertises shortcuts in that case)."""
+    q = (request.args.get('q') or '').strip()
+    try:
+        return jsonify(db.quick_search(q))
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
 
 
 @app.route('/healthz')

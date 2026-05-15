@@ -54,6 +54,185 @@
   {% block content %}{% endblock %}
 </main>
 
+{# ── ⌘K command palette — global, every authenticated page ───── #}
+<div class="palette-overlay" id="paletteOverlay" hidden></div>
+<div class="palette" id="palette" hidden role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="palette-input-wrap">
+    <input type="text" id="paletteInput" class="palette-input"
+           placeholder="Jump to a client or lead…"
+           autocomplete="off" spellcheck="false">
+    <kbd class="palette-kbd">esc</kbd>
+  </div>
+  <div class="palette-results" id="paletteResults">
+    <div class="palette-empty">
+      Start typing to search clients and leads. <kbd>↑</kbd> <kbd>↓</kbd> to move, <kbd>↵</kbd> to open.
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    const root      = document.getElementById('palette');
+    const overlay   = document.getElementById('paletteOverlay');
+    const input     = document.getElementById('paletteInput');
+    const results   = document.getElementById('paletteResults');
+    if (!root) return;
+
+    let isOpen = false;
+    let currentItems = [];   // flat list for keyboard nav
+    let activeIdx = -1;
+    let debounceT = null;
+    let lastQ = '';
+
+    function open() {
+      if (isOpen) return;
+      isOpen = true;
+      root.hidden = false;
+      overlay.hidden = false;
+      requestAnimationFrame(() => {
+        root.classList.add('is-open');
+        overlay.classList.add('is-open');
+        input.focus();
+        input.select();
+      });
+    }
+    function close() {
+      if (!isOpen) return;
+      isOpen = false;
+      root.classList.remove('is-open');
+      overlay.classList.remove('is-open');
+      setTimeout(() => {
+        root.hidden = true;
+        overlay.hidden = true;
+        input.value = '';
+        renderEmpty();
+        currentItems = [];
+        activeIdx = -1;
+        lastQ = '';
+      }, 180);
+    }
+
+    function renderEmpty() {
+      results.innerHTML = '<div class="palette-empty">Start typing to search clients and leads. <kbd>↑</kbd> <kbd>↓</kbd> to move, <kbd>↵</kbd> to open.</div>';
+    }
+    function escapeHtml(s) {
+      return (s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      })[c]);
+    }
+    function renderGroup(label, items, builder) {
+      if (!items.length) return '';
+      return (
+        '<div class="palette-group-label">' + label + '</div>' +
+        items.map(builder).join('')
+      );
+    }
+    function clientItem(c) {
+      return '<a class="palette-item" data-href="/clients/' + c.id + '">' +
+             '<span class="palette-item-kind">Client</span>' +
+             '<span class="palette-item-title">' + escapeHtml(c.name) + '</span>' +
+             '</a>';
+    }
+    function leadItem(l) {
+      const dm = l.decision_maker_name ? ' · ' + escapeHtml(l.decision_maker_name) : '';
+      const cl = l.client_name ? '<span class="palette-item-meta">' + escapeHtml(l.client_name) + '</span>' : '';
+      return '<a class="palette-item" data-href="/leads/' + l.id + '">' +
+             '<span class="palette-item-kind">Lead</span>' +
+             '<span class="palette-item-title">' + escapeHtml(l.business_name) + dm + '</span>' +
+             cl +
+             '</a>';
+    }
+    function render(data) {
+      currentItems = [];
+      const html = [];
+      if (data.clients && data.clients.length) {
+        html.push(renderGroup('Clients', data.clients, clientItem));
+        currentItems.push(...data.clients.map(c => ({href: '/clients/' + c.id})));
+      }
+      if (data.leads && data.leads.length) {
+        html.push(renderGroup('Leads', data.leads, leadItem));
+        currentItems.push(...data.leads.map(l => ({href: '/leads/' + l.id})));
+      }
+      if (!html.length) {
+        results.innerHTML = '<div class="palette-empty">No matches.</div>';
+        activeIdx = -1;
+        return;
+      }
+      results.innerHTML = html.join('');
+      activeIdx = 0;
+      paintActive();
+      results.querySelectorAll('.palette-item').forEach((el, i) => {
+        el.addEventListener('mouseenter', () => { activeIdx = i; paintActive(); });
+        el.addEventListener('click', e => {
+          e.preventDefault();
+          navigateTo(el.dataset.href);
+        });
+      });
+    }
+    function paintActive() {
+      results.querySelectorAll('.palette-item').forEach((el, i) => {
+        el.classList.toggle('is-active', i === activeIdx);
+      });
+      const el = results.querySelectorAll('.palette-item')[activeIdx];
+      if (el) el.scrollIntoView({block: 'nearest'});
+    }
+    function navigateTo(href) {
+      if (!href) return;
+      close();
+      window.location.href = href;
+    }
+
+    function runSearch() {
+      const q = input.value.trim();
+      if (q === lastQ) return;
+      lastQ = q;
+      if (!q) { renderEmpty(); currentItems = []; activeIdx = -1; return; }
+      fetch('/api/search?q=' + encodeURIComponent(q), {headers: {'Accept': 'application/json'}})
+        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then(render)
+        .catch(() => {
+          results.innerHTML = '<div class="palette-empty palette-empty--err">Search failed. Try again.</div>';
+        });
+    }
+
+    input.addEventListener('input', () => {
+      clearTimeout(debounceT);
+      debounceT = setTimeout(runSearch, 160);
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (currentItems.length) {
+          activeIdx = (activeIdx + 1) % currentItems.length;
+          paintActive();
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (currentItems.length) {
+          activeIdx = (activeIdx - 1 + currentItems.length) % currentItems.length;
+          paintActive();
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const item = currentItems[activeIdx];
+        if (item) navigateTo(item.href);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        close();
+      }
+    });
+    overlay.addEventListener('click', close);
+
+    // Global trigger.
+    document.addEventListener('keydown', e => {
+      const isModK = (e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey);
+      if (isModK) {
+        e.preventDefault();
+        if (isOpen) close(); else open();
+      }
+    });
+  })();
+</script>
+
 {% if undo_available %}
 <div class="undo-banner" role="status" aria-live="polite">
   <span class="undo-banner-text">{{ undo_description }}</span>

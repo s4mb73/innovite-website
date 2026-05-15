@@ -47,6 +47,28 @@
   </form>
 </div>
 
+{# ── Cross-client rollup — agency-wide glance, period-matched ──── #}
+{% if rollup and rollup.clients %}
+<div class="rollup-strip" aria-label="Cross-client headline metrics">
+  <div class="rollup-stat">
+    <span class="rollup-stat-num">{{ '{:,}'.format(rollup.clients) }}</span>
+    <span class="rollup-stat-label">Active clients</span>
+  </div>
+  <div class="rollup-stat">
+    <span class="rollup-stat-num">{{ '{:,}'.format(rollup.meetings) }}</span>
+    <span class="rollup-stat-label">Meetings · {{ rollup.days }}d</span>
+  </div>
+  <div class="rollup-stat">
+    <span class="rollup-stat-num">{{ '{:,}'.format(rollup.won) }}</span>
+    <span class="rollup-stat-label">Deals won · {{ rollup.days }}d</span>
+  </div>
+  <div class="rollup-stat">
+    <span class="rollup-stat-num">£{{ '{:,}'.format(rollup.pipeline_value) }}</span>
+    <span class="rollup-stat-label">Pipeline value · {{ rollup.days }}d</span>
+  </div>
+</div>
+{% endif %}
+
 {# ── Print-only header (hidden on screen) ───────────── #}
 <header class="print-only print-header" aria-hidden="true">
   <div class="print-brand">
