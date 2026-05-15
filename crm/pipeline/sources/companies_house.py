@@ -39,8 +39,91 @@ import os
 import time
 import urllib.parse
 import urllib.request
+from datetime import date
 
 from pipeline.sources import Business
+
+
+def _parse_iso_date(s: str | None) -> date | None:
+    """CH returns dates as 'YYYY-MM-DD'. Return None on parse failure."""
+    if not s or not isinstance(s, str):
+        return None
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def _months_to_month(target_month: int, *, today: date | None = None) -> int:
+    """Calendar months from today's month to the next occurrence of target_month.
+    Returns 0-11. If target_month == today's month, returns 0."""
+    today = today or date.today()
+    return (target_month - today.month) % 12
+
+
+def _derive_year_end(profile: dict, business: Business) -> None:
+    """Item 1 — write year_end_month + months_to_year_end onto business.
+
+    Prefers accounts.next_made_up_to (the actual upcoming year-end date in
+    the API response). Falls back to (accounts.next_due - 9 months) for
+    profiles missing the direct field. Logs which method was used in
+    source_errors so coverage can be audited later."""
+    accounts = (profile or {}).get("accounts") or {}
+    next_made_up = _parse_iso_date(accounts.get("next_made_up_to"))
+    if next_made_up:
+        ye_month = next_made_up.month
+        method = "direct"
+    else:
+        next_due = _parse_iso_date(accounts.get("next_due"))
+        if not next_due:
+            return
+        # accounts due ~9 months after year-end (private cos); back out the month.
+        ye_month = ((next_due.month - 9 - 1) % 12) + 1
+        method = "derived_from_next_due"
+
+    business["companies_house_year_end_month"] = ye_month
+    business["companies_house_months_to_year_end"] = _months_to_month(ye_month)
+    business.setdefault("source_errors", {})["companies_house_year_end_source"] = method
+
+
+def _derive_company_age(profile: dict, business: Business) -> None:
+    """Item 2 — write company_age_days from date_of_creation."""
+    creation = _parse_iso_date((profile or {}).get("date_of_creation"))
+    if creation:
+        business["companies_house_company_age_days"] = (date.today() - creation).days
+
+
+def _derive_director_change(officers: dict, business: Business) -> None:
+    """Item 3 — flag any active officer appointed in the last 90 days.
+
+    Uses data already fetched — no extra API call. The minimum (most
+    recent) appointment age across all qualifying officers is recorded
+    so the drafter can mention 'a new director was appointed N days ago'.
+    """
+    if not officers or not isinstance(officers.get("items"), list):
+        return
+    today = date.today()
+    recent_ages: list[int] = []
+    for o in officers["items"]:
+        if o.get("resigned_on"):
+            continue
+        appointed = _parse_iso_date(o.get("appointed_on"))
+        if not appointed:
+            continue
+        days_ago = (today - appointed).days
+        if 0 <= days_ago <= 90:
+            recent_ages.append(days_ago)
+    if recent_ages:
+        business["companies_house_recent_director_change"] = True
+        business["companies_house_director_appointed_days_ago"] = min(recent_ages)
+
+
+def _derive_overdue(profile: dict, business: Business) -> None:
+    """Item 4 — extract accounts.overdue + confirmation_statement.overdue."""
+    accounts = (profile or {}).get("accounts") or {}
+    cs = (profile or {}).get("confirmation_statement") or {}
+    business["companies_house_accounts_overdue"]     = bool(accounts.get("overdue"))
+    business["companies_house_confirmation_overdue"] = bool(cs.get("overdue"))
 
 CH_SEARCH_URL = "https://api.company-information.service.gov.uk/search/companies"
 CH_PROFILE_URL = "https://api.company-information.service.gov.uk/company/{number}"
@@ -193,5 +276,24 @@ def enrich(business: Business) -> Business:
     if officers and isinstance(officers.get("items"), list):
         active = [o for o in officers["items"] if not o.get("resigned_on")]
         business["companies_house_officer_count"] = len(active)
+
+    # Items 1-4: derive timing + pain signals from data already in memory.
+    # Each is best-effort and never raises — partial enrichment is fine.
+    try:
+        _derive_year_end(profile or {}, business)
+    except Exception as e:
+        business.setdefault("source_errors", {})["companies_house_year_end"] = str(e)[:120]
+    try:
+        _derive_company_age(profile or {}, business)
+    except Exception as e:
+        business.setdefault("source_errors", {})["companies_house_company_age"] = str(e)[:120]
+    try:
+        _derive_director_change(officers or {}, business)
+    except Exception as e:
+        business.setdefault("source_errors", {})["companies_house_director_change"] = str(e)[:120]
+    try:
+        _derive_overdue(profile or {}, business)
+    except Exception as e:
+        business.setdefault("source_errors", {})["companies_house_overdue"] = str(e)[:120]
 
     return business

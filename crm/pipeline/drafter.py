@@ -52,6 +52,33 @@ No markdown, no commentary, no code fences. Just the JSON object."""
 
 
 HOOK_GUIDANCE = {
+    # ── Companies House pain signals (accountancy targeting) ──────────
+    "accounts_overdue":
+        "Open directly with the overdue filing — their accounts are past due at "
+        "Companies House. Ask whether everything is okay and whether they need "
+        "support getting compliant.",
+    "year_end_imminent":
+        "Open with the year-end timing angle — their accounts are due in under "
+        "three months. Ask if they are happy with how preparation is going.",
+    "director_change_recent":
+        "Open with the director change — a new director was appointed recently and "
+        "new leadership typically reviews all key suppliers. Ask if they are happy "
+        "with their current accountancy arrangements.",
+    "new_incorporation":
+        "Open with the incorporation date — they registered recently and will need "
+        "to file their first accounts within the next few months. Ask if they have "
+        "an accountant set up yet.",
+    "early_stage":
+        "Open noting they are in their first year and likely still making key "
+        "supplier decisions including their accountant.",
+    "year_end_soon":
+        "Open by noting their year-end is approaching in the next few months and "
+        "ask if they are getting the advisory input they need beforehand.",
+    "confirmation_overdue":
+        "Open noting their confirmation statement is overdue — a small thing, but "
+        "a signal worth checking on.",
+
+    # ── Reputation + web signals (general SMB targeting) ──────────────
     "low_rating_with_volume":
         "Open with the rating signal — they have many reviews but their average is dragging. "
         "Tie it to lost local search visibility and lead quality.",
