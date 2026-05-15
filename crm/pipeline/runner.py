@@ -130,6 +130,30 @@ def _is_excluded(business: dict, exclusions: set[str]) -> bool:
     return False
 
 
+def _calculate_pain_score(business: dict, score: dict) -> int:
+    """Derived 0-100 pain rollup so the Leads page can sort without parsing
+    JSONB. Capped at 100. Booleans wrapped in int() so the arithmetic is
+    explicit rather than relying on Python's bool-is-int trick.
+
+    Formula:
+      accounts_overdue        * 40
+      confirmation_overdue    * 15
+      director_change_recent  * 20
+      year_end_imminent       * 15
+      (overall_score < 40)    * 10
+    """
+    overall = int(score.get("overall_score") or 0)
+    weaknesses = (score.get("weakness_profile") or {}).get("weaknesses") or []
+    total = (
+        int(bool(business.get("companies_house_accounts_overdue")))     * 40
+        + int(bool(business.get("companies_house_confirmation_overdue")))* 15
+        + int(bool(business.get("companies_house_recent_director_change")))* 20
+        + int("year_end_imminent" in weaknesses)                         * 15
+        + int(overall < 40)                                              * 10
+    )
+    return min(100, total)
+
+
 def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
     """Insert into crm.leads. Returns the new lead id, or None on conflict."""
     sql = """
@@ -138,20 +162,31 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             google_rating, google_review_count, google_maps_url,
             companies_house_number, companies_house_sic_code,
             companies_house_incorporated, companies_house_revenue_band,
+            companies_house_year_end_month, companies_house_months_to_year_end,
+            companies_house_company_age_days,
+            companies_house_recent_director_change,
+            companies_house_director_appointed_days_ago,
+            companies_house_accounts_overdue, companies_house_confirmation_overdue,
             decision_maker_name, decision_maker_title, email, linkedin_url,
-            grade, overall_score, hook_type, weakness_profile,
+            grade, overall_score, pain_score, hook_type, weakness_profile,
             status, source
         )
         values (%s, %s, %s, %s, %s, %s,
                 %s, %s, %s,
                 %s, %s,
                 %s, %s,
+                %s, %s,
+                %s,
+                %s,
+                %s,
+                %s, %s,
                 %s, %s, %s, %s,
-                %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
                 'new', 'outbound')
         returning id
     """
     incorp = business.get("companies_house_incorporated") or None
+    pain = _calculate_pain_score(business, score)
     row = db.fetch_one(sql, (
         client_id,
         business.get("business_name", "")[:512],
@@ -166,12 +201,20 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         business.get("companies_house_sic_code") or None,
         incorp if incorp else None,
         business.get("companies_house_revenue_band") or None,
+        business.get("companies_house_year_end_month") or None,
+        business.get("companies_house_months_to_year_end") if business.get("companies_house_months_to_year_end") is not None else None,
+        business.get("companies_house_company_age_days") or None,
+        business.get("companies_house_recent_director_change") or None,
+        business.get("companies_house_director_appointed_days_ago") or None,
+        business.get("companies_house_accounts_overdue") or None,
+        business.get("companies_house_confirmation_overdue") or None,
         business.get("decision_maker_name") or None,
         business.get("decision_maker_title") or None,
         business.get("decision_maker_email") or None,
         business.get("linkedin_url") or None,
         score["grade"],
         score["overall_score"],
+        pain,
         score["hook_type"],
         Jsonb(score["weakness_profile"]),
     ))

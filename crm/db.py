@@ -411,6 +411,8 @@ SORT_SQL = {
     'recent': 'l.created_at desc',
     'grade':  "case l.grade when 'A' then 1 when 'B' then 2 when 'C' then 3 when 'D' then 4 when 'F' then 5 else 6 end, l.created_at desc",
     'score':  'coalesce(l.overall_score, 0) desc, l.created_at desc',
+    # Pain rollup (US-021 follow-up). NULL pain_score sorts last via coalesce(0).
+    'pain':   'coalesce(l.pain_score, 0) desc, l.created_at desc',
 }
 
 # Maps lead.status → row-border colour slug used by the Leads page.
