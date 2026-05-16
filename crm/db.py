@@ -498,12 +498,28 @@ def leads_search(
     params['limit'] = page_size
     params['offset'] = offset
 
+    # Wider SELECT for the £2k-platform Leads table — adds pain signals,
+    # hook context, deliverability state, and per-lead activity counts.
+    # Subqueries for last_contact_at and reply_count are correlated but
+    # cheap given existing indexes on emails.lead_id and replies.lead_id.
     rows = fetch_all(f"""
         select l.id, l.business_name, l.grade, l.status, l.overall_score,
+               l.pain_score, l.hook_type,
                l.decision_maker_name, l.decision_maker_title,
+               l.email, l.linkedin_url,
                l.city, l.google_review_count,
+               l.companies_house_revenue_band as revenue_band,
+               l.companies_house_months_to_year_end as months_to_year_end,
+               l.companies_house_accounts_overdue   as accounts_overdue,
+               l.companies_house_confirmation_overdue as confirmation_overdue,
+               l.companies_house_recent_director_change as director_change,
                l.created_at, l.updated_at,
-               c.id as client_id, c.name as client_name
+               c.id as client_id, c.name as client_name,
+               (select max(e.sent_at) from crm.emails e
+                 where e.lead_id = l.id
+                   and e.status in ('sent','dry_run_ready')) as last_contact_at,
+               (select count(*) from crm.replies r
+                 where r.lead_id = l.id) as reply_count
           from crm.leads l
           left join crm.clients c on c.id = l.client_id
          where {where_sql}
@@ -523,6 +539,29 @@ def leads_search(
         r['stage_time_hours'] = hours_in_stage
         r['op_state']         = LEAD_OP_STATE.get(r.get('status') or '', 'new')
         r['stage_urgency']    = _stage_urgency(hours_in_stage, r['op_state'])
+
+        # Display helpers — keep template logic minimal.
+        pain = r.get('pain_score') or 0
+        r['pain_tier'] = (
+            'hot'  if pain >= 60 else
+            'warm' if pain >= 30 else
+            'cool' if pain >  0  else 'none'
+        )
+        m = r.get('months_to_year_end')
+        if m is None:
+            r['year_end_label'] = '—'
+            r['year_end_urgency'] = 'none'
+        elif m <= 0:
+            r['year_end_label'] = 'this month'
+            r['year_end_urgency'] = 'hot'
+        elif m <= 3:
+            r['year_end_label'] = f'{m}m'
+            r['year_end_urgency'] = 'warm'
+        else:
+            r['year_end_label'] = f'{m}m'
+            r['year_end_urgency'] = 'cool'
+        last = r.get('last_contact_at')
+        r['last_contact_label'] = relative_time(last) if last else 'never'
 
     total_row = fetch_one(f"""
         select count(*) as total

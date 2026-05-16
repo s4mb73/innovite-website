@@ -4053,6 +4053,91 @@ a { color:inherit; text-decoration:none; }
   margin-bottom:8px;
 }
 
+/* Wide Leads table — new columns surfaced from enrichment + activity. */
+.leads-table-wide { table-layout:auto; }
+.leads-table-wide thead th { white-space:nowrap; }
+.leads-table-wide .col-business { min-width:240px; }
+.leads-table-wide .col-client   { color:var(--t2); font-size:13px; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.leads-table-wide .col-pain,
+.leads-table-wide .col-yearend,
+.leads-table-wide .col-time,
+.leads-table-wide .col-stage,
+.leads-table-wide .col-activity { font-variant-numeric:tabular-nums; }
+.leads-table-wide .col-revenue { font-size:11.5px; color:var(--t2); white-space:nowrap; }
+.leads-table-wide td { vertical-align:middle; }
+
+.pain-score {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:30px;
+  padding:2px 8px;
+  font-size:13px;
+  font-weight:500;
+  font-variant-numeric:tabular-nums;
+  border-radius:999px;
+}
+.pain-hot  { background:rgba(239,68,68,.14); color:var(--red); }
+.pain-warm { background:var(--amber-bg);     color:var(--amber); }
+.pain-cool { background:var(--accent-bg);    color:var(--accent); }
+.pain-empty { color:var(--t3); }
+
+.signal-chip {
+  display:inline-flex;
+  align-items:center;
+  margin-right:4px;
+  padding:1px 6px;
+  font-size:11.5px;
+  font-weight:500;
+  border-radius:4px;
+  letter-spacing:.5px;
+  font-variant-numeric:tabular-nums;
+}
+.signal-chip--red   { background:rgba(239,68,68,.14); color:var(--red); }
+.signal-chip--amber { background:var(--amber-bg);     color:var(--amber); }
+.signal-chip--blue  { background:var(--accent-bg);    color:var(--accent); }
+.signal-empty { color:var(--t3); }
+
+.revenue-band { font-variant-numeric:tabular-nums; }
+
+.lead-li {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:18px;
+  height:18px;
+  margin-left:6px;
+  font-size:10px;
+  font-weight:600;
+  border-radius:3px;
+  background:var(--accent-bg);
+  color:var(--accent-h);
+  text-decoration:none;
+  font-family:'Switzer', sans-serif;
+  letter-spacing:0;
+}
+.lead-li:hover { background:var(--accent); color:var(--bg); }
+
+.activity-cell {
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  font-size:13px;
+  line-height:1.2;
+}
+.activity-cell-last    { color:var(--t2); font-variant-numeric:tabular-nums; }
+.activity-cell-replies {
+  font-size:11.5px;
+  color:var(--accent-h);
+  font-variant-numeric:tabular-nums;
+}
+
+/* Reuse stage urgency colour classes for the year-end column. */
+.col-yearend.stage-hot  { color:var(--red); font-weight:500; }
+.col-yearend.stage-warm { color:var(--amber); }
+.col-yearend.stage-cool { color:var(--t2); }
+.col-yearend.stage-none { color:var(--t3); }
+
 /* Outreach observability table (campaigns: sending/sent/bounces tabs) */
 .outreach-table {
   width:100%;
