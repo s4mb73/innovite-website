@@ -3448,6 +3448,8 @@ from datetime import timedelta
 
 import json as _json
 import os as _os
+import threading as _threading
+import time as _time
 
 SETTINGS_DEFAULTS: dict = {
     'profile': {
@@ -3676,31 +3678,77 @@ _REQUIRED_FOR_PIPELINE = {
     'APOLLO_API_KEY',
 }
 
-# Plausible mock suffixes shown when the env var isn't set (POC demo)
-_INTEGRATION_MOCKS = {
-    'ANTHROPIC_API_KEY':       '3f2a',
-    'GOOGLE_PLACES_API_KEY':   'b8d1',
-    'APOLLO_API_KEY':          'e4a7',
-    'RESEND_API_KEY':          'd29a',
-    'COMPANIES_HOUSE_API_KEY': '7c4b',
-    'SLACK_WEBHOOK_URL':       '#sammy-leads',
-    'DATABASE_URL':            'innovite.db',
-}
+# Worker env file location. Pipeline keys (Anthropic, Apollo, Google
+# Places, Companies House) live here — not in the web process's env —
+# because the worker is the one that actually calls those APIs. The
+# settings page reads both sources so the operator sees the unified
+# "is the pipeline ready?" answer rather than "what does the web
+# process happen to see?".
+_WORKER_ENV_PATH = '/etc/innovite/crm-worker.env'
+_WORKER_ENV_TTL_S = 60.0
+_worker_env_cache: tuple[float, dict[str, str]] = (0.0, {})
+_worker_env_lock = _threading.Lock()
+
+
+def _load_worker_env() -> dict[str, str]:
+    """Parse /etc/innovite/crm-worker.env for the settings panel.
+
+    Cached 60s — the file rarely changes and we don't want stat() per
+    integration row per render. Silently returns {} if the file isn't
+    readable; the web process runs as `deploy` and the file is
+    600 deploy:deploy, so unreadable means something is wrong with
+    deploy and the settings page should still render."""
+    global _worker_env_cache
+    now = _time.time()
+    cached_at, cached = _worker_env_cache
+    if now - cached_at < _WORKER_ENV_TTL_S:
+        return cached
+    with _worker_env_lock:
+        cached_at, cached = _worker_env_cache
+        if now - cached_at < _WORKER_ENV_TTL_S:
+            return cached
+        parsed: dict[str, str] = {}
+        try:
+            with open(_WORKER_ENV_PATH, 'r', encoding='utf-8') as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith('#') or '=' not in line:
+                        continue
+                    k, _, v = line.partition('=')
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k:
+                        parsed[k] = v
+        except (FileNotFoundError, PermissionError):
+            pass
+        except Exception:
+            pass  # never let this crash the settings page
+        _worker_env_cache = (now, parsed)
+        return parsed
+
+
+def _resolve_env(name: str) -> str:
+    """Resolve an env var by checking the web process's env first, then
+    the worker env file. Empty string if neither has it."""
+    return _os.environ.get(name) or _load_worker_env().get(name, '')
 
 
 def _mask_key(env_name: str, prefix: str) -> tuple[str, bool]:
-    """Return (masked_display, is_real). When the env var is set, show
-    `<prefix>•••••<last4>`; otherwise show a plausible mock with the
-    same shape so the demo doesn't render blanks."""
-    raw = _os.environ.get(env_name) or ''
+    """Return (display_value, is_real).
+
+    When the env var is set (in either web or worker env), show
+    `<prefix>•••••<last4>`. When missing, show a plain em-dash —
+    never a plausible-looking fake value. (Anti-pattern #10 in
+    CLAUDE.md: synthetic placeholder data must never present as real.)"""
+    raw = _resolve_env(env_name)
     if raw:
         last4 = raw[-4:] if len(raw) >= 4 else raw
         if env_name == 'SLACK_WEBHOOK_URL':
-            # Webhooks are URLs — show channel-like fragment
+            # Webhooks are URLs — show channel-like fragment, never the path token.
             tail = raw.rsplit('/', 1)[-1][-6:] or last4
             return f'…/{tail}', True
         if env_name == 'DATABASE_URL':
-            # Show host only, never any creds
+            # Show host only — never any creds.
             try:
                 from urllib.parse import urlparse
                 host = urlparse(raw).hostname or 'connected'
@@ -3708,12 +3756,7 @@ def _mask_key(env_name: str, prefix: str) -> tuple[str, bool]:
             except Exception:
                 return 'connected', True
         return f'{prefix}•••••{last4}', True
-    mock = _INTEGRATION_MOCKS.get(env_name, '0000')
-    if env_name == 'SLACK_WEBHOOK_URL':
-        return mock, False
-    if env_name == 'DATABASE_URL':
-        return mock, False
-    return f'{prefix}•••••{mock}', False
+    return '—', False
 
 
 def integration_keys() -> list[dict]:
@@ -3726,7 +3769,7 @@ def integration_keys() -> list[dict]:
         elif env_name in _REQUIRED_FOR_PIPELINE:
             state, detail = 'missing', 'Missing — pipeline will not run'
         else:
-            state, detail = 'idle', 'Not configured (using mock for demo)'
+            state, detail = 'idle', 'Not configured'
         out.append({
             'env_name': env_name,
             'label':    label,
