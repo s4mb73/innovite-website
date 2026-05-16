@@ -155,8 +155,13 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
 
         emulation = random.choice(_EMULATION_PROFILES) if _EMULATION_PROFILES else None
         try:
+            # wreq.Client takes `proxies=[Proxy.all(url)]` (plural, list
+            # of Proxy objects), not `proxy="url"`. Proxy.all() routes
+            # both HTTP and HTTPS traffic — what we want for SMB
+            # website scraping where targets are a mix of plain http
+            # redirects and https.
             client_kwargs: dict = {
-                "proxy":   proxy.as_url(),
+                "proxies": [wreq.Proxy.all(proxy.as_url())],
                 "timeout": timedelta(seconds=TIMEOUT_S),
             }
             if emulation is not None:
