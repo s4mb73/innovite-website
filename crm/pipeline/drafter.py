@@ -172,6 +172,23 @@ def _build_prompt(business: dict, hook_type: str,
         parts.append(f"Decision maker: {business['decision_maker_name']} "
                      f"({business.get('decision_maker_title', '')})")
 
+    # Website signals — scraped by crm/scraper/* and Haiku-extracted.
+    # When present, they're the strongest grounding signal in the prompt:
+    # the email can reference what they ACTUALLY do, not generic
+    # hook-type guidance.
+    web = business.get("website_signals") or {}
+    if isinstance(web, dict) and web:
+        if web.get("summary"):
+            parts.append(f"What they do (from their website): {web['summary']}")
+        if web.get("services"):
+            services = web["services"]
+            if isinstance(services, list) and services:
+                parts.append("Services they list: " + ", ".join(str(s) for s in services[:5]))
+        if web.get("team_size_hint"):
+            parts.append(f"Team size signal: {web['team_size_hint']}")
+        if web.get("recency_hint"):
+            parts.append(f"Website activity: {web['recency_hint']}")
+
     guidance = HOOK_GUIDANCE.get(hook_type, HOOK_GUIDANCE["general_growth"])
 
     intro = "Write the Day-1 outreach email for this lead."

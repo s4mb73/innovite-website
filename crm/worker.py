@@ -65,6 +65,17 @@ def _shutdown(signum, frame):
     _running = False
 
 
+def _reload_proxies(signum, frame):
+    """SIGHUP handler — re-read /etc/innovite/proxies.list so the
+    operator can add/rotate proxies without restarting the worker."""
+    try:
+        from scraper.proxy_pool import reload_pool
+        n = reload_pool()
+        logger.info("Reloaded proxy pool on SIGHUP — %d proxies active", n)
+    except Exception:
+        logger.exception("SIGHUP proxy reload failed")
+
+
 def _claim_next_run() -> int | None:
     """Atomically claim one pending pipeline run. Returns run_id or None."""
     sql = """
@@ -309,6 +320,7 @@ def main() -> int:
     )
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGHUP, _reload_proxies)
 
     logger.info("crm-worker starting (poll=%ss, outreach_tick=%ss, reply_tick=%ss)",
                 POLL_INTERVAL_S, OUTREACH_TICK_S, REPLY_TICK_S)

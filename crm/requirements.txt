@@ -2,3 +2,8 @@ flask==3.0.3
 psycopg[binary]==3.2.3
 gunicorn==23.0.0
 python-dotenv==1.0.1
+# Scraper stack — TLS fingerprint impersonation for bypassing modern
+# bot-detection at the protocol level. Pure HTTP, no browser automation.
+# Used by crm/scraper/* — degrades gracefully if not installed.
+wreq>=0.11.0
+beautifulsoup4>=4.12

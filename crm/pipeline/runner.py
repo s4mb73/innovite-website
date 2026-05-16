@@ -45,6 +45,7 @@ from psycopg.types.json import Jsonb
 import db
 from pipeline import scoring, drafter
 from pipeline.sources import google_places, companies_house, apollo
+from scraper import enricher as website_scraper
 
 logger = logging.getLogger("crm.pipeline.runner")
 
@@ -169,6 +170,7 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             companies_house_accounts_overdue, companies_house_confirmation_overdue,
             decision_maker_name, decision_maker_title, email, linkedin_url,
             grade, overall_score, pain_score, hook_type, weakness_profile,
+            website_signals, website_scraped_at, website_scrape_status,
             status, source
         )
         values (%s, %s, %s, %s, %s, %s,
@@ -182,11 +184,13 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
                 %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
+                %s, %s, %s,
                 'new', 'outbound')
         returning id
     """
     incorp = business.get("companies_house_incorporated") or None
     pain = _calculate_pain_score(business, score)
+    web_signals = business.get("website_signals")
     row = db.fetch_one(sql, (
         client_id,
         business.get("business_name", "")[:512],
@@ -217,6 +221,9 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         pain,
         score["hook_type"],
         Jsonb(score["weakness_profile"]),
+        Jsonb(web_signals) if web_signals else None,
+        business.get("website_scraped_at") or None,
+        business.get("website_scrape_status") or None,
     ))
     return row["id"] if row else None
 
@@ -357,6 +364,16 @@ def run(run_id: int) -> dict:
                 except Exception as e:
                     logger.exception("Apollo enrich failed")
                     biz.setdefault("source_errors", {})["apollo"] = str(e)
+
+                # Website scraping — fourth enrichment source. Adds the
+                # "what this business actually does" context to the
+                # business dict via wreq + UK ISP proxies + Haiku
+                # extraction. Skipped gracefully if scraper is disabled.
+                try:
+                    biz = website_scraper.enrich(biz)
+                except Exception as e:
+                    logger.exception("Website scrape enrich failed")
+                    biz.setdefault("source_errors", {})["website_scraper"] = str(e)
 
                 # Score.
                 score = scoring.grade(biz)

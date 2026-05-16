@@ -4,3 +4,8 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# Scraper proxy list — credentials. Lives at /etc/innovite/proxies.list
+# on the VPS (chmod 600, owner deploy), never in the repo.
+proxies.list
+proxies.*.list
