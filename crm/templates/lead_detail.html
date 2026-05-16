@@ -236,6 +236,42 @@
       {% endif %}
     </div>
 
+    {# Open jobs — growth signal (US-026). 'scaling' (5+ roles) is the
+       strong-hook case for advisory pitches; 'hiring' is a soft hook;
+       'none' is the common case, no narrative to use. #}
+    {% set jpill = {
+        'scaling': ('green', 'Scaling'),
+        'hiring':  ('blue',  'Hiring'),
+        'none':    ('grey',  'Quiet'),
+        'unknown': ('grey',  'Not checked'),
+    }.get(lead.jobs_signal, ('grey', 'Not checked')) %}
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">
+          Open jobs
+          {% if lead.jobs_last_checked_at %}
+            <span class="card-title-sub">checked {{ lead.jobs_last_checked_at|relative_time }}</span>
+          {% endif %}
+        </div>
+        <span class="pill pill-{{ jpill[0] }}">{{ jpill[1] }}</span>
+      </div>
+      {% if lead.jobs_signal in ('hiring', 'scaling') %}
+        <div class="big-line">
+          <span class="big-num">{{ lead.jobs_open_count }}</span>
+          <span class="big-suffix">{{ 'role' if lead.jobs_open_count == 1 else 'roles' }} on Reed</span>
+        </div>
+        {% if lead.jobs_source_url %}
+          <a class="card-link" href="{{ lead.jobs_source_url }}" target="_blank" rel="noopener">View on Reed ↗</a>
+        {% endif %}
+      {% elif lead.jobs_signal == 'none' %}
+        <div class="empty empty-sm">No open roles on Reed.</div>
+      {% elif lead.jobs_signal == 'unknown' %}
+        <div class="empty empty-sm">Couldn't check — name too short or fetch failed.</div>
+      {% else %}
+        <div class="empty empty-sm">Not checked yet — next pipeline run will populate this.</div>
+      {% endif %}
+    </div>
+
     <div class="card">
       <div class="card-title">Instagram</div>
       {% if lead.instagram_handle or lead.instagram_followers %}

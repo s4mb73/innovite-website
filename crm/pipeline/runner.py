@@ -47,6 +47,7 @@ from pipeline import scoring, drafter
 from pipeline.sources import google_places, companies_house, apollo
 from scraper import enricher as website_scraper
 from scraper import gazette as gazette_scraper
+from scraper import jobs as jobs_scraper
 
 logger = logging.getLogger("crm.pipeline.runner")
 
@@ -174,6 +175,8 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             website_signals, website_scraped_at, website_scrape_status,
             gazette_status, gazette_notice_count,
             gazette_last_notice_date, gazette_last_notice_url,
+            jobs_signal, jobs_open_count,
+            jobs_last_checked_at, jobs_source_url,
             status, source
         )
         values (%s, %s, %s, %s, %s, %s,
@@ -188,6 +191,7 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
+                %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 'new', 'outbound')
         returning id
@@ -232,6 +236,10 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         business.get("gazette_notice_count") if business.get("gazette_notice_count") is not None else None,
         business.get("gazette_last_notice_date") or None,
         business.get("gazette_last_notice_url") or None,
+        business.get("jobs_signal") or None,
+        business.get("jobs_open_count") if business.get("jobs_open_count") is not None else None,
+        business.get("jobs_last_checked_at") or None,
+        business.get("jobs_source_url") or None,
     ))
     return row["id"] if row else None
 
@@ -382,6 +390,18 @@ def run(run_id: int) -> dict:
                 except Exception as e:
                     logger.exception("Website scrape enrich failed")
                     biz.setdefault("source_errors", {})["website_scraper"] = str(e)
+
+                # Reed.co.uk — open-jobs growth signal (Stage 5). Single
+                # HTML fetch against /jobs/jobs-at-<slug>; classifies
+                # to none/hiring/scaling based on the canonical count.
+                # Free, server-rendered, no anti-bot. Reed used instead
+                # of Indeed because Indeed serves a JS-hydrated SPA
+                # that HTTP-only scraping cannot read.
+                try:
+                    biz = jobs_scraper.enrich(biz)
+                except Exception as e:
+                    logger.exception("Jobs enrich failed")
+                    biz.setdefault("source_errors", {})["jobs"] = str(e)
 
                 # The Gazette — distress signal (Stage 6). Single JSON
                 # API call against thegazette.co.uk filtered to the
