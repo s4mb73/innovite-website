@@ -368,14 +368,34 @@ def run(run_id: int) -> dict:
 
                 existing_keys.add((name_key, ""))
 
-                # Draft Day-1 only for grades worth contacting.
-                if score["grade"] in ("A", "B", "C"):
+                # PECR compliance: under UK regulations, 'individual
+                # subscribers' (sole traders, ordinary partnerships)
+                # require consent for marketing email — legitimate
+                # interests doesn't cover them. Ltd / PLC / LLP are
+                # 'corporate subscribers' and fall under UK GDPR
+                # legitimate interests instead.
+                #
+                # Sole traders aren't registered with Companies House
+                # at all, so a missing CH match means we cannot verify
+                # corporate status. Insert the lead (don't waste the
+                # discovery work) but skip drafting — the operator can
+                # manually re-grade if they have evidence the business
+                # is actually incorporated.
+                is_corporate = bool(biz.get("companies_house_number"))
+
+                # Draft Day-1 only for grades worth contacting AND
+                # verified-corporate subscribers.
+                if score["grade"] in ("A", "B", "C") and is_corporate:
                     try:
                         draft = drafter.draft_day1(biz, score["hook_type"])
                         _queue_day1_email(lead_id, client_id, biz, draft)
                     except Exception as e:
                         logger.exception("Draft/queue failed for lead %s", lead_id)
                         progress.setdefault("errors", []).append(f"draft {lead_id}: {e}")
+                elif score["grade"] in ("A", "B", "C") and not is_corporate:
+                    # Audit the compliance-gated skip — surfaces in the
+                    # run progress for the operator.
+                    progress["compliance_gated"] = progress.get("compliance_gated", 0) + 1
 
                 counts["added"] += 1
 

@@ -11,6 +11,7 @@ import time
 from hmac import compare_digest
 
 from flask import Flask, Response, abort, flash, jsonify, redirect, render_template, request, session, url_for
+from itsdangerous import BadSignature, URLSafeSerializer
 from psycopg import errors as psycopg_errors
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -30,7 +31,9 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # Endpoint names (not URL paths) that don't require auth.
-_PUBLIC_ENDPOINTS = {'login', 'logout', 'healthz', 'static'}
+# unsubscribe is public because Gmail/Yahoo fire RFC 8058 one-click POSTs
+# without any cookie context — they MUST work without a session.
+_PUBLIC_ENDPOINTS = {'login', 'logout', 'healthz', 'static', 'unsubscribe', 'favicon'}
 
 
 @app.before_request
@@ -1237,6 +1240,56 @@ def api_search():
         return jsonify(db.quick_search(q))
     except Exception as e:
         return jsonify({'error': str(e)[:200]}), 500
+
+
+# ── List-Unsubscribe (RFC 8058 one-click) ───────────────────────────
+# Public endpoint — bound from the List-Unsubscribe + List-Unsubscribe-Post
+# headers the outreach engine injects on every send. Gmail/Yahoo fire a
+# POST with body 'List-Unsubscribe=One-Click' when the user clicks the
+# native Unsubscribe button; we silently 204 back and add the address
+# to the suppression list. GET shows a human confirmation page (for the
+# rare client that falls back to a link-click flow, or if the recipient
+# pastes the URL into a browser themselves).
+#
+# Token is an itsdangerous-signed payload of {e: email_id, a: address}
+# so we don't need a per-email unsubscribe-token table. Cost: if
+# FLASK_SECRET_KEY rotates, outstanding links go invalid — fine,
+# operators can suppress manually if anyone complains.
+
+
+@app.route('/unsubscribe', methods=['GET', 'POST'])
+def unsubscribe():
+    token = request.args.get('t') or request.form.get('t')
+    if not token:
+        return Response('Missing token.', status=400, mimetype='text/plain')
+
+    ser = URLSafeSerializer(app.config['SECRET_KEY'], salt='unsubscribe-v1')
+    try:
+        data = ser.loads(token)
+    except BadSignature:
+        return Response('Invalid or expired token.', status=403, mimetype='text/plain')
+
+    address = (data.get('a') or '').strip()
+    email_id = data.get('e')
+    if not address or '@' not in address:
+        return Response('Invalid token payload.', status=403, mimetype='text/plain')
+
+    try:
+        db.suppress_address(
+            address,
+            reason='unsubscribe',
+            added_by='one_click_header',
+            detail=f'list-unsubscribe one-click (email {email_id})',
+        )
+    except Exception:
+        # Never surface failure to the recipient — one-click MUST appear
+        # to succeed. The operator can audit the suppression log.
+        pass
+
+    if request.method == 'POST':
+        # RFC 8058: respond 200/204 with no body required.
+        return Response('', status=204)
+    return render_template('unsubscribe.html', address=address)
 
 
 @app.route('/healthz')

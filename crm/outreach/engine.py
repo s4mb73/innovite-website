@@ -37,11 +37,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import smtplib
 import uuid
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Iterable
+
+from itsdangerous import URLSafeSerializer
 
 import db
 from outreach import policy
@@ -49,8 +52,47 @@ from pipeline import drafter
 
 logger = logging.getLogger("crm.outreach.engine")
 
-JITTER_SECONDS = 120
+# Random uniform per-mailbox cool-down between sends. Fixed intervals
+# (e.g. always 120s) are a known bot signature for ESP spam filters;
+# a random window mimics human-ish pacing without affecting throughput.
+JITTER_MIN_SECONDS = 90
+JITTER_MAX_SECONDS = 240
+
 TICK_INTERVAL_S = 300  # 5 minutes between ticks (throttled by the worker loop).
+
+# List-Unsubscribe (RFC 8058) — required by Gmail/Yahoo Feb-2024 sender
+# rules. Token-signed so the endpoint can verify the request came from
+# our own email without a DB lookup. UNSUBSCRIBE_BASE_URL is env-overridable
+# for staging / local testing.
+UNSUBSCRIBE_BASE_URL = os.environ.get(
+    "UNSUBSCRIBE_BASE_URL", "https://app.innovite.io/unsubscribe"
+)
+
+
+def _jitter_cutoff(now: datetime) -> datetime:
+    """Random per-call mailbox-eligibility cutoff in the jitter window.
+
+    A mailbox is eligible if its last_send_at is older than `cutoff`.
+    Re-rolling the random per call means consecutive picks in the same
+    tick see slightly different windows — the effective inter-send
+    interval per mailbox is uniform across [JITTER_MIN, JITTER_MAX]."""
+    return now - timedelta(
+        seconds=random.randint(JITTER_MIN_SECONDS, JITTER_MAX_SECONDS)
+    )
+
+
+def _unsubscribe_url(email_id: int, address: str) -> str:
+    """Signed one-click unsubscribe URL for the List-Unsubscribe header.
+
+    Token is itsdangerous-signed so the endpoint can verify provenance
+    without storing per-email unsubscribe rows. If FLASK_SECRET_KEY
+    rotates, outstanding links go invalid — acceptable since the
+    operator can always suppress the address manually."""
+    secret = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-in-prod")
+    ser = URLSafeSerializer(secret, salt="unsubscribe-v1")
+    token = ser.dumps({"e": int(email_id), "a": address})
+    return f"{UNSUBSCRIBE_BASE_URL}?t={token}"
+
 
 # ── Settings + suppression load ──────────────────────────────────────
 def _load_settings() -> dict:
@@ -72,21 +114,24 @@ def _load_suppressed() -> set[str]:
 
 
 # ── Mailbox selection ───────────────────────────────────────────────
-def _pick_mailbox(client_id: int) -> dict | None:
-    """Return the best mailbox for this client, or None if nothing fits.
+def _pick_mailbox(client_id: int, lead_id: int | None = None) -> dict | None:
+    """Return the best mailbox for this send, or None if nothing fits.
 
-    Rules:
-    1. Prefer a dedicated mailbox for this client if one has capacity.
-    2. Else pool: any healthy/warming mailbox with capacity, weighted by
-       remaining capacity (we approximate the weighting by ordering
-       descending — the mailbox with most headroom goes first).
+    Rules, in order:
+    0. **Stickiness** — if the lead has a preferred_mailbox_id set (Day 1
+       went out from it), keep using it. Otherwise threading breaks: the
+       recipient sees two unrelated cold-touch emails from different
+       senders instead of a follow-up to the existing thread.
+    1. Dedicated mailbox for this client if one has capacity.
+    2. Pool — any healthy/warming mailbox with capacity, ordered by
+       remaining headroom so the most-rested mailbox goes first.
     3. Excludes paused, disconnected, or capacity-exhausted mailboxes.
-    4. Respects the 2-minute per-mailbox jitter.
+    4. Respects the randomised per-mailbox jitter window.
     """
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(seconds=JITTER_SECONDS)
+    cutoff = _jitter_cutoff(now)
 
-    base = """
+    base_cols = """
         select id, address, smtp_host, smtp_port, smtp_user, smtp_pass_env_name,
                from_name, daily_cap, sent_today, last_send_at, dedicated_client_id
         from crm.mailboxes
@@ -96,29 +141,49 @@ def _pick_mailbox(client_id: int) -> dict | None:
           and (last_send_at is null or last_send_at < %s)
     """
 
-    # First try dedicated.
+    # 0. Stickiness: lead's locked mailbox, if it still meets the gates.
+    if lead_id is not None:
+        sticky = db.fetch_all(
+            base_cols + " and id = (select preferred_mailbox_id from crm.leads where id = %s) limit 1",
+            (cutoff, lead_id),
+        )
+        if sticky:
+            return sticky[0]
+
+    # 1. Dedicated.
     dedicated = db.fetch_all(
-        base + " and dedicated_client_id = %s order by (daily_cap - sent_today) desc limit 1",
+        base_cols + " and dedicated_client_id = %s order by (daily_cap - sent_today) desc limit 1",
         (cutoff, client_id),
     )
     if dedicated:
         return dedicated[0]
 
-    # Pool fallback: any mailbox not dedicated to a different client.
+    # 2. Pool fallback: any mailbox not dedicated to a different client.
     pool = db.fetch_all(
-        base + " and (dedicated_client_id is null or dedicated_client_id = %s) "
+        base_cols + " and (dedicated_client_id is null or dedicated_client_id = %s) "
         "order by (daily_cap - sent_today) desc limit 1",
         (cutoff, client_id),
     )
     return pool[0] if pool else None
 
 
+def _save_lead_preferred_mailbox(lead_id: int, mailbox_id: int) -> None:
+    """Lock the lead to this mailbox so Day 3 and Day 7 ship from the
+    same address (thread integrity). Only sets if currently null — once
+    Day 1's mailbox is locked in, the lead stays on it for life."""
+    db.execute(
+        "update crm.leads set preferred_mailbox_id = %s "
+        "where id = %s and preferred_mailbox_id is null",
+        (mailbox_id, lead_id),
+    )
+
+
 def _any_mailbox_paused_by_jitter(client_id: int) -> bool:
     """True if a mailbox WOULD have been picked but is still in the
-    2-min jitter window. Lets us record reason='mailbox_jitter' instead
-    of the more generic 'no_mailbox_capacity'."""
+    jitter window. Lets us record reason='mailbox_jitter' instead of
+    the more generic 'no_mailbox_capacity'."""
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(seconds=JITTER_SECONDS)
+    cutoff = _jitter_cutoff(now)
     rows = db.fetch_all("""
         select 1
         from crm.mailboxes
@@ -306,6 +371,12 @@ def _send_live(mailbox: dict, email_row: dict, message_id: str) -> bool:
     msg["To"] = email_row["to_address"]
     msg["Subject"] = email_row.get("subject") or ""
     msg["Message-ID"] = message_id
+    # RFC 8058 one-click unsubscribe — required by Gmail/Yahoo for inbox
+    # placement since Feb 2024. The signed token encodes the email id +
+    # recipient so /unsubscribe can verify without a DB lookup.
+    unsub_url = _unsubscribe_url(email_row["id"], email_row["to_address"])
+    msg["List-Unsubscribe"] = f"<{unsub_url}>"
+    msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     msg.set_content(email_row.get("body") or "")
 
     try:
@@ -378,8 +449,9 @@ def tick(mode: str | None = None) -> dict:
             counts["skipped"] += 1
             continue
 
-        # Pick a mailbox.
-        mailbox = _pick_mailbox(e["client_id"])
+        # Pick a mailbox — honour stickiness on follow-ups so the lead
+        # keeps seeing one continuous thread.
+        mailbox = _pick_mailbox(e["client_id"], lead_id=e["lead_id"])
         if mailbox is None:
             # Differentiate "everyone's in jitter cooldown" vs "no capacity".
             reason = (policy.REASON_MAILBOX_JITTER
@@ -397,6 +469,9 @@ def tick(mode: str | None = None) -> dict:
 
         if success:
             _mark_sent(e["id"], mailbox["id"], message_id, mode)
+            # Lock this lead to this mailbox for Day 3 + Day 7 — keeps
+            # the recipient's thread intact across the cadence.
+            _save_lead_preferred_mailbox(e["lead_id"], mailbox["id"])
             _maybe_schedule_followup(e, settings, mode)
             action = "sent" if mode == "live" else "would_send"
             _audit(e["id"], e["lead_id"], e["client_id"], mailbox["id"], action, None, mode)
