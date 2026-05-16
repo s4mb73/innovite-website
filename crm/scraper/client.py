@@ -27,6 +27,8 @@ on the lead — the pipeline continues, the lead is just less enriched.
 """
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 import random
 import threading
@@ -161,13 +163,16 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
                 client_kwargs["emulation"] = emulation
 
             client = wreq.Client(**client_kwargs)  # type: ignore[union-attr]
-            resp = client.get(url)
+            # wreq exposes an async API — client.get() returns a coroutine.
+            # Each call gets its own event loop (asyncio.run); cost is
+            # negligible relative to the HTTP request itself (~1ms vs
+            # ~1-3s on the wire).
+            resp, body = asyncio.run(_async_get(client, url, max_bytes))
             status = getattr(resp, "status", None) or getattr(resp, "status_code", None)
 
             # 2xx → success. 3xx → wreq follows redirects by default; if
             # we're seeing a 3xx here, the chain didn't resolve cleanly.
             if status is None or 200 <= status < 300:
-                body = _read_body(resp, max_bytes)
                 if body and _looks_like_challenge(body):
                     logger.info("CHALLENGE %s via %s — retrying",
                                 host, proxy.public_id())
@@ -206,18 +211,28 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
     return None
 
 
-def _read_body(resp, max_bytes: int) -> str | None:
-    """Pull response text safely. wreq exposes .text() as a method (not
-    a property) on the Response object; we handle both for safety."""
-    try:
-        text = resp.text() if callable(getattr(resp, "text", None)) else resp.text
-        if text is None:
-            return None
-        if len(text) > max_bytes:
-            return text[:max_bytes]
-        return text
-    except Exception:
-        return None
+async def _async_get(client, url: str, max_bytes: int):
+    """Await `client.get(url)` and the response body in one shot.
+
+    wreq's Response.text() is also async in current versions but older
+    or future builds might expose it as a sync attribute. We probe with
+    `inspect.isawaitable` so this stays robust across the version
+    range without a hard version pin.
+    """
+    resp = await client.get(url)
+
+    text_attr = getattr(resp, "text", None)
+    if callable(text_attr):
+        text_call = text_attr()
+        text = await text_call if inspect.isawaitable(text_call) else text_call
+    else:
+        text = text_attr  # plain attribute
+
+    if text is None:
+        return resp, None
+    if len(text) > max_bytes:
+        return resp, text[:max_bytes]
+    return resp, text
 
 
 # Cloudflare / DataDome / similar challenge-page markers. If we see
