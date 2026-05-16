@@ -30,6 +30,16 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # nginx sends X-Forwarded-Proto=https; ProxyFix makes url_for / request.is_secure honour it.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+
+@app.template_filter('relative_time')
+def _jinja_relative_time(dt):
+    """`{{ ts|relative_time }}` → '4m ago' / '2h ago'. None/empty → '—'.
+    Wraps db.relative_time so templates can render timestamps without
+    the route having to pre-format each one."""
+    if not dt:
+        return '—'
+    return db.relative_time(dt)
+
 # Endpoint names (not URL paths) that don't require auth.
 # unsubscribe is public because Gmail/Yahoo fire RFC 8058 one-click POSTs
 # without any cookie context — they MUST work without a session.
@@ -98,11 +108,13 @@ def overview():
     chart_values: list[int] = []
     activity: list[dict] = []
     finder_clients: list[dict] = []
+    scraper_health: dict = {'total': 0}
     try:
         metrics = db.dashboard_metrics()
         chart_labels, chart_values = db.leads_per_day(7)
         activity = db.recent_activity(20)
         finder_clients = db.clients_for_finder()
+        scraper_health = db.scraper_health_summary(200)
     except Exception as e:
         # Don't 500 the page on a DB blip — render the empty state with a banner.
         db_error = str(e).splitlines()[0][:240]
@@ -114,6 +126,7 @@ def overview():
         chart_values=chart_values,
         activity=activity,
         finder_clients=finder_clients,
+        scraper_health=scraper_health,
         db_error=db_error,
     )
 
@@ -447,11 +460,13 @@ def leads():
     clients_min: list[dict]   = []
     client_tabs: list[dict]   = []
     active_client: dict | None = None
+    scraper_offline = False
     f = _lead_filters_from_request()
 
     try:
         clients_min = db.all_clients_min()
         client_tabs = db.leads_count_per_client(status=f['status'], search=f['search'])
+        scraper_offline = db.scraper_offline_now()
 
         # Default to first active client if none specified — the page is
         # always scoped to one client (no "all clients" view).
@@ -479,6 +494,7 @@ def leads():
         active_client=active_client,
         f=f,
         active_status=request.args.get('status', 'all'),
+        scraper_offline=scraper_offline,
         db_error=db_error,
     )
 

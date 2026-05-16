@@ -129,6 +129,84 @@ def recent_activity(limit: int = 20) -> list[dict]:
     return rows
 
 
+# ── Scraper observability ───────────────────────────────────────────
+# Two helpers powering the Website intel UI:
+#  - scraper_health_summary(N): aggregate of the last N attempted scrapes
+#    → fuels the Overview "Scraper health" widget so the operator sees
+#    pool degradation before it eats a campaign.
+#  - scraper_offline_now(): true when the most recent attempts all came
+#    back 'disabled' → fuels the leads-list banner. 'disabled' is set
+#    when wreq isn't importable or the proxy pool is empty, so it's a
+#    binary "the worker can't scrape at all" signal, not "this one lead
+#    was unlucky". Sticky to the most recent run to avoid flapping.
+
+def scraper_health_summary(window: int = 200) -> dict:
+    """Counts of each website_scrape_status in the last `window` leads
+    that were *attempted* (i.e. status is not null). Returns:
+      {window: int, total: int, by_status: {status: count}, ok_pct,
+       blocked_pct, no_website_pct, last_attempt_at}.
+    Empty pipeline → total=0 and the template renders an empty state."""
+    sql = """
+        with recent as (
+          select website_scrape_status as s, website_scraped_at as at
+          from crm.leads
+          where website_scrape_status is not null
+          order by coalesce(website_scraped_at, created_at) desc
+          limit %s
+        )
+        select s, count(*) as n, max(at) as last_at
+        from recent
+        group by s
+    """
+    rows = fetch_all(sql, (window,))
+    by_status: dict[str, int] = {s: 0 for s in
+        ('ok','blocked','timeout','no_website','parse_failed','disabled')}
+    total = 0
+    last_attempt_at = None
+    for r in rows:
+        s = r['s']
+        n = int(r['n'])
+        by_status[s] = by_status.get(s, 0) + n
+        total += n
+        if r['last_at'] is not None and (last_attempt_at is None
+                                         or r['last_at'] > last_attempt_at):
+            last_attempt_at = r['last_at']
+
+    def pct(n: int) -> int:
+        return round(n / total * 100) if total else 0
+
+    return {
+        'window':           window,
+        'total':            total,
+        'by_status':        by_status,
+        'ok_pct':           pct(by_status.get('ok', 0)),
+        'blocked_pct':      pct(by_status.get('blocked', 0)
+                                + by_status.get('timeout', 0)
+                                + by_status.get('parse_failed', 0)),
+        'no_website_pct':   pct(by_status.get('no_website', 0)),
+        'disabled_pct':     pct(by_status.get('disabled', 0)),
+        'last_attempt_at':  last_attempt_at,
+        'last_relative':    relative_time(last_attempt_at) if last_attempt_at else None,
+    }
+
+
+def scraper_offline_now() -> bool:
+    """True when the worker scraper is currently broken — defined as
+    'the last 5 attempted scrapes all came back disabled'. Stricter
+    than checking just the most recent so a one-off race (e.g. proxy
+    pool reload mid-fetch) doesn't trigger an alarm banner."""
+    rows = fetch_all("""
+        select website_scrape_status as s
+        from crm.leads
+        where website_scrape_status is not null
+        order by coalesce(website_scraped_at, created_at) desc
+        limit 5
+    """)
+    if len(rows) < 5:
+        return False
+    return all(r['s'] == 'disabled' for r in rows)
+
+
 # ── Display helpers ──────────────────────────────────────────────────
 ACTION_LABEL = {
     'lead_created':         'Lead created',

@@ -129,8 +129,85 @@
     </div>
   </div>
 
-  {# Right column: Instagram + Website + Competitors #}
+  {# Right column: Website intel + Instagram + Website audit + Competitors #}
   <div class="lead-col">
+    {# Website intel — Haiku-extracted signals (US-024).
+       The card shape changes based on website_scrape_status so the
+       operator can tell at a glance whether the lack of detail is
+       "we couldn't read it", "they have no site", or "scraper is
+       offline" — three very different operational answers. #}
+    {% set ws = lead.website_signals if lead.website_signals is mapping else {} %}
+    {% set wstatus = lead.website_scrape_status %}
+    {% set wpill = {
+        'ok':            ('green', 'Read'),
+        'blocked':       ('amber', 'Blocked'),
+        'timeout':       ('amber', 'Timeout'),
+        'parse_failed':  ('amber', 'Parse failed'),
+        'no_website':    ('grey',  'No website'),
+        'disabled':      ('red',   'Scraper offline'),
+    }.get(wstatus, ('grey', 'Not scraped')) %}
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">
+          Website intel
+          {% if lead.website_scraped_at %}
+            <span class="card-title-sub">scraped {{ lead.website_scraped_at|relative_time }}</span>
+          {% endif %}
+        </div>
+        <span class="pill pill-{{ wpill[0] }}">{{ wpill[1] }}</span>
+      </div>
+
+      {% if wstatus == 'ok' and ws %}
+        {% if ws.get('summary') %}
+          <blockquote class="intel-summary">{{ ws.summary }}</blockquote>
+        {% endif %}
+
+        {% if ws.get('services') %}
+          <div class="intel-block">
+            <div class="intel-label">Services</div>
+            <div class="intel-chips">
+              {% for svc in ws.services %}<span class="intel-chip">{{ svc }}</span>{% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        {% set hints = [] %}
+        {% if ws.get('team_size_hint') %}{% set _ = hints.append(('team', ws.team_size_hint ~ ' team')) %}{% endif %}
+        {% if ws.get('recency_hint') %}{% set _ = hints.append(('recency', ws.recency_hint)) %}{% endif %}
+        {% if ws.get('contact_form') is sameas true %}{% set _ = hints.append(('form', 'contact form')) %}{% endif %}
+        {% if ws.get('pricing_visible') is sameas true %}{% set _ = hints.append(('price', 'pricing visible')) %}{% endif %}
+        {% if hints %}
+          <div class="intel-block">
+            <div class="intel-label">Signals</div>
+            <div class="intel-hints">
+              {% for kind, label in hints %}<span class="intel-hint hint-{{ kind }}">{{ label }}</span>{% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        {% if ws.get('client_logos') %}
+          <div class="intel-block">
+            <div class="intel-label">Named clients</div>
+            <div class="intel-chips intel-chips-muted">
+              {% for cl in ws.client_logos %}<span class="intel-chip">{{ cl }}</span>{% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+      {% elif wstatus == 'no_website' %}
+        <div class="empty empty-sm">No website on file — nothing to scrape.</div>
+      {% elif wstatus == 'disabled' %}
+        <div class="empty empty-sm">
+          Scraper module is offline (wreq import or proxy pool). Check the worker logs —
+          this isn't a per-lead failure.
+        </div>
+      {% elif wstatus in ('blocked', 'timeout', 'parse_failed') %}
+        <div class="empty empty-sm">Couldn't read the website. Will retry on the next pipeline run.</div>
+      {% else %}
+        <div class="empty empty-sm">Not scraped yet — the next pipeline run will populate this.</div>
+      {% endif %}
+    </div>
+
     <div class="card">
       <div class="card-title">Instagram</div>
       {% if lead.instagram_handle or lead.instagram_followers %}

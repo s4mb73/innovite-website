@@ -33,6 +33,17 @@
 </div>
 {% endif %}
 
+{% if scraper_offline %}
+{# Sticky red banner: the last 5 attempts all returned 'disabled', meaning
+   the worker can't scrape at all (wreq import failed or proxy pool empty).
+   Per-lead pills would bury this signal — surface it once at the top. #}
+<div class="banner banner-err">
+  <strong>Website scraper offline.</strong>
+  No website signals are being extracted on new leads. Check
+  <code>journalctl -u crm-worker</code> for the cause (wreq import or empty proxy pool).
+</div>
+{% endif %}
+
 {# ── Client tabs (page is always scoped to one client) ── #}
 {% if client_tabs %}
 <div class="tabbar tabbar-clients" role="tablist" aria-label="Client">
