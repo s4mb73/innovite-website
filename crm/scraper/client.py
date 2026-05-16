@@ -32,6 +32,7 @@ import random
 import threading
 import time
 from collections import defaultdict
+from datetime import timedelta
 from urllib.parse import urlparse
 
 from scraper.proxy_pool import get_pool, Proxy
@@ -154,7 +155,7 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
         try:
             client_kwargs: dict = {
                 "proxy":   proxy.as_url(),
-                "timeout": TIMEOUT_S,
+                "timeout": timedelta(seconds=TIMEOUT_S),
             }
             if emulation is not None:
                 client_kwargs["emulation"] = emulation
@@ -188,8 +189,13 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
                 logger.info("HTTP %s on %s via %s", status, host, proxy.public_id())
                 pool.record_failure(proxy, f"HTTP {status}")
         except Exception as e:
-            logger.info("fetch error %s via %s: %s",
-                        host, proxy.public_id(), str(e)[:80])
+            # Log type + message so config bugs (e.g. wrong kwarg type)
+            # don't get hidden as generic "fetch error". Connection
+            # errors still produce noisy lines — that's fine; this is
+            # an info-level scraper, the volume's bounded.
+            logger.warning("fetch error %s via %s: %s: %s",
+                           host, proxy.public_id(),
+                           type(e).__name__, str(e)[:200])
             pool.record_failure(proxy, type(e).__name__)
 
         attempts += 1
