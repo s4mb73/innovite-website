@@ -200,12 +200,22 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
                 # Hard signal that this IP is no good for this target.
                 logger.info("HTTP %s on %s via %s", status, host, proxy.public_id())
                 pool.record_failure(proxy, f"HTTP {status}")
+            elif 400 <= status < 500:
+                # Target answered cleanly with "no" (404, 401, 410…) —
+                # the page doesn't exist, or the URL was malformed. Not
+                # a proxy problem. Don't bench, and don't retry through
+                # other proxies — re-fetching the same URL through a
+                # different IP won't conjure a missing page into being.
+                # This matters because the extractor probes a handful of
+                # candidate sub-paths (/about, /services, /what-we-do)
+                # — most sites don't have all of them. Without this
+                # branch each miss burns 3 proxies' health unfairly.
+                logger.info("HTTP %s on %s (target answered no) — giving up",
+                            status, host)
+                return None
             elif 500 <= status < 600:
-                # Target server problem, not our IP — don't bench harshly.
+                # Target server problem, not our IP — don't bench.
                 logger.info("HTTP %s on %s (target error)", status, host)
-                # Single bump rather than a full failure — proxy isn't at
-                # fault if the destination 5xx'd.
-                proxy.consecutive_failures += 0
             else:
                 logger.info("HTTP %s on %s via %s", status, host, proxy.public_id())
                 pool.record_failure(proxy, f"HTTP {status}")
