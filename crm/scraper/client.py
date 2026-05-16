@@ -160,9 +160,18 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
             # both HTTP and HTTPS traffic — what we want for SMB
             # website scraping where targets are a mix of plain http
             # redirects and https.
+            #
+            # wreq does NOT follow redirects by default — the default
+            # policy is `none`, which surfaces 301/302 as the final
+            # status. SMB sites redirect heavily (apex → www, http →
+            # https, /services → /our-services etc.), so without an
+            # explicit limited policy the sub-page fetch returns a 301
+            # body and we treat the proxy as broken. Bound to 10 hops
+            # to defeat redirect loops.
             client_kwargs: dict = {
                 "proxies": [wreq.Proxy.all(proxy.as_url())],
                 "timeout": timedelta(seconds=TIMEOUT_S),
+                "redirect": wreq.redirect.Policy.limited(10),
             }
             if emulation is not None:
                 client_kwargs["emulation"] = emulation
@@ -175,8 +184,10 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
             resp, body = asyncio.run(_async_get(client, url, max_bytes))
             status = getattr(resp, "status", None) or getattr(resp, "status_code", None)
 
-            # 2xx → success. 3xx → wreq follows redirects by default; if
-            # we're seeing a 3xx here, the chain didn't resolve cleanly.
+            # 2xx → success. 3xx → with the limited redirect policy set
+            # above, wreq follows up to 10 hops; if we still see a 3xx
+            # here the chain hit the cap or pointed at a non-resolving
+            # host.
             if status is None or 200 <= status < 300:
                 if body and _looks_like_challenge(body):
                     logger.info("CHALLENGE %s via %s — retrying",
