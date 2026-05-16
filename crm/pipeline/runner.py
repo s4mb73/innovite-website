@@ -46,6 +46,7 @@ import db
 from pipeline import scoring, drafter
 from pipeline.sources import google_places, companies_house, apollo
 from scraper import enricher as website_scraper
+from scraper import gazette as gazette_scraper
 
 logger = logging.getLogger("crm.pipeline.runner")
 
@@ -171,6 +172,8 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             decision_maker_name, decision_maker_title, email, linkedin_url,
             grade, overall_score, pain_score, hook_type, weakness_profile,
             website_signals, website_scraped_at, website_scrape_status,
+            gazette_status, gazette_notice_count,
+            gazette_last_notice_date, gazette_last_notice_url,
             status, source
         )
         values (%s, %s, %s, %s, %s, %s,
@@ -185,6 +188,7 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
+                %s, %s, %s, %s,
                 'new', 'outbound')
         returning id
     """
@@ -224,6 +228,10 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         Jsonb(web_signals) if web_signals else None,
         business.get("website_scraped_at") or None,
         business.get("website_scrape_status") or None,
+        business.get("gazette_status") or None,
+        business.get("gazette_notice_count") if business.get("gazette_notice_count") is not None else None,
+        business.get("gazette_last_notice_date") or None,
+        business.get("gazette_last_notice_url") or None,
     ))
     return row["id"] if row else None
 
@@ -374,6 +382,16 @@ def run(run_id: int) -> dict:
                 except Exception as e:
                     logger.exception("Website scrape enrich failed")
                     biz.setdefault("source_errors", {})["website_scraper"] = str(e)
+
+                # The Gazette — distress signal (Stage 6). Single JSON
+                # API call against thegazette.co.uk filtered to the
+                # insolvency category, verified by name + CH number.
+                # Free, no auth, no anti-bot — runs unconditionally.
+                try:
+                    biz = gazette_scraper.enrich(biz)
+                except Exception as e:
+                    logger.exception("Gazette enrich failed")
+                    biz.setdefault("source_errors", {})["gazette"] = str(e)
 
                 # Score.
                 score = scoring.grade(biz)

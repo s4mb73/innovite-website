@@ -127,6 +127,34 @@
         <div class="empty empty-sm">No Companies House data yet.</div>
       {% endif %}
     </div>
+
+    {# Gazette — distress signal (US-025). The actionable case is
+       'distressed': operator decides go-or-skip based on the client's
+       service mix (insolvency specialist vs general practice). #}
+    {% set gpill = {
+        'clear':      ('green', 'Clear'),
+        'distressed': ('red',   'Distressed'),
+        'unknown':    ('grey',  'Unknown'),
+    }.get(lead.gazette_status, ('grey', 'Not checked')) %}
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">The Gazette <span class="card-title-sub">insolvency register</span></div>
+        <span class="pill pill-{{ gpill[0] }}">{{ gpill[1] }}</span>
+      </div>
+      {% if lead.gazette_status == 'distressed' %}
+        <ul class="kv">
+          <li><strong>{{ lead.gazette_notice_count }}</strong> {{ 'notice' if lead.gazette_notice_count == 1 else 'notices' }} matched</li>
+          {% if lead.gazette_last_notice_date %}<li>Most recent · {{ lead.gazette_last_notice_date.strftime('%-d %b %Y') }}</li>{% endif %}
+          {% if lead.gazette_last_notice_url %}<li><a href="{{ lead.gazette_last_notice_url }}" target="_blank" rel="noopener">View notice ↗</a></li>{% endif %}
+        </ul>
+      {% elif lead.gazette_status == 'clear' %}
+        <div class="empty empty-sm">No insolvency notices on file.</div>
+      {% elif lead.gazette_status == 'unknown' %}
+        <div class="empty empty-sm">Name too short or ambiguous to query confidently.</div>
+      {% else %}
+        <div class="empty empty-sm">Not checked yet — next pipeline run will populate this.</div>
+      {% endif %}
+    </div>
   </div>
 
   {# Right column: Website intel + Instagram + Website audit + Competitors #}
