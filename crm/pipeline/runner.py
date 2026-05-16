@@ -48,6 +48,7 @@ from pipeline.sources import google_places, companies_house, apollo
 from scraper import enricher as website_scraper
 from scraper import gazette as gazette_scraper
 from scraper import jobs as jobs_scraper
+from scraper import linkedin as linkedin_scraper
 
 logger = logging.getLogger("crm.pipeline.runner")
 
@@ -177,6 +178,8 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             gazette_last_notice_date, gazette_last_notice_url,
             jobs_signal, jobs_open_count,
             jobs_last_checked_at, jobs_source_url,
+            linkedin_status, linkedin_current_title,
+            linkedin_headline, linkedin_last_checked_at,
             status, source
         )
         values (%s, %s, %s, %s, %s, %s,
@@ -191,6 +194,7 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
+                %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 'new', 'outbound')
@@ -240,6 +244,10 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         business.get("jobs_open_count") if business.get("jobs_open_count") is not None else None,
         business.get("jobs_last_checked_at") or None,
         business.get("jobs_source_url") or None,
+        business.get("linkedin_status") or None,
+        business.get("linkedin_current_title") or None,
+        business.get("linkedin_headline") or None,
+        business.get("linkedin_last_checked_at") or None,
     ))
     return row["id"] if row else None
 
@@ -380,6 +388,17 @@ def run(run_id: int) -> dict:
                 except Exception as e:
                     logger.exception("Apollo enrich failed")
                     biz.setdefault("source_errors", {})["apollo"] = str(e)
+
+                # LinkedIn — decision-maker verification (Stage 4).
+                # Only runs when Apollo gave us a /in/<slug> URL.
+                # HTTP-only buys public og:title + og:description;
+                # everything richer needs auth. Skipped silently for
+                # leads without a linkedin_url — Apollo data stands.
+                try:
+                    biz = linkedin_scraper.enrich(biz)
+                except Exception as e:
+                    logger.exception("LinkedIn enrich failed")
+                    biz.setdefault("source_errors", {})["linkedin"] = str(e)
 
                 # Website scraping — fourth enrichment source. Adds the
                 # "what this business actually does" context to the

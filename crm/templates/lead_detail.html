@@ -91,11 +91,29 @@
       </ul>
     </div>
 
+    {# Decision-maker — Apollo's name + title, refreshed by LinkedIn
+       when we have a /in/<slug> URL. LinkedIn's current_title is
+       preferred over Apollo's because Apollo's data ages — people
+       change jobs and Apollo lags weeks to months. LinkedIn status
+       pill is shown only when we actually attempted a fetch (no_url
+       is the silent common case). #}
+    {% set li_pill = {
+        'verified':  ('green', 'LinkedIn verified'),
+        'blocked':   ('amber', 'LinkedIn blocked'),
+        'not_found': ('grey',  'LinkedIn not found'),
+    }.get(lead.linkedin_status) %}
+    {% set effective_title = lead.linkedin_current_title or lead.decision_maker_title %}
     <div class="card">
-      <div class="card-title">Decision-maker</div>
+      <div class="card-head">
+        <div class="card-title">Decision-maker</div>
+        {% if li_pill %}<span class="pill pill-{{ li_pill[0] }}">{{ li_pill[1] }}</span>{% endif %}
+      </div>
       {% if lead.decision_maker_name %}
         <div class="dm-name">{{ lead.decision_maker_name }}</div>
-        <div class="dm-title">{{ lead.decision_maker_title or '—' }}</div>
+        <div class="dm-title">{{ effective_title or '—' }}</div>
+        {% if lead.linkedin_headline and lead.linkedin_headline != effective_title %}
+          <blockquote class="intel-summary">{{ lead.linkedin_headline }}</blockquote>
+        {% endif %}
         {% if lead.linkedin_url %}<a class="card-link" href="{{ lead.linkedin_url }}" target="_blank" rel="noopener">LinkedIn ↗</a>{% endif %}
       {% else %}
         <div class="empty empty-sm">No decision-maker identified yet.</div>
