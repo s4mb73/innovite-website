@@ -86,25 +86,29 @@ def _claim_next_run() -> int | None:
 
 def _maybe_reset_sent_today(state: dict) -> None:
     """Reset all mailboxes.sent_today to 0 at the start of each London day.
+    Also: recompute daily_cap from the warmup ramp curve, and run the
+    bounce-rate circuit breaker. All three are once-per-day jobs that
+    naturally coincide.
 
     Throttled to once per local date. The first tick after midnight
-    Europe/London resets; subsequent ticks the same day are no-ops.
-    Cheap: one row in state[] tracks the last-reset date.
+    Europe/London does the work; subsequent ticks the same day are
+    no-ops. Cheap: one row in state[] tracks the last-reset date.
     """
     today = datetime.now(LONDON).date().isoformat()
     if state.get("last_reset_date") == today:
         return
 
     # On worker startup the reset would fire immediately even on a quiet
-    # afternoon if state is empty. Boot-time hydration from DB: if every
-    # mailbox already has sent_today=0 we mark today as already-reset to
-    # avoid a spurious reset on startup.
+    # afternoon if state is empty. Boot-time hydration: if every mailbox
+    # already has sent_today=0, presume today's reset already ran.
     if state.get("last_reset_date") is None:
         zeros = db.fetch_one(
             "select count(*) filter (where sent_today > 0) as nonzero from crm.mailboxes"
         )
         if zeros and zeros.get("nonzero", 0) == 0:
             state["last_reset_date"] = today
+            _run_warmup_ramp()
+            _run_mailbox_circuit_breaker()
             return
 
     try:
@@ -113,6 +117,114 @@ def _maybe_reset_sent_today(state: dict) -> None:
         logger.info("Reset mailboxes.sent_today for %s", today)
     except Exception:
         logger.exception("Failed to reset sent_today — will retry on next tick")
+        return
+
+    _run_warmup_ramp()
+    _run_mailbox_circuit_breaker()
+
+
+def _run_warmup_ramp() -> None:
+    """Recompute daily_cap from the warmup curve once per day.
+
+    Effective cap = min(target_daily_cap, 5 + 3 * days_since_warming_started).
+    Backfilled mailboxes have warming_started_at set 30 days back, so
+    `5 + 3*30 = 95` and `min(target, 95)` collapses to `target`. New
+    mailboxes ramp 5 → target over ~14 days.
+
+    Done at the daily reset rather than on every tick so the operator
+    sees a stable cap throughout the day.
+    """
+    try:
+        db.execute("""
+            update crm.mailboxes
+               set daily_cap = least(
+                 coalesce(target_daily_cap, daily_cap),
+                 5 + 3 * greatest(
+                   0,
+                   extract(day from (now() - warming_started_at))::int
+                 )
+               )
+             where warming_started_at is not null
+               and target_daily_cap   is not null
+        """)
+        logger.info("Warmup ramp daily_cap recomputed")
+    except Exception:
+        logger.exception("Warmup ramp update failed — caps unchanged for today")
+
+
+# Circuit-breaker thresholds. 3% bounce rate = WARN (operator should
+# investigate); 10% = AUTO-PAUSE (we stop sending immediately so the
+# damage to sender reputation doesn't escalate). Both based on rolling
+# 7-day windows so we don't trip on a single bad day.
+_BOUNCE_PAUSE_PCT   = 10.0
+_BOUNCE_WARN_PCT    = 3.0
+_BOUNCE_MIN_SAMPLE  = 20  # don't trip thresholds on tiny samples
+
+
+def _run_mailbox_circuit_breaker() -> None:
+    """Compute rolling 7-day bounce rate per mailbox and auto-pause if
+    it's above the danger threshold. Logs warnings at the lower threshold.
+
+    Reads from crm.emails.from_address rather than mailbox_id because
+    bounces matched on address are more authoritative — the recipient's
+    ESP knows what From they actually saw, even if our internal records
+    routed the send through a different mailbox row."""
+    try:
+        rows = db.fetch_all("""
+            with sends as (
+              select lower(from_address) as addr, count(*) as sent_n
+                from crm.emails
+               where sent_at >= now() - interval '7 days'
+                 and from_address is not null
+               group by lower(from_address)
+            ),
+            bounces as (
+              select lower(from_address) as addr, count(*) as bounce_n
+                from crm.emails
+               where status = 'bounced'
+                 and sent_at >= now() - interval '7 days'
+                 and from_address is not null
+               group by lower(from_address)
+            )
+            select s.addr,
+                   s.sent_n,
+                   coalesce(b.bounce_n, 0) as bounce_n,
+                   case when s.sent_n > 0
+                        then 100.0 * coalesce(b.bounce_n, 0) / s.sent_n
+                        else 0 end as bounce_pct
+              from sends s
+              left join bounces b on b.addr = s.addr
+             where s.sent_n >= %s
+        """, (_BOUNCE_MIN_SAMPLE,))
+    except Exception:
+        logger.exception("Circuit breaker query failed — no mailboxes touched")
+        return
+
+    for r in rows:
+        pct = float(r['bounce_pct'])
+        addr = r['addr']
+        if pct >= _BOUNCE_PAUSE_PCT:
+            try:
+                db.execute("""
+                    update crm.mailboxes
+                       set paused = true,
+                           health_state = 'paused'
+                     where lower(address) = %s
+                       and paused = false
+                """, (addr,))
+                logger.warning(
+                    "CIRCUIT BREAKER PAUSED %s — bounce_pct=%.1f%% (sent=%s, bounced=%s)",
+                    addr, pct, r['sent_n'], r['bounce_n'],
+                )
+            except Exception:
+                logger.exception("Failed to pause %s", addr)
+        elif pct >= _BOUNCE_WARN_PCT:
+            # Warn-level log — surfaces in journalctl without escalating
+            # to an auto-pause. Operator decides.
+            logger.warning(
+                "MAILBOX BOUNCE WARN %s — bounce_pct=%.1f%% (sent=%s, bounced=%s)",
+                addr, pct, r['sent_n'], r['bounce_n'],
+            )
 
 
 def _maybe_run_schedule(state: dict) -> None:

@@ -841,9 +841,10 @@ def reports():
             'pipeline_value': 0, 'pipeline_value_delta': 0,
             'avg_deal_value': db.REPORTS_DEFAULT_AVG_DEAL_VALUE}
     chart   = {'labels': [], 'sent': [], 'replies': []}
-    funnel: list[dict]   = []
-    sequence: list[dict] = []
-    wins: list[dict]     = []
+    funnel: list[dict]       = []
+    sequence: list[dict]     = []
+    wins: list[dict]         = []
+    hook_cohorts: list[dict] = []
     targets: dict        = db.reports_targets(days)
     narrative: str       = ''
 
@@ -856,13 +857,14 @@ def reports():
         if client_id is None and clients_min:
             client_id = clients_min[0]['id']
         if client_id is not None:
-            client    = db.reports_client_summary(client_id)
-            kpis      = db.reports_kpis(client_id, days)
-            chart     = db.reports_chart_series(client_id, days)
-            funnel    = db.reports_funnel(client_id, days)
-            sequence  = db.reports_sequence(client_id, days)
-            wins      = db.reports_wins(client_id, days)
-            narrative = db.reports_narrative(client_id, days, kpis)
+            client       = db.reports_client_summary(client_id)
+            kpis         = db.reports_kpis(client_id, days)
+            chart        = db.reports_chart_series(client_id, days)
+            funnel       = db.reports_funnel(client_id, days)
+            sequence     = db.reports_sequence(client_id, days)
+            wins         = db.reports_wins(client_id, days)
+            hook_cohorts = db.reports_hook_cohorts(client_id, days)
+            narrative    = db.reports_narrative(client_id, days, kpis)
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
 
@@ -911,6 +913,7 @@ def reports():
         wins=wins,
         targets=targets,
         rollup=rollup,
+        hook_cohorts=hook_cohorts,
         mailto_url=mailto_url,
         db_error=db_error,
     )

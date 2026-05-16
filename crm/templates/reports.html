@@ -214,6 +214,36 @@
 </section>
 {% endif %}
 
+{# ── Hook cohorts — which pitch angles convert? ─────────── #}
+{% if hook_cohorts %}
+<section class="card hook-cohort-card" aria-label="Reply rate by hook">
+  <div class="card-title">Hook performance</div>
+  <p class="card-sub">Reply rate by the pain angle each draft led with. Drop hooks that don't earn replies; double down on the ones that do.</p>
+  <table class="hook-cohort-table">
+    <thead>
+      <tr>
+        <th>Hook</th>
+        <th class="numeric">Sent</th>
+        <th class="numeric">Replied</th>
+        <th class="numeric">Reply rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for h in hook_cohorts %}
+      <tr>
+        <td><span class="hook-tag">{{ h.hook_type|replace('_', ' ') }}</span></td>
+        <td class="numeric">{{ '{:,}'.format(h.leads_sent) }}</td>
+        <td class="numeric">{{ '{:,}'.format(h.leads_replied) }}</td>
+        <td class="numeric hook-rate {% if h.reply_rate >= 10 %}hook-rate--strong{% elif h.reply_rate >= 5 %}hook-rate--mid{% else %}hook-rate--weak{% endif %}">
+          {{ h.reply_rate }}%
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 {# ── Funnel + Sequence + Grades grid ──────────────── #}
 <div class="report-grid">
 

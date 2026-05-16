@@ -2951,9 +2951,11 @@ a { color:inherit; text-decoration:none; }
   border-radius:6px;
   white-space:nowrap;
 }
-.inbox-signal.signal-positive { background:var(--green-bg); color:var(--green); }
-.inbox-signal.signal-neutral  { background:var(--accent-bg); color:var(--accent); }
-.inbox-signal.signal-negative { background:rgba(239,68,68,.10); color:var(--red); }
+.inbox-signal.signal-positive     { background:var(--green-bg);          color:var(--green); }
+.inbox-signal.signal-neutral      { background:var(--accent-bg);         color:var(--accent); }
+.inbox-signal.signal-negative     { background:rgba(239,68,68,.10);      color:var(--red); }
+.inbox-signal.signal-referral     { background:rgba(143,183,255,.18);    color:var(--accent-h); }
+.inbox-signal.signal-wrong_person { background:rgba(94,96,105,.16);      color:var(--t2); }
 .inbox-signal.signal-hot      { background:rgba(239,68,68,.10); color:var(--red); }
 .inbox-signal.signal-warm     { background:var(--amber-bg); color:var(--amber); }
 .inbox-signal.signal-cold     { background:rgba(255,255,255,.05); color:var(--t3); }
@@ -3146,10 +3148,12 @@ a { color:inherit; text-decoration:none; }
   background:var(--accent-bg);
   color:var(--accent);
 }
-.signal-pill.signal-positive { background:var(--green-bg); color:var(--green); }
-.signal-pill.signal-negative { background:rgba(239,68,68,.10); color:var(--red); }
-.signal-pill.signal-neutral  { background:var(--accent-bg);   color:var(--accent); }
-.signal-pill.signal-ooo      { background:var(--amber-bg);    color:var(--amber); }
+.signal-pill.signal-positive     { background:var(--green-bg);          color:var(--green); }
+.signal-pill.signal-negative     { background:rgba(239,68,68,.10);      color:var(--red); }
+.signal-pill.signal-neutral      { background:var(--accent-bg);         color:var(--accent); }
+.signal-pill.signal-ooo          { background:var(--amber-bg);          color:var(--amber); }
+.signal-pill.signal-referral     { background:rgba(143,183,255,.18);    color:var(--accent-h); }
+.signal-pill.signal-wrong_person { background:rgba(94,96,105,.16);      color:var(--t2); }
 .signal-pill.signal-status   { background:var(--s3); color:var(--t2); text-transform:capitalize; }
 
 .drawer-leadlink {
@@ -4172,6 +4176,55 @@ a { color:inherit; text-decoration:none; }
 
 /* Keyboard-focused row on the leads table (j/k navigation) */
 .lead-tr.is-kb-focus { outline:2px solid var(--accent); outline-offset:-2px; }
+
+/* ── Hook cohort table (reports — reply rate per hook_type) ── */
+.hook-cohort-card { margin-bottom:24px; }
+.hook-cohort-card .card-sub {
+  font-size:13px;
+  color:var(--t2);
+  margin:4px 0 16px;
+  line-height:1.55;
+}
+.hook-cohort-table {
+  width:100%;
+  border-collapse:collapse;
+}
+.hook-cohort-table th,
+.hook-cohort-table td {
+  padding:10px 12px;
+  text-align:left;
+  font-size:13px;
+  border-bottom:1px solid var(--border);
+}
+.hook-cohort-table th {
+  font-weight:500;
+  color:var(--t3);
+  font-size:11.5px;
+  letter-spacing:1.2px;
+  text-transform:uppercase;
+}
+.hook-cohort-table tr:last-child td { border-bottom:none; }
+.hook-cohort-table .numeric {
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+.hook-tag {
+  display:inline-flex;
+  align-items:center;
+  padding:2px 9px;
+  font-size:11.5px;
+  color:var(--accent-h);
+  background:var(--accent-bg);
+  border-radius:999px;
+  text-transform:capitalize;
+}
+.hook-rate {
+  font-weight:500;
+  font-variant-numeric:tabular-nums;
+}
+.hook-rate--strong { color:var(--green); }
+.hook-rate--mid    { color:var(--t1); }
+.hook-rate--weak   { color:var(--t3); }
 
 /* ── Reports rollup strip (cross-client glance) ──────────── */
 .rollup-strip {

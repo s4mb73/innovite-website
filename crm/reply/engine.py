@@ -157,13 +157,27 @@ def _persist_reply(matched: dict, msg: EmailMessage, body: str, sentiment_tag: s
             (matched["email_id"],),
         )
 
-    # OOO replies should NOT change lead status or cancel the cadence —
-    # the lead is still active; they just acknowledged via autoresponder.
+    # OOO replies: don't cancel the cadence — the lead is still active,
+    # they're just away. But push the remaining scheduled sends out by
+    # 7 days so we don't land another email in their flooded return
+    # inbox. (Smartlead / Reply.io call this "pause-resume on OOO" — it
+    # measurably improves Day-3 / Day-7 open rates.)
     if sentiment_tag == "ooo":
+        try:
+            db.execute("""
+                update crm.emails
+                   set scheduled_at = scheduled_at + interval '7 days'
+                 where lead_id = %s
+                   and status = 'scheduled'
+                   and scheduled_at is not null
+            """, (matched["lead_id"],))
+        except Exception:
+            logger.exception("ooo reschedule failed for lead %s", matched["lead_id"])
         db.execute(
             "insert into crm.activity_log (client_id, lead_id, action, detail) "
-            "values (%s, %s, 'auto_responder_skipped', %s)",
-            (matched.get("client_id"), matched["lead_id"], f"ooo from {from_addr}"),
+            "values (%s, %s, 'ooo_rescheduled', %s)",
+            (matched.get("client_id"), matched["lead_id"],
+             f"ooo from {from_addr} — follow-ups pushed +7 days"),
         )
         return
 
@@ -182,8 +196,26 @@ def _persist_reply(matched: dict, msg: EmailMessage, body: str, sentiment_tag: s
         except Exception:
             logger.exception("auto-suppress on negative failed")
 
-    # Positive / neutral / negative all set lead.status='replied' and
-    # cancel queued sends (US-009).
+    # Wrong-person without a redirect → suppress the dead address but
+    # don't kill the lead — re-enrichment may find a working contact.
+    if sentiment_tag == "wrong_person":
+        try:
+            row = db.fetch_one(
+                "select decision_maker_email from crm.leads where id = %s",
+                (matched["lead_id"],),
+            )
+            email_addr = row.get("decision_maker_email") if row else None
+            if email_addr:
+                db.suppress_address(email_addr, reason="manual",
+                                    added_by="system",
+                                    detail=f"wrong-person from {from_addr}")
+        except Exception:
+            logger.exception("auto-suppress on wrong_person failed")
+
+    # Positive / neutral / negative / referral / wrong_person all set
+    # lead.status='replied' and cancel queued sends (US-009). Referrals
+    # specifically: surface in inbox as the highest-priority queue item;
+    # the operator handles the redirect manually.
     db.execute(
         "update crm.leads set status='replied' where id=%s and status != 'replied'",
         (matched["lead_id"],),
@@ -195,10 +227,11 @@ def _persist_reply(matched: dict, msg: EmailMessage, body: str, sentiment_tag: s
         (matched["lead_id"],),
     )
 
+    action_tag = 'reply_received' if sentiment_tag != 'referral' else 'referral_received'
     db.execute(
         "insert into crm.activity_log (client_id, lead_id, action, detail) "
-        "values (%s, %s, 'reply_received', %s)",
-        (matched.get("client_id"), matched["lead_id"],
+        "values (%s, %s, %s, %s)",
+        (matched.get("client_id"), matched["lead_id"], action_tag,
          f"sentiment={sentiment_tag} from {from_addr}"),
     )
 

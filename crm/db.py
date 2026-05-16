@@ -2771,6 +2771,63 @@ def reports_clients_min() -> list[dict]:
     return all_clients_min()
 
 
+def reports_hook_cohorts(client_id: int, days: int) -> list[dict]:
+    """Reply rate broken down by lead.hook_type for the selected client
+    and period.
+
+    The pipeline already tags every lead with a hook_type (year_end_imminent,
+    accounts_overdue, director_change_recent, etc.). Without measuring
+    reply rate per hook, we're paying Anthropic for personalised hooks
+    and optimising blind — this is the cheapest visibility win on the
+    backend.
+
+    Rows: {hook_type, leads_sent, leads_replied, reply_rate (%)}.
+    Sort by reply_rate desc so the operator sees the winners first.
+    Returns [] in fixture mode (the demo dataset doesn't carry hook_type
+    correlations).
+    """
+    if _reports_use_fixture():
+        return []
+    return fetch_all("""
+        with w as (
+          select now() - make_interval(days => %(d)s) as t_start
+        ),
+        sent as (
+          select l.hook_type,
+                 count(distinct e.lead_id) as leads_sent
+            from crm.emails e
+            join crm.leads   l on l.id = e.lead_id
+            join w on true
+           where e.client_id      = %(cid)s
+             and e.email_number   = 1
+             and e.status         in ('sent','dry_run_ready')
+             and e.sent_at       >= w.t_start
+             and l.hook_type     is not null
+           group by l.hook_type
+        ),
+        replied as (
+          select l.hook_type,
+                 count(distinct r.lead_id) as leads_replied
+            from crm.replies r
+            join crm.leads   l on l.id = r.lead_id
+            join w on true
+           where l.client_id     = %(cid)s
+             and r.detected_at  >= w.t_start
+             and l.hook_type    is not null
+           group by l.hook_type
+        )
+        select s.hook_type,
+               s.leads_sent,
+               coalesce(r.leads_replied, 0) as leads_replied,
+               case when s.leads_sent > 0
+                    then round(100.0 * coalesce(r.leads_replied, 0) / s.leads_sent, 1)
+                    else 0 end as reply_rate
+          from sent s
+          left join replied r on r.hook_type = s.hook_type
+         order by reply_rate desc, s.leads_sent desc
+    """, {'cid': client_id, 'd': days})
+
+
 def reports_rollup(days: int = 30) -> dict:
     """Cross-client headline numbers for the top of /reports.
 

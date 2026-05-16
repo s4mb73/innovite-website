@@ -45,6 +45,69 @@ _FINAL_RE  = re.compile(r"^Final-Recipient:\s*[^;]+;\s*([^\s]+)", re.MULTILINE |
 _ORIG_RE   = re.compile(r"^Original-Recipient:\s*[^;]+;\s*([^\s]+)", re.MULTILINE | re.IGNORECASE)
 _DIAG_RE   = re.compile(r"^Diagnostic-Code:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
 
+# Content-block keywords that often appear in the Diagnostic-Code when
+# the bounce is the email template's fault rather than the address.
+# Conservative list — false-positive on these costs us a suppression
+# we shouldn't have made; false-negative just means the address still
+# auto-suppresses, which is the existing behaviour.
+_CONTENT_KEYWORDS = (
+    "spam", "blocked content", "policy reason", "phishing", "blacklist",
+    "blocklist", "url filter", "content filter", "message rejected",
+    "suspicious", "deemed spam", "looks like spam",
+)
+
+# Per-category actions:
+#   suppress=True  → auto-add to suppression list
+#   ops_alert=True → log a warning (template/infra issue worth noticing)
+_CATEGORY_RULES: dict[str, dict] = {
+    "no_such_user":   {"suppress": True,  "ops_alert": False},
+    "mailbox_full":   {"suppress": False, "ops_alert": False},  # transient, retry naturally
+    "policy_block":   {"suppress": True,  "ops_alert": True},   # IP/domain reputation issue
+    "content_block":  {"suppress": False, "ops_alert": True},   # template is the problem
+    "auth_fail":      {"suppress": False, "ops_alert": True},   # SPF/DKIM broken — infra bug
+    "greylist":       {"suppress": False, "ops_alert": False},
+    "unknown":        {"suppress": False, "ops_alert": False},  # don't over-act on ambiguous DSNs
+}
+
+
+def _categorise(smtp_code: str | None, reason: str | None) -> str:
+    """Map an SMTP enhanced-status code + diagnostic text to a category.
+
+    Specific codes first; then content-keyword check; then generic
+    severity buckets; then 'unknown'."""
+    code = (smtp_code or "").strip()
+    diag = (reason or "").lower()
+
+    # Greylist family — first-attempt deferrals, retry naturally.
+    if code in ("4.7.1", "4.4.7", "4.2.0"):
+        return "greylist"
+
+    # Mailbox-full family — transient, retry then suppress.
+    if code in ("4.2.2", "5.2.2", "5.2.3"):
+        return "mailbox_full"
+
+    # Auth fail — SPF / DKIM / DMARC alignment problems.
+    if code in ("5.7.0", "5.7.7", "5.7.8", "5.7.9", "5.7.20", "5.7.21",
+                "5.7.22", "5.7.23", "5.7.24", "5.7.25", "5.7.26"):
+        return "auth_fail"
+
+    # Address-not-found family.
+    if code in ("5.1.1", "5.1.2", "5.1.3", "5.1.6", "5.1.10"):
+        return "no_such_user"
+
+    # 5.7.x with content-related keywords → content block (template issue)
+    # else → policy block (reputation issue).
+    if code.startswith("5.7"):
+        if any(kw in diag for kw in _CONTENT_KEYWORDS):
+            return "content_block"
+        return "policy_block"
+
+    # Generic transient.
+    if code.startswith("4"):
+        return "greylist"
+
+    return "unknown"
+
 
 def is_dsn(msg: EmailMessage) -> bool:
     """Cheap test: multipart/report or delivery-status content type."""
@@ -109,6 +172,7 @@ def parse(msg: EmailMessage) -> dict | None:
         "bounced_address": address,
         "smtp_code":       smtp_code,
         "severity":        severity,
+        "category":        _categorise(smtp_code, reason),
         "reason":          reason,
         "raw":             text[:4000],
     }
@@ -132,13 +196,18 @@ def record_and_suppress(parsed: dict, mailbox_id: int | None) -> None:
     email_id = email_row["id"] if email_row else None
     lead_id = email_row["lead_id"] if email_row else None
 
+    category = parsed.get("category") or "unknown"
+    rules = _CATEGORY_RULES.get(category, _CATEGORY_RULES["unknown"])
+
     try:
         db.execute(
             """insert into crm.bounces
-                 (email_id, lead_id, mailbox_id, bounced_address, severity, smtp_code, reason, raw)
-               values (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                 (email_id, lead_id, mailbox_id, bounced_address,
+                  severity, smtp_code, category, reason, raw)
+               values (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (email_id, lead_id, mailbox_id, addr,
-             parsed["severity"], parsed["smtp_code"], parsed["reason"], parsed["raw"]),
+             parsed["severity"], parsed["smtp_code"], category,
+             parsed["reason"], parsed["raw"]),
         )
     except Exception:
         logger.exception("Failed to insert bounce row for %s", addr)
@@ -152,9 +221,24 @@ def record_and_suppress(parsed: dict, mailbox_id: int | None) -> None:
         except Exception:
             logger.exception("Failed to flip email %s to bounced", email_id)
 
-    if parsed["severity"] == "hard":
+    # Category-specific actions. Content_block / auth_fail intentionally
+    # do NOT suppress — those bounces are about our template or our DNS,
+    # not the recipient's address.
+    if rules.get("suppress"):
         try:
-            db.suppress_address(addr, reason="hard_bounce", added_by="system",
-                                detail=f"SMTP {parsed.get('smtp_code') or '?'}")
+            db.suppress_address(
+                addr,
+                reason="hard_bounce" if category != "policy_block" else "complaint",
+                added_by="system",
+                detail=f"SMTP {parsed.get('smtp_code') or '?'} ({category})",
+            )
         except Exception:
-            logger.exception("Failed to auto-suppress hard bounce for %s", addr)
+            logger.exception("Failed to auto-suppress bounce for %s", addr)
+
+    if rules.get("ops_alert"):
+        # WARN-level log so it surfaces in journalctl / log aggregation
+        # without being lost in the INFO firehose.
+        logger.warning(
+            "BOUNCE category=%s addr=%s code=%s mailbox_id=%s reason=%s",
+            category, addr, parsed.get("smtp_code"), mailbox_id, parsed.get("reason"),
+        )
