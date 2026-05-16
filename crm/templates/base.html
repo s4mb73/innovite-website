@@ -31,15 +31,14 @@
 
   <nav class="sb-nav" aria-label="Primary">
     <a class="sb-item {% if active=='inbox'    %}is-active{% endif %}" href="{{ url_for('inbox') }}">Inbox</a>
-    <a class="sb-item {% if active=='approvals'%}is-active{% endif %}" href="{{ url_for('approvals') }}">
-      Approvals
+    <a class="sb-item {% if active=='campaigns' or active=='approvals' or active=='outreach' %}is-active{% endif %}" href="{{ url_for('campaigns') }}">
+      Campaigns
       {% if approvals_pending_count and approvals_pending_count > 0 %}
         <span class="sb-badge">{{ approvals_pending_count }}</span>
       {% endif %}
     </a>
     <a class="sb-item {% if active=='leads'    %}is-active{% endif %}" href="{{ url_for('leads') }}">Leads</a>
     <a class="sb-item {% if active=='clients'  %}is-active{% endif %}" href="{{ url_for('clients') }}">Clients</a>
-    <a class="sb-item {% if active=='outreach' %}is-active{% endif %}" href="{{ url_for('outreach') }}">Outreach</a>
     <a class="sb-item {% if active=='reports'  %}is-active{% endif %}" href="{{ url_for('reports') }}">Reports</a>
     <a class="sb-item {% if active=='settings' or active=='mailboxes' %}is-active{% endif %}" href="{{ url_for('settings') }}">Settings</a>
   </nav>

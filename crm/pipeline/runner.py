@@ -221,8 +221,14 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
     return row["id"] if row else None
 
 
-def _queue_day1_email(lead_id: int, client_id: int, business: dict, draft: dict) -> None:
-    """Insert a scheduled Day-1 email. The Outreach Engine (Week 3) will send it."""
+def _queue_day1_email(lead_id: int, client_id: int, business: dict, draft: dict,
+                      *, campaign_id: int | None = None,
+                      template_id: int | None = None) -> None:
+    """Insert a scheduled Day-1 email and link it to its parent campaign.
+
+    Cache the subject + body on the lead too, so /leads/<id> can render
+    the draft preview without a join. If a template seeded this draft,
+    bump the template's times_used counter for reply-rate analytics."""
     to_addr = business.get("decision_maker_email") or business.get("email") or ""
     if not to_addr:
         # No deliverable address — store the draft on the lead and skip
@@ -236,15 +242,22 @@ def _queue_day1_email(lead_id: int, client_id: int, business: dict, draft: dict)
 
     db.execute(
         """insert into crm.emails
-             (lead_id, client_id, email_number, subject, body, to_address, status, scheduled_at)
-           values (%s, %s, 1, %s, %s, %s, 'scheduled', null)""",
-        (lead_id, client_id, draft["subject"], draft["body"], to_addr),
+             (lead_id, client_id, campaign_id, email_number, subject, body,
+              to_address, status, scheduled_at)
+           values (%s, %s, %s, 1, %s, %s, %s, 'scheduled', null)""",
+        (lead_id, client_id, campaign_id, draft["subject"], draft["body"], to_addr),
     )
     # Also cache on the lead so the lead detail page can render it.
     db.execute(
         "update crm.leads set email_subject = %s, email_body_day1 = %s where id = %s",
         (draft["subject"], draft["body"], lead_id),
     )
+    # Bump the template's usage counter for per-template reply-rate tracking.
+    if template_id:
+        db.execute(
+            "update crm.campaign_templates set times_used = times_used + 1 where id = %s",
+            (template_id,),
+        )
 
 
 # ── Main entry point ─────────────────────────────────────────────────
@@ -387,8 +400,25 @@ def run(run_id: int) -> dict:
                 # verified-corporate subscribers.
                 if score["grade"] in ("A", "B", "C") and is_corporate:
                     try:
-                        draft = drafter.draft_day1(biz, score["hook_type"])
-                        _queue_day1_email(lead_id, client_id, biz, draft)
+                        # Resolve the campaign first — every email is
+                        # owned by exactly one campaign for (client,
+                        # hook_type). Lazily creates the campaign on the
+                        # cold path (first lead of a new hook for this
+                        # client). Drafter seeds with the campaign's
+                        # best template if one is saved.
+                        campaign_id = db.find_or_create_campaign(
+                            client_id, score["hook_type"],
+                        )
+                        template_hint = db.best_template(campaign_id, step=1)
+                        draft = drafter.draft_day1(
+                            biz, score["hook_type"],
+                            template_hint=template_hint,
+                        )
+                        _queue_day1_email(
+                            lead_id, client_id, biz, draft,
+                            campaign_id=campaign_id,
+                            template_id=(template_hint or {}).get("id"),
+                        )
                     except Exception as e:
                         logger.exception("Draft/queue failed for lead %s", lead_id)
                         progress.setdefault("errors", []).append(f"draft {lead_id}: {e}")

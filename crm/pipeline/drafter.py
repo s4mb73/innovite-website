@@ -157,7 +157,8 @@ def _call_anthropic(prompt: str, timeout: int = 12) -> str | None:
     return None
 
 
-def _build_prompt(business: dict, hook_type: str) -> str:
+def _build_prompt(business: dict, hook_type: str,
+                  template_hint: dict | None = None) -> str:
     parts = [
         f"Business: {business.get('business_name', '')}",
         f"City: {business.get('city', '')}",
@@ -173,11 +174,31 @@ def _build_prompt(business: dict, hook_type: str) -> str:
 
     guidance = HOOK_GUIDANCE.get(hook_type, HOOK_GUIDANCE["general_growth"])
 
+    intro = "Write the Day-1 outreach email for this lead."
+    template_block = ""
+    if template_hint and template_hint.get("body_template"):
+        # Template-seeded mode: the operator approved a prior draft for
+        # this campaign and saved it as a template. Treat it as the
+        # structural reference — keep the shape, the rhythm, the close;
+        # rewrite the specifics for this lead. Don't quote it verbatim.
+        intro = (
+            "Write the Day-1 outreach email for this lead, in the style "
+            "of the approved template below. Use the same structure, "
+            "length, and tone — but the specific signals, names, and "
+            "examples MUST come from this lead's data, not the template."
+        )
+        template_block = (
+            f"\n\nApproved template (style reference, do not copy):\n"
+            f"Subject: {template_hint.get('subject_template', '')}\n"
+            f"Body:\n{template_hint['body_template']}\n"
+        )
+
     return (
-        "Write the Day-1 outreach email for this lead.\n\n"
+        intro + "\n\n"
         + "\n".join(parts)
-        + f"\n\nHook guidance: {guidance}\n\n"
-        "Output the JSON object only."
+        + f"\n\nHook guidance: {guidance}"
+        + template_block
+        + "\n\nOutput the JSON object only."
     )
 
 
@@ -251,12 +272,21 @@ def _parse_haiku_json(raw: str) -> dict | None:
     return {"subject": str(out["subject"]), "body": str(out["body"])}
 
 
-def draft_day1(business: dict, hook_type: str) -> dict:
-    """Returns {"subject": "...", "body": "..."}. Never raises."""
+def draft_day1(business: dict, hook_type: str,
+               template_hint: dict | None = None) -> dict:
+    """Generate the Day-1 cold email.
+
+    If `template_hint` contains {subject_template, body_template} from
+    a previously approved + saved campaign template, Anthropic seeds
+    from that — keeps the structure/tone, varies the specifics. Without
+    a hint, generates from scratch using only the hook guidance.
+
+    Returns {"subject": "...", "body": "..."}. Never raises.
+    """
     if not _api_key():
         return _templated_fallback(business, hook_type)
 
-    raw = _call_anthropic(_build_prompt(business, hook_type))
+    raw = _call_anthropic(_build_prompt(business, hook_type, template_hint))
     if not raw:
         return _templated_fallback(business, hook_type)
 

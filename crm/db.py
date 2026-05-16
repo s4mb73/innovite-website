@@ -1342,6 +1342,155 @@ def outreach_bounces(client_id: int | None = None, search: str | None = None,
 # approved. Bulk approve flips needs_approval=false + stamps approved_at;
 # the engine picks them up on its next tick.
 
+# ── Campaigns (Batch A) ──────────────────────────────────────────────
+# A Campaign ties (client, hook_type) to a collection of saved templates.
+# The pipeline runner resolves which campaign a freshly-drafted email
+# belongs to BEFORE calling the drafter, so the drafter can seed Claude
+# with the campaign's best-performing template for this step. The
+# Campaigns UI surfaces approvals + scheduled + sent + bounces per
+# campaign (the Outreach page merges into here).
+
+
+def campaigns_for_client(client_id: int) -> list[dict]:
+    """All non-archived campaigns for one client, with rolled-up KPIs.
+    KPIs are computed from crm.emails over the last 30 days."""
+    return fetch_all("""
+        select
+          c.id, c.name, c.hook_type, c.status,
+          (select count(*) from crm.emails e
+            where e.campaign_id = c.id
+              and e.sent_at >= now() - interval '30 days'
+              and e.status in ('sent','dry_run_ready')) as sent_30d,
+          (select count(*) from crm.emails e
+            join crm.replies r on r.email_id = e.id
+            where e.campaign_id = c.id
+              and r.detected_at >= now() - interval '30 days') as replied_30d,
+          (select count(*) from crm.emails e
+            where e.campaign_id = c.id
+              and e.status = 'scheduled'
+              and e.needs_approval = true) as pending_approval,
+          (select count(*) from crm.campaign_templates t
+            where t.campaign_id = c.id) as template_count
+        from crm.campaigns c
+        where c.client_id = %s
+          and c.status != 'archived'
+        order by c.hook_type nulls first, c.name
+    """, (client_id,))
+
+
+def find_or_create_campaign(client_id: int, hook_type: str | None,
+                            *, name: str | None = None) -> int:
+    """Get the active campaign for (client, hook_type), creating one if
+    missing. Called by the pipeline runner before drafting; cheap (a
+    single read for the common case, an insert only on the cold path).
+
+    Names default to 'Hook · <hook_type>' or 'Default — all hooks' so
+    the campaign list reads sensibly without operator setup.
+    """
+    existing = fetch_one("""
+        select id from crm.campaigns
+         where client_id = %s
+           and coalesce(hook_type, '') = coalesce(%s, '')
+           and status != 'archived'
+         limit 1
+    """, (client_id, hook_type))
+    if existing:
+        return int(existing["id"])
+
+    if not name:
+        if hook_type:
+            name = f"Hook · {hook_type.replace('_', ' ')}"
+        else:
+            name = "Default — all hooks"
+
+    row = fetch_one("""
+        insert into crm.campaigns (client_id, name, hook_type, status)
+        values (%s, %s, %s, 'active')
+        returning id
+    """, (client_id, name, hook_type))
+    return int(row["id"]) if row else 0
+
+
+def best_template(campaign_id: int, step: int) -> dict | None:
+    """Pick the template the drafter should seed with.
+
+    Order: explicit default first, then highest reply rate among saved
+    templates with at least 3 uses, else None (drafter writes cold)."""
+    default = fetch_one("""
+        select id, subject_template, body_template, times_used, times_replied
+          from crm.campaign_templates
+         where campaign_id = %s and step = %s and is_default = true
+         limit 1
+    """, (campaign_id, step))
+    if default:
+        return default
+    ranked = fetch_one("""
+        select id, subject_template, body_template, times_used, times_replied
+          from crm.campaign_templates
+         where campaign_id = %s and step = %s and times_used >= 3
+         order by (times_replied::float / nullif(times_used, 0)) desc nulls last,
+                  times_used desc
+         limit 1
+    """, (campaign_id, step))
+    return ranked
+
+
+def save_email_as_template(email_id: int, *, set_as_default: bool = True,
+                           operator: str = 'operator') -> dict:
+    """Promote an approved draft to a saved campaign template.
+
+    Reads the email's (campaign_id, email_number, subject, body), inserts
+    a row into crm.campaign_templates, and optionally sets it as the
+    default for that (campaign_id, step). Defaults are exclusive — if
+    set_as_default=True, any other default for the same step is demoted.
+    """
+    email = fetch_one("""
+        select id, campaign_id, email_number, subject, body
+          from crm.emails
+         where id = %s
+    """, (email_id,))
+    if not email:
+        raise LookupError(f'No email {email_id}')
+    if not email.get("campaign_id"):
+        raise ValueError('email_has_no_campaign')
+    if not email.get("subject") or not email.get("body"):
+        raise ValueError('email_missing_content')
+
+    with get_conn() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            if set_as_default:
+                cur.execute("""
+                    update crm.campaign_templates
+                       set is_default = false
+                     where campaign_id = %s and step = %s and is_default = true
+                """, (email["campaign_id"], email["email_number"]))
+            cur.execute("""
+                insert into crm.campaign_templates
+                  (campaign_id, step, subject_template, body_template,
+                   is_default, source_email_id)
+                values (%s, %s, %s, %s, %s, %s)
+                returning id
+            """, (
+                email["campaign_id"],
+                email["email_number"],
+                email["subject"],
+                email["body"],
+                set_as_default,
+                email_id,
+            ))
+            template_id = cur.fetchone()["id"]
+            cur.execute(
+                "insert into crm.activity_log (client_id, lead_id, action, detail) "
+                "values ((select client_id from crm.emails where id = %s), "
+                "        (select lead_id from crm.emails where id = %s), "
+                "        'template_saved', %s)",
+                (email_id, email_id,
+                 f"template {template_id} saved from email {email_id} by {operator}"),
+            )
+        conn.commit()
+    return {"template_id": int(template_id), "campaign_id": int(email["campaign_id"])}
+
+
 def approvals_pending(client_id: int | None = None, search: str | None = None,
                       limit: int = 200) -> list[dict]:
     """Drafts waiting on a human. Newest first — the operator catches up

@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}Campaigns · Innovite CRM{% endblock %}
+
+{% block content %}
+{% if db_error %}
+<div class="banner banner-err">
+  <strong>Database unavailable.</strong>
+  <span class="banner-detail">{{ db_error }}</span>
+</div>
+{% endif %}
+
+<div class="page-head">
+  <div>
+    <h1 class="page-title">Campaigns</h1>
+    <p class="page-sub">Outbound from approval through to bounce. Save approved drafts as templates so the next batch starts from your voice, not a cold prompt.</p>
+  </div>
+</div>
+
+{# ── Top tabs — pending / sending / sent / bounces ──────── #}
+{% set tabs = [
+  ('pending',  'Pending approval', tab_counts.pending),
+  ('sending',  'Sending today',    tab_counts.sending),
+  ('sent',     'Sent',             tab_counts.sent),
+  ('bounces',  'Bounces',          tab_counts.bounces),
+] %}
+<div class="tabbar" role="tablist" aria-label="Campaigns view">
+  {% for slug, label, count in tabs %}
+    <a class="tab {% if tab == slug %}is-active{% endif %}"
+       href="{{ url_for('campaigns', tab=slug, client=active_client_id) }}"
+       role="tab"
+       aria-selected="{{ 'true' if tab == slug else 'false' }}">
+      {{ label }}
+      {% if count is not none and count > 0 %}<span class="tab-count">{{ count }}</span>{% endif %}
+    </a>
+  {% endfor %}
+</div>
+
+{# ── Client filter (shared across tabs) ────────────────── #}
+{% if client_pills %}
+<div class="approvals-pills" role="tablist" aria-label="Filter by client">
+  <a class="approvals-pill {% if not active_client_id %}is-active{% endif %}"
+     href="{{ url_for('campaigns', tab=tab) }}">
+    All
+  </a>
+  {% for p in client_pills %}
+    <a class="approvals-pill {% if active_client_id == p.id %}is-active{% endif %}"
+       href="{{ url_for('campaigns', tab=tab, client=p.id) }}">
+      {{ p.name }}
+      {% if tab == 'pending' and p.pending > 0 %}<span class="approvals-pill-count">{{ p.pending }}</span>{% endif %}
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ─────────────────────────────────────────────────────────
+   PENDING APPROVAL — the original approvals queue.
+   ───────────────────────────────────────────────────────── #}
+{% if tab == 'pending' %}
+
+  {% if rows %}
+  <form method="post" action="{{ url_for('approvals_approve') }}" id="approvalsForm">
+    <div class="approvals-bulkbar">
+      <label class="approvals-selectall">
+        <input type="checkbox" id="approvalsSelectAll">
+        <span>Select all</span>
+      </label>
+      <div class="approvals-bulkbar-actions">
+        <button type="submit" class="btn btn-primary" id="approvalsApproveBtn" disabled>
+          Approve selected
+        </button>
+      </div>
+    </div>
+
+    <div class="approvals-list">
+      {% for r in rows %}
+      <article class="approvals-row" data-email-id="{{ r.id }}">
+        <header class="approvals-row-head">
+          <label class="approvals-check">
+            <input type="checkbox" name="ids" value="{{ r.id }}" class="approvals-row-check">
+          </label>
+          <div class="approvals-row-meta">
+            <div class="approvals-row-recipient">
+              <strong>{{ r.business_name }}</strong>
+              {% if r.decision_maker_name %}<span class="approvals-row-dm">· {{ r.decision_maker_name }}{% if r.decision_maker_title %}, {{ r.decision_maker_title }}{% endif %}</span>{% endif %}
+            </div>
+            <div class="approvals-row-tags">
+              <span class="approvals-tag approvals-tag-client">{{ r.client_name }}</span>
+              {% if r.grade %}<span class="approvals-tag approvals-tag-grade approvals-tag-grade-{{ r.grade|lower }}">Grade {{ r.grade }}</span>{% endif %}
+              {% if r.hook_type %}<span class="approvals-tag">{{ r.hook_type|replace('_', ' ') }}</span>{% endif %}
+              <span class="approvals-tag approvals-tag-addr">{{ r.to_address or 'no address' }}</span>
+              <span class="approvals-tag approvals-tag-time">{{ r.relative }}</span>
+            </div>
+          </div>
+          <div class="approvals-row-rowactions">
+            <button type="button" class="btn btn-quiet" data-action="edit">Edit</button>
+            <button type="button" class="btn btn-quiet" data-action="save-template" title="Save this draft as the campaign's template — future drafts of this hook will seed from it.">Save as template</button>
+            <button type="button" class="btn btn-quiet" data-action="skip">Skip</button>
+          </div>
+        </header>
+
+        <div class="approvals-row-body">
+          <div class="approvals-row-subject">{{ r.subject }}</div>
+          <div class="approvals-row-snippet">{{ r.snippet }}{% if r.snippet|length >= 220 %}…{% endif %}</div>
+        </div>
+
+        <div class="approvals-row-edit" hidden>
+          <div class="approvals-edit-row">
+            <label class="approvals-edit-label">Subject</label>
+            <input type="text" class="approvals-edit-subject" value="{{ r.subject }}">
+          </div>
+          <div class="approvals-edit-row approvals-edit-row--body">
+            <label class="approvals-edit-label">Body</label>
+            <textarea class="approvals-edit-body" rows="12">{{ r.body }}</textarea>
+          </div>
+          <div class="approvals-edit-error" hidden></div>
+          <div class="approvals-edit-actions">
+            <button type="button" class="btn btn-quiet" data-edit-cancel>Cancel</button>
+            <button type="button" class="btn btn-primary" data-edit-save>Save and approve</button>
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </form>
+
+  <script>
+  (function () {
+    const form       = document.getElementById('approvalsForm');
+    const selectAll  = document.getElementById('approvalsSelectAll');
+    const approveBtn = document.getElementById('approvalsApproveBtn');
+    const checks     = Array.from(document.querySelectorAll('.approvals-row-check'));
+
+    function updateBulkBtn() {
+      const any = checks.some(c => c.checked && !c.disabled);
+      approveBtn.disabled = !any;
+      if (selectAll) {
+        const visible = checks.filter(c => !c.disabled);
+        const allOn   = visible.length > 0 && visible.every(c => c.checked);
+        selectAll.checked = allOn;
+      }
+    }
+
+    if (selectAll) {
+      selectAll.addEventListener('change', () => {
+        checks.filter(c => !c.disabled).forEach(c => { c.checked = selectAll.checked; });
+        updateBulkBtn();
+      });
+    }
+    checks.forEach(c => c.addEventListener('change', updateBulkBtn));
+
+    document.querySelectorAll('.approvals-row').forEach(row => {
+      const id       = row.dataset.emailId;
+      const editArea = row.querySelector('.approvals-row-edit');
+      const bodyArea = row.querySelector('.approvals-row-body');
+      const errEl    = row.querySelector('.approvals-edit-error');
+      const rowCheck = row.querySelector('.approvals-row-check');
+
+      function removeRow() {
+        row.classList.add('approvals-row--leaving');
+        setTimeout(() => {
+          row.remove();
+          updateBulkBtn();
+          if (!document.querySelector('.approvals-row')) {
+            window.location.reload();
+          }
+        }, 220);
+      }
+
+      function showErr(msg) {
+        if (!errEl) return;
+        errEl.textContent = msg;
+        errEl.hidden = false;
+      }
+
+      row.querySelectorAll('[data-action="edit"]').forEach(b =>
+        b.addEventListener('click', () => {
+          editArea.hidden = false;
+          bodyArea.hidden = true;
+          const ta = editArea.querySelector('.approvals-edit-body');
+          if (ta) ta.focus();
+        }));
+
+      row.querySelectorAll('[data-edit-cancel]').forEach(b =>
+        b.addEventListener('click', () => {
+          editArea.hidden = true;
+          bodyArea.hidden = false;
+          if (errEl) errEl.hidden = true;
+        }));
+
+      row.querySelectorAll('[data-edit-save]').forEach(b =>
+        b.addEventListener('click', async () => {
+          const subj = editArea.querySelector('.approvals-edit-subject').value.trim();
+          const body = editArea.querySelector('.approvals-edit-body').value.trim();
+          if (!subj || !body) {
+            showErr('Subject and body are both required.');
+            return;
+          }
+          const fd = new FormData();
+          fd.append('subject', subj);
+          fd.append('body', body);
+          b.disabled = true;
+          try {
+            const res = await fetch(`/approvals/${id}/edit-approve`, {method: 'POST', body: fd});
+            const j   = await res.json().catch(() => ({ok: false, error: 'bad_response'}));
+            if (res.ok && j.ok) {
+              removeRow();
+            } else {
+              showErr('Could not save: ' + (j.error || 'unknown'));
+              b.disabled = false;
+            }
+          } catch (e) {
+            showErr('Network error — your text is preserved. Try again.');
+            b.disabled = false;
+          }
+        }));
+
+      row.querySelectorAll('[data-action="save-template"]').forEach(b =>
+        b.addEventListener('click', async () => {
+          if (!confirm('Save this approved draft as the default template for this campaign? Future Day-1 drafts of this hook will seed from this copy.')) return;
+          b.disabled = true;
+          try {
+            const res = await fetch(`/approvals/${id}/save-template`, {method: 'POST'});
+            const j   = await res.json().catch(() => ({ok: false}));
+            if (res.ok && j.ok) {
+              b.textContent = 'Saved ✓';
+              setTimeout(() => { b.disabled = false; b.textContent = 'Save as template'; }, 1800);
+            } else {
+              alert('Could not save template: ' + (j.error || 'unknown'));
+              b.disabled = false;
+            }
+          } catch (e) {
+            alert('Network error. Try again.');
+            b.disabled = false;
+          }
+        }));
+
+      row.querySelectorAll('[data-action="skip"]').forEach(b =>
+        b.addEventListener('click', async () => {
+          if (!confirm('Skip this draft? The send will be cancelled. The lead stays in its current status.')) return;
+          b.disabled = true;
+          try {
+            const res = await fetch(`/approvals/${id}/skip`, {method: 'POST'});
+            const j   = await res.json().catch(() => ({ok: false}));
+            if (res.ok && j.ok) {
+              if (rowCheck) { rowCheck.checked = false; rowCheck.disabled = true; }
+              removeRow();
+            } else {
+              alert('Could not skip: ' + (j.error || 'unknown'));
+              b.disabled = false;
+            }
+          } catch (e) {
+            alert('Network error. Try again.');
+            b.disabled = false;
+          }
+        }));
+    });
+
+    updateBulkBtn();
+  })();
+  </script>
+  {% else %}
+    <div class="empty">
+      {% if active_client_name %}
+        <strong>Nothing waiting on you for {{ active_client_name }}.</strong>
+        New drafts will appear here after the next pipeline run completes.
+      {% else %}
+        <strong>Inbox zero on Approvals.</strong>
+        When the pipeline produces new Day-1 drafts, they'll surface here for review before sending. Day 3 and Day 7 follow-ups ship automatically once a thread is approved.
+      {% endif %}
+    </div>
+  {% endif %}
+
+{# ─────────────────────────────────────────────────────────
+   SENDING / SENT / BOUNCES — observability tabs (was /outreach)
+   ───────────────────────────────────────────────────────── #}
+{% else %}
+
+  {% if rows %}
+  <table class="outreach-table">
+    <thead>
+      <tr>
+        <th>Business</th>
+        <th>Client</th>
+        <th>Step</th>
+        <th>To</th>
+        {% if tab == 'sending' %}<th>Scheduled</th>
+        {% elif tab == 'sent' %}<th>Sent</th>
+        {% else %}<th>Bounced</th><th>Reason</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><a class="lead-name-link" href="{{ url_for('lead_detail', lead_id=r.lead_id) }}">{{ r.business_name }}</a></td>
+        <td>{{ r.client_name }}</td>
+        <td><span class="outreach-step">{{ r.step_label }}</span></td>
+        <td>{{ r.to_address }}</td>
+        {% if tab == 'sending' %}
+          <td>{{ r.scheduled_hm }}</td>
+        {% elif tab == 'sent' %}
+          <td>
+            {{ r.sent_at_short }}
+            {% if r.is_dry_run %}<span class="approvals-tag" style="margin-left:6px;">dry-run</span>{% endif %}
+          </td>
+        {% else %}
+          <td>{{ r.bounced_short }}</td>
+          <td><span class="approvals-tag">{{ r.severity }}</span> {{ r.bounce_reason or '—' }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <div class="empty">
+      {% if tab == 'sending' %}
+        <strong>Nothing scheduled for today.</strong> Drafts approved on /campaigns?tab=pending land here for the next outreach tick.
+      {% elif tab == 'sent' %}
+        <strong>No sends in the last 30 days.</strong>
+      {% else %}
+        <strong>No bounces.</strong> Clean.
+      {% endif %}
+    </div>
+  {% endif %}
+
+{% endif %}
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-stack" aria-live="polite">
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+{% endblock %}

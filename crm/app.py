@@ -214,7 +214,7 @@ def client_new():
             f"drafts will appear in Approvals as the run completes.",
             'success',
         )
-        return redirect(url_for('approvals', client=new_id))
+        return redirect(url_for('campaigns', client=new_id, tab='pending'))
     except Exception as e:
         # Client was created; only the run-enqueue failed. Land on the
         # client page so the operator can retry from there.
@@ -644,53 +644,18 @@ def update_lead_notes_route(lead_id: int):
 
 @app.route('/outreach')
 def outreach():
-    db_error = None
-    tab = (request.args.get('tab') or 'today').lower()
-    if tab not in db.OUTREACH_TABS:
-        tab = 'today'
-
-    client_raw = request.args.get('client')
-    client_id  = int(client_raw) if (client_raw or '').isdigit() else None
-    search     = (request.args.get('q') or '').strip() or None
-
-    kpis = {'pending_today': 0, 'sent_7d': 0, 'reply_rate': 0.0, 'bounce_rate': 0.0}
-    counts = {k: 0 for k in db.OUTREACH_TABS}
-    clients_panel: list[dict] = []
-    clients_min: list[dict] = []
-    finder_clients: list[dict] = []
-    rows: list[dict] = []
-
-    try:
-        kpis          = db.outreach_kpis()
-        counts        = db.outreach_tab_counts(client_id=client_id)
-        clients_panel = db.outreach_clients_panel()
-        clients_min   = db.all_clients_min()
-        finder_clients= db.clients_for_finder()
-        if   tab == 'today':     rows = db.outreach_today(client_id, search)
-        elif tab == 'sent':      rows = db.outreach_sent(client_id, search)
-        elif tab == 'followups': rows = db.outreach_followups(client_id, search)
-        else:                    rows = db.outreach_bounces(client_id, search)
-    except Exception as e:
-        db_error = str(e).splitlines()[0][:240]
-
-    outreach_is_live = (
-        os.environ.get('OUTREACH_MODE', 'dry_run') == 'live'
-    )
-
-    return render_template(
-        'outreach.html',
-        active='outreach',
-        tab=tab,
-        kpis=kpis,
-        counts=counts,
-        clients_panel=clients_panel,
-        clients_min=clients_min,
-        finder_clients=finder_clients,
-        rows=rows,
-        f={'client_id': client_id, 'search': search},
-        outreach_is_live=outreach_is_live,
-        db_error=db_error,
-    )
+    """Back-compat alias — Outreach folded into Campaigns. Map the old
+    tab names to the new ones so any bookmarks keep working."""
+    old_tab = (request.args.get('tab') or 'today').lower()
+    new_tab = {
+        'today':     'sending',
+        'sent':      'sent',
+        'followups': 'sending',
+        'bounces':   'bounces',
+    }.get(old_tab, 'pending')
+    qs = request.args.to_dict()
+    qs['tab'] = new_tab
+    return redirect(url_for('campaigns', **qs), code=301)
 
 
 @app.post('/outreach/clients/<int:client_id>/pause')
@@ -1085,25 +1050,50 @@ def outreach_suppress():
     return redirect(request.referrer or url_for('outreach', tab='bounces'))
 
 
-# ── Approvals (Week 2 — outbound draft review queue) ────────────────
-# /approvals lists every Day-1 draft the pipeline produced that has not
-# yet been approved by the operator. The outreach engine refuses to send
-# rows where needs_approval=true, so this screen is the gate between
-# the pipeline and the SMTP path.
+# ── Campaigns (Batch A — Approvals + Outreach merged) ───────────────
+# /campaigns is the unified outbound surface. Four tabs:
+#   - pending  → Day-1 drafts awaiting approval (was /approvals)
+#   - sending  → emails scheduled to ship today (was /outreach?tab=today)
+#   - sent     → recently sent emails (was /outreach?tab=sent)
+#   - bounces  → bounce log (was /outreach?tab=bounces)
+# /approvals and /outreach 301 → /campaigns with the right tab.
+
+_CAMPAIGN_TABS = ('pending', 'sending', 'sent', 'bounces')
 
 
-@app.route('/approvals')
-def approvals():
+@app.route('/campaigns')
+def campaigns():
     db_error = None
+    tab = (request.args.get('tab') or 'pending').lower()
+    if tab not in _CAMPAIGN_TABS:
+        tab = 'pending'
+
     client_raw = request.args.get('client')
     client_id  = int(client_raw) if (client_raw or '').isdigit() else None
     search     = (request.args.get('q') or '').strip() or None
 
     rows: list[dict] = []
     client_pills: list[dict] = []
+    tab_counts: dict = {k: 0 for k in _CAMPAIGN_TABS}
+
     try:
         client_pills = db.approvals_count_per_client()
-        rows         = db.approvals_pending(client_id=client_id, search=search)
+        tab_counts = {
+            'pending':  db.approvals_total(),
+            'sending':  len(db.outreach_today(client_id=None, search=None)),
+            'sent':     0,  # filled below if tab=sent (heavy query)
+            'bounces':  0,
+        }
+        if tab == 'pending':
+            rows = db.approvals_pending(client_id=client_id, search=search)
+        elif tab == 'sending':
+            rows = db.outreach_today(client_id=client_id, search=search)
+        elif tab == 'sent':
+            rows = db.outreach_sent(client_id=client_id, search=search)
+            tab_counts['sent'] = len(rows)
+        else:  # bounces
+            rows = db.outreach_bounces(client_id=client_id, search=search)
+            tab_counts['bounces'] = len(rows)
     except Exception as e:
         db_error = str(e).splitlines()[0][:240]
 
@@ -1115,15 +1105,26 @@ def approvals():
                 break
 
     return render_template(
-        'approvals.html',
-        active='approvals',
+        'campaigns.html',
+        active='campaigns',
+        tab=tab,
         rows=rows,
         client_pills=client_pills,
+        tab_counts=tab_counts,
         active_client_id=client_id,
         active_client_name=active_client_name,
         search=search or '',
         db_error=db_error,
     )
+
+
+# /approvals stays as a back-compat alias. 301 so search engines /
+# bookmarks update. Preserves the ?client= filter.
+@app.route('/approvals')
+def approvals():
+    qs = request.args.to_dict()
+    qs.setdefault('tab', 'pending')
+    return redirect(url_for('campaigns', **qs), code=301)
 
 
 @app.post('/approvals/approve')
@@ -1158,6 +1159,25 @@ def approvals_skip(email_id: int):
         return {'ok': True}
     except LookupError:
         return {'ok': False, 'error': 'not_found'}, 404
+    except Exception as e:
+        return {'ok': False, 'error': str(e)[:200]}, 500
+
+
+@app.post('/approvals/<int:email_id>/save-template')
+def approvals_save_template(email_id: int):
+    """Promote an approved draft to a saved campaign template. The next
+    Day-N draft for the same campaign+step will seed Claude with this
+    template's structure."""
+    set_default = (request.form.get('default') or 'true').lower() in ('true', '1', 'yes')
+    try:
+        result = db.save_email_as_template(
+            email_id, set_as_default=set_default, operator='operator',
+        )
+        return {'ok': True, **result}
+    except LookupError:
+        return {'ok': False, 'error': 'not_found'}, 404
+    except ValueError as e:
+        return {'ok': False, 'error': str(e)}, 400
     except Exception as e:
         return {'ok': False, 'error': str(e)[:200]}, 500
 
