@@ -35,11 +35,15 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
+import re
 import time
 import urllib.parse
 import urllib.request
 from datetime import date
+
+logger = logging.getLogger("crm.pipeline.sources.companies_house")
 
 from pipeline.sources import Business
 
@@ -196,36 +200,159 @@ def _revenue_band_from_accounts(profile: dict) -> str | None:
     return None
 
 
-def _search_match(business_name: str, postcode: str) -> dict | None:
-    """Best CH search hit for (name, postcode) above the match threshold."""
-    if not business_name or not postcode:
+def _name_variants(business_name: str) -> list[str]:
+    """Generate query variants in fall-back order. The CH search API
+    matches better on cleaned names — corporate suffixes and trailing
+    location qualifiers often miss otherwise-good candidates.
+
+    Returns in priority order: raw → suffix-stripped → location-stripped
+    → first-2-distinctive-tokens. Deduped, original first."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(s: str) -> None:
+        s = s.strip()
+        if s and s.lower() not in seen and len(s) >= 3:
+            seen.add(s.lower())
+            out.append(s)
+
+    _add(business_name)
+
+    # Strip parenthetical location qualifiers: "Charlton Baker (Bath) Ltd"
+    cleaned = re.sub(r"\s*\([^)]+\)\s*", " ", business_name).strip()
+    _add(cleaned)
+
+    # Strip common suffixes + corporate forms.
+    NOISE = (
+        "& co", "and co", "and company", "group", "holdings",
+        "uk", "the", "international", "limited", "ltd", "plc", "llp",
+    )
+    tokens = cleaned.lower().split()
+    kept = [t for t in tokens if t not in NOISE and not t.startswith("(")]
+    if kept and len(" ".join(kept)) >= 3:
+        _add(" ".join(kept))
+
+    # First 2-3 distinctive tokens only (e.g. 'Charlton Baker' from
+    # 'Charlton Baker Bath Accountants Ltd').
+    if len(kept) >= 2:
+        _add(" ".join(kept[:2]))
+
+    return out
+
+
+def _city_in_address(city: str, address: dict | None) -> bool:
+    """True when the CH candidate's address contains the lead's city."""
+    if not city or not address or not isinstance(address, dict):
+        return False
+    city_l = city.lower().strip()
+    for field in ("locality", "region", "address_line_1", "address_line_2", "premises"):
+        v = (address.get(field) or "")
+        if isinstance(v, str) and city_l in v.lower():
+            return True
+    return False
+
+
+def _score_candidate(item: dict, business_name: str, postcode: str, city: str) -> int:
+    """Multi-signal confidence score 0-100 for a single CH search hit.
+
+    Components:
+      Name overlap (Jaccard, 0-1)     ×40    weight 40
+      Postcode exact match              +30
+      Postcode area match (not exact)   +15
+      City present in address           +10
+      Status = 'active'                  +5
+      Has SIC codes (real trading co)    +5
+    """
+    cand_name = item.get("title", "")
+    name_overlap = _name_overlap(business_name, cand_name)
+    score = int(name_overlap * 40)
+
+    cand_pc = (item.get("address", {}) or {}).get("postal_code", "").strip().upper()
+    if postcode and cand_pc:
+        target_pc = postcode.strip().upper()
+        # Normalise the gap so 'CB4 3BW' == 'CB43BW'.
+        if cand_pc.replace(" ", "") == target_pc.replace(" ", ""):
+            score += 30
+        elif _postcode_area(cand_pc) == _postcode_area(target_pc):
+            score += 15
+
+    if _city_in_address(city, item.get("address")):
+        score += 10
+    if item.get("company_status") == "active":
+        score += 5
+    if item.get("description_identifier"):
+        # 'description_identifier' is e.g. 'incorporated-on' — most
+        # active trading companies have one. Cheap signal.
+        score += 5
+
+    return score
+
+
+def _search_match(business_name: str, postcode: str,
+                  city: str | None = None) -> dict | None:
+    """Best CH search hit for (name, postcode, optional city) above
+    a multi-signal confidence threshold.
+
+    Tier 2 strategy:
+      - Try multiple name variants (raw → suffix-stripped → cleaned)
+        and pool candidates across them.
+      - Score each candidate on name + postcode + city + status.
+      - Accept best if score >= 50, OR name overlap >= 0.85 (very
+        confident name match overrides geo requirement — useful for
+        leads with bad postcode data).
+    """
+    if not business_name:
+        return None
+    variants = _name_variants(business_name)
+    if not variants:
         return None
 
-    time.sleep(PER_CALL_SLEEP_S)
-    qs = urllib.parse.urlencode({"q": business_name, "items_per_page": 10})
-    data = _http_get(f"{CH_SEARCH_URL}?{qs}") or {}
+    seen_company_numbers: set[str] = set()
+    candidates: list[dict] = []
+    for query in variants[:3]:  # cap at 3 variants per lead to bound API spend
+        time.sleep(PER_CALL_SLEEP_S)
+        qs = urllib.parse.urlencode({"q": query, "items_per_page": 10})
+        data = _http_get(f"{CH_SEARCH_URL}?{qs}") or {}
+        for item in data.get("items", []):
+            if item.get("kind") != "searchresults#company":
+                continue
+            cn = item.get("company_number")
+            if not cn or cn in seen_company_numbers:
+                continue
+            seen_company_numbers.add(cn)
+            candidates.append(item)
+        if len(candidates) >= 30:
+            break  # plenty to score
 
-    target_area = _postcode_area(postcode)
-    best: tuple[float, dict] | None = None
+    if not candidates:
+        return None
 
-    for item in data.get("items", []):
-        if item.get("kind") != "searchresults#company":
-            continue
-        cand_name = item.get("title", "")
-        cand_pc = (item.get("address", {}) or {}).get("postal_code", "")
-        if not cand_pc:
-            continue
+    # Name-overlap floor — geo + status signals alone aren't enough to
+    # claim a CH match. Without this, a generic name like 'JJS
+    # Accountants' searched with postcode BA1 1HE would match any
+    # 'XYZ Accountants Limited' in Bath via postcode + city + active
+    # signals scoring 50+ despite the wrong name.
+    #
+    # Two acceptance paths from here:
+    #   - Combined score ≥ 60 AND name overlap ≥ 0.40
+    #   - Very strong name match (≥ 0.85) on its own → no geo required
+    best_score = 0
+    best_item: dict | None = None
+    for item in candidates:
+        name_overlap = _name_overlap(business_name, item.get("title", ""))
+        s = _score_candidate(item, business_name, postcode or "", city or "")
 
-        name_score = _name_overlap(business_name, cand_name)
-        pc_match = _postcode_area(cand_pc) == target_area
+        accept = False
+        if name_overlap >= 0.85:
+            accept = True
+        elif name_overlap >= 0.40 and s >= 60:
+            accept = True
 
-        # Threshold: name overlap >= 0.6 AND postcode area matches.
-        if name_score >= 0.6 and pc_match:
-            score = name_score + (0.1 if item.get("company_status") == "active" else 0.0)
-            if best is None or score > best[0]:
-                best = (score, item)
+        if accept and s > best_score:
+            best_score = s
+            best_item = item
 
-    return best[1] if best else None
+    return best_item
 
 
 def enrich(business: Business) -> Business:
@@ -260,15 +387,17 @@ def enrich(business: Business) -> Business:
             logger.exception("ch_footer extract failed for %s", website[:80])
             business.setdefault("source_errors", {})["ch_footer"] = f"unexpected: {str(e)[:120]}"
 
-    # Tier 2 — fuzzy name+postcode search (existing path).
+    # Tier 2 — fuzzy name+postcode+city search (multi-signal scoring,
+    # query variations). City is a tiebreaker, not required.
     if not company_number:
         pc = business.get("postcode", "")
-        if not bname or not pc:
-            business.setdefault("source_errors", {})["companies_house"] = "missing name or postcode (and no footer match)"
+        city = business.get("city", "")
+        if not bname:
+            business.setdefault("source_errors", {})["companies_house"] = "missing business name (and no footer match)"
             return business
 
         try:
-            match = _search_match(bname, pc)
+            match = _search_match(bname, pc, city)
         except Exception as e:
             business.setdefault("source_errors", {})["companies_house"] = f"search failed: {e}"
             return business
