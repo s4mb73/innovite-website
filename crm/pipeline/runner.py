@@ -134,6 +134,30 @@ def _is_excluded(business: dict, exclusions: set[str]) -> bool:
     return False
 
 
+def _stage1_filter_reason(business: dict) -> str | None:
+    """Apply the Stage-1 (Companies House) qualification filter.
+    Returns a short reason if the lead should be dropped before any
+    further enrichment runs, or None to continue through Stages 2-6.
+
+    Conservative for now — only drops definitively-dead companies.
+    Status values that warrant staying in the pipeline:
+      - 'active'                — normal
+      - 'liquidation' / 'administration' / 'receivership'
+        — distressed but potentially gold for turnaround / insolvency
+          specialist clients; Gazette stage will flag them louder.
+      - None (no CH match)
+        — could be a sole trader; existing PECR logic skips drafting
+          but keeps the lead.
+
+    Only an explicit 'dissolved' status means there's no business to
+    sell to and no decision-maker to email. Drop those before
+    spending Apollo / LinkedIn / Reed / Gazette quota on them."""
+    status = (business.get("companies_house_status") or "").strip().lower()
+    if status == "dissolved":
+        return "dissolved at Companies House"
+    return None
+
+
 def _calculate_pain_score(business: dict, score: dict) -> int:
     """Derived 0-100 pain rollup so the Leads page can sort without parsing
     JSONB. Capped at 100. Booleans wrapped in int() so the arithmetic is
@@ -376,12 +400,26 @@ def run(run_id: int) -> dict:
                     counts["skipped"] += 1
                     continue
 
-                # Enrich. Each enricher catches its own errors.
+                # ── Stage 1: Companies House (qualification filter) ──
+                # Per the documented pipeline plan, CH runs first and
+                # decides whether the business is worth touching at all.
+                # If Stage 1 rejects the lead (dissolved company), every
+                # downstream enricher is skipped — Apollo costs money per
+                # lookup, LinkedIn burns proxy capacity, scraping is rate-
+                # limited — none worth spending on a dead company.
                 try:
                     biz = companies_house.enrich(biz)
                 except Exception as e:
                     logger.exception("CH enrich failed")
                     biz.setdefault("source_errors", {})["companies_house"] = str(e)
+
+                filter_reason = _stage1_filter_reason(biz)
+                if filter_reason:
+                    counts.setdefault("filtered_stage1", 0)
+                    counts["filtered_stage1"] += 1
+                    logger.info("stage1 filter dropped %r — %s",
+                                biz.get("business_name", "")[:60], filter_reason)
+                    continue
 
                 try:
                     biz = apollo.enrich(biz)
