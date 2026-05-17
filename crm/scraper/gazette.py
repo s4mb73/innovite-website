@@ -102,20 +102,65 @@ def _verify_entry_matches(entry: dict, normalised_name: str,
 
     Rule:
       - Name must appear in the entry text.
-      - If we have a CH number, it must ALSO appear (with leading
-        zeros stripped — Gazette quotes them both ways).
+      - If we have a CH number, it must appear as a WHOLE TOKEN
+        (not as a substring inside a longer digit run — that was
+        the bug that flagged active accountancy firms as 'distressed'
+        when their 7-digit CH number happened to be a substring of
+        an unrelated 11-digit ref number elsewhere on the page).
     Both conditions → confident match. Anything weaker is discarded
-    rather than falsely flagged."""
+    rather than falsely flagged.
+    """
     blob = _strip_html(
         (entry.get("content") or "") + " " + (entry.get("title") or "")
     ).lower()
     if normalised_name and normalised_name not in blob:
         return False
     if ch_number:
-        flat = re.sub(r"\D", "", blob)
-        if ch_number.lstrip("0") not in flat and ch_number not in flat:
+        # CH numbers in Gazette notices appear as "Company No. 08741703"
+        # — a standalone digit token (with or without leading zeros).
+        # Use \b word-boundary anchors against the raw text. Try both
+        # the padded and unpadded forms because the Gazette publishes
+        # historical notices in both styles.
+        padded   = ch_number.lstrip("0") or "0"
+        unpadded = ch_number.lstrip("0") or "0"
+        full     = ch_number.zfill(8)
+        # \b doesn't match between two digits, so a 7-digit number
+        # embedded in a longer digit run won't match — exactly what
+        # we want. Letter-prefixed numbers (SC/NI/OC) also match.
+        if not re.search(rf"\b{re.escape(full)}\b", blob) \
+                and not re.search(rf"\b{re.escape(unpadded)}\b", blob):
             return False
     return True
+
+
+def _verify_strict_no_ch(entry: dict, normalised_name: str) -> bool:
+    """When we don't have a CH number to cross-check, name-only matching
+    is too loose — the company name might appear coincidentally (a
+    person named the same, an unrelated company with similar branding,
+    or a director listed in someone else's insolvency proceedings).
+    Require additional anchors:
+
+      - Name appears with a corporate suffix nearby (limited / ltd /
+        plc / llp) within 50 chars, OR
+      - Name appears in the entry TITLE (not just body content).
+
+    A miss here returns False → status='clear'/'unknown' rather than
+    'distressed', biasing toward false negatives over false positives.
+    A false-positive distress flag is operationally bad (would prompt
+    'sorry to hear about your insolvency' email to a thriving firm).
+    """
+    title = _strip_html(entry.get("title") or "").lower()
+    if normalised_name in title:
+        return True
+
+    content = _strip_html(entry.get("content") or "").lower()
+    if normalised_name not in content:
+        return False
+
+    # Look for any corporate suffix within 50 chars of the name match.
+    idx = content.find(normalised_name)
+    window = content[max(0, idx - 5): idx + len(normalised_name) + 50]
+    return bool(re.search(r"\b(limited|ltd|plc|llp)\b", window))
 
 
 def _parse_published(entry: dict) -> date | None:
@@ -177,10 +222,18 @@ def check(business_name: str, *, companies_house_number: str | None = None) -> d
         return result
 
     entries = data.get("entry") or []
-    verified: list[dict] = [
-        e for e in entries
-        if _verify_entry_matches(e, norm_name, companies_house_number)
-    ]
+    if companies_house_number:
+        verified: list[dict] = [
+            e for e in entries
+            if _verify_entry_matches(e, norm_name, companies_house_number)
+        ]
+    else:
+        # No CH disambiguator available — apply stricter name-only rules
+        # to avoid false-positive distress flags.
+        verified = [
+            e for e in entries
+            if _verify_strict_no_ch(e, norm_name)
+        ]
 
     if not verified:
         result["status"] = "clear"
@@ -204,7 +257,14 @@ name = "gazette"
 
 def enrich(business: dict) -> dict:
     """Annotate the business dict with gazette_status, count, last_date,
-    last_url. Never raises — failures attach to source_errors instead."""
+    last_url. Never raises — failures attach to source_errors instead.
+
+    Defers to CH status when present: if Companies House currently
+    says the company is 'active', any Gazette match is historical
+    (strike-off threats they recovered from, old administrator
+    discharges, etc.) and we override status to 'clear'. Real
+    operational distress shows up in CH status, not Gazette history.
+    """
     bn  = (business.get("business_name") or "").strip()
     crn = (business.get("companies_house_number") or "").strip() or None
     try:
@@ -215,8 +275,22 @@ def enrich(business: dict) -> dict:
         business["gazette_status"] = "unknown"
         return business
 
-    business["gazette_status"]          = r["status"]
-    business["gazette_notice_count"]    = r["count"]
+    ch_status = (business.get("companies_house_status") or "").lower().strip()
+    if r["status"] == "distressed" and ch_status == "active":
+        # Keep the count + URL for audit (operator can click through
+        # to see the historical record), but downgrade the flag so
+        # the drafter doesn't pick gazette_distressed as the hook.
+        business["gazette_status"]           = "clear"
+        business["gazette_notice_count"]     = r["count"]
+        business["gazette_last_notice_date"] = r["last_date"]
+        business["gazette_last_notice_url"]  = r["last_url"]
+        business.setdefault("source_errors", {})["gazette"] = (
+            f"{r['count']} historical notices; CH currently active — flag suppressed"
+        )
+        return business
+
+    business["gazette_status"]           = r["status"]
+    business["gazette_notice_count"]     = r["count"]
     business["gazette_last_notice_date"] = r["last_date"]
     business["gazette_last_notice_url"]  = r["last_url"]
     if r["errors"]:
