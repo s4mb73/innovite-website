@@ -45,6 +45,7 @@ from psycopg.types.json import Jsonb
 import db
 from pipeline import scoring, drafter
 from pipeline.sources import google_places, companies_house, apollo
+from scraper import dns_signals
 from scraper import enricher as website_scraper
 from scraper import gazette as gazette_scraper
 from scraper import google_places_free
@@ -210,6 +211,7 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             linkedin_previous_companies, linkedin_follower_count,
             linkedin_profile_image_url,
             linkedin_recent_post_at, linkedin_recent_post_title,
+            email_provider, website_host, dmarc_present, spf_present,
             status, source
         )
         values (%s, %s, %s, %s, %s, %s,
@@ -231,6 +233,7 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
                 %s, %s,
                 %s,
                 %s, %s,
+                %s, %s, %s, %s,
                 'new', 'outbound')
         returning id
     """
@@ -289,6 +292,10 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         business.get("linkedin_profile_image_url") or None,
         business.get("linkedin_recent_post_at") or None,
         business.get("linkedin_recent_post_title") or None,
+        business.get("email_provider") or None,
+        business.get("website_host") or None,
+        business.get("dmarc_present") if business.get("dmarc_present") is not None else None,
+        business.get("spf_present") if business.get("spf_present") is not None else None,
     ))
     return row["id"] if row else None
 
@@ -449,6 +456,17 @@ def run(run_id: int) -> dict:
                 except Exception as e:
                     logger.exception("Website discovery failed")
                     biz.setdefault("source_errors", {})["website_discovery"] = str(e)
+
+                # ── Stage 2b: DNS-derived tech-stack signals ──
+                # Cheap MX + PTR + TXT lookups. Runs after website_discovery
+                # so we have a domain even on leads where Places didn't
+                # supply one. No HTTP, no proxy — just DNS. Skipped
+                # silently when the lead has no website (None enrich).
+                try:
+                    biz = dns_signals.enrich(biz)
+                except Exception as e:
+                    logger.exception("DNS signals enrich failed")
+                    biz.setdefault("source_errors", {})["dns_signals"] = str(e)
 
                 # ── Stage 3a: Free Google Maps rating backfill ──
                 # The paid Places API is the discovery source today, so

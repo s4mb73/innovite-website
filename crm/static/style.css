@@ -715,6 +715,7 @@ a { color:inherit; text-decoration:none; }
 .pill-amber { background:var(--amber-bg);  color:var(--amber); }
 .pill-red   { background:rgba(239,68,68,.10); color:#fca5a5; }
 .pill-grey  { background:var(--s3); color:var(--t3); }
+.pill-sm    { padding:1px 7px; font-size:10px; letter-spacing:.3px; }
 
 .lead-est {
   font-size:13px;

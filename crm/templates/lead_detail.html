@@ -278,6 +278,69 @@
       {% endif %}
     </div>
 
+    {# Tech stack — DNS-derived signals. Email provider drives outreach
+       copy; hosting hints at digital maturity; DMARC absence is a
+       concrete pain point for any deliverability/compliance pitch. #}
+    {% set provider_labels = {
+        'microsoft_365':    ('blue',  'Microsoft 365'),
+        'google_workspace': ('blue',  'Google Workspace'),
+        'zoho':             ('grey',  'Zoho Mail'),
+        'fastmail':         ('grey',  'Fastmail'),
+        'protonmail':       ('grey',  'ProtonMail'),
+        'godaddy':          ('amber', 'GoDaddy email'),
+        'mailgun':          ('grey',  'Mailgun'),
+        'yahoo':            ('amber', 'Yahoo / AOL'),
+        'icloud':           ('grey',  'iCloud Mail'),
+        '123_reg':          ('amber', '123-reg'),
+        'heartinternet':    ('amber', 'Heart Internet'),
+        'other':            ('grey',  'Other / self-hosted'),
+    } %}
+    {% set host_labels = {
+        'cloudflare':    'Cloudflare',
+        'aws':           'AWS',
+        'wix':           'Wix',
+        'squarespace':   'Squarespace',
+        'shopify':       'Shopify',
+        'vercel':        'Vercel',
+        'netlify':       'Netlify',
+        'wordpress_com': 'WordPress.com',
+        'godaddy':       'GoDaddy',
+        'fastly':        'Fastly',
+        'azure':         'Azure',
+        'github_pages':  'GitHub Pages',
+        'heroku':        'Heroku',
+        '123_reg':       '123-reg',
+        'heartinternet': 'Heart Internet',
+        'ionos':         'IONOS',
+        'fasthosts':     'Fasthosts',
+        'other':         'Other',
+    } %}
+    {% set ep = provider_labels.get(lead.email_provider) %}
+    {% set hp = host_labels.get(lead.website_host) %}
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">Tech stack <span class="card-title-sub">DNS fingerprint</span></div>
+        {% if ep %}<span class="pill pill-{{ ep[0] }}">{{ ep[1] }}</span>{% endif %}
+      </div>
+      {% if lead.email_provider or lead.website_host or lead.dmarc_present is not none or lead.spf_present is not none %}
+        <ul class="kv">
+          {% if lead.email_provider %}<li>Email · {{ ep[1] if ep else lead.email_provider }}</li>{% endif %}
+          {% if lead.website_host %}<li>Hosting · {{ hp if hp else lead.website_host }}</li>{% endif %}
+          {% if lead.spf_present is not none %}
+            <li>SPF · {% if lead.spf_present %}<span class="pill pill-green pill-sm">configured</span>{% else %}<span class="pill pill-red pill-sm">missing</span>{% endif %}</li>
+          {% endif %}
+          {% if lead.dmarc_present is not none %}
+            <li>DMARC · {% if lead.dmarc_present %}<span class="pill pill-green pill-sm">configured</span>{% else %}<span class="pill pill-red pill-sm">missing</span>{% endif %}</li>
+          {% endif %}
+        </ul>
+        {% if lead.dmarc_present is sameas false and lead.spf_present is sameas false %}
+          <div class="intel-hints" style="margin-top:6px"><span class="intel-hint hint-recency">No email security records — concrete deliverability hook</span></div>
+        {% endif %}
+      {% else %}
+        <div class="empty empty-sm">Not checked yet — next pipeline run will populate this.</div>
+      {% endif %}
+    </div>
+
     {# Open jobs — growth signal (US-026). 'scaling' (5+ roles) is the
        strong-hook case for advisory pitches; 'hiring' is a soft hook;
        'none' is the common case, no narrative to use. #}
