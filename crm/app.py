@@ -6,6 +6,7 @@ HTTPS (nginx terminates TLS; ProxyFix trusts X-Forwarded-Proto).
 """
 import csv
 import io
+import json
 import os
 import time
 from hmac import compare_digest
@@ -1396,19 +1397,18 @@ def api_search_discover():
 @app.post('/api/search/enrich-assign')
 def api_search_enrich_assign():
     """Move selected search results into crm.leads under a chosen
-    client, and queue per-lead enrichment.
-
-    For v1 we insert lightweight rows (only the discovery fields are
-    set) and queue a single pipeline run with mode='enrich_existing'.
-    A follow-up commit will teach the runner to enrich existing leads
-    in addition to discovering new ones. Until then, the assigned
-    rows still appear on the leads list with whatever enrichment
-    google_places.discover provided (rating, website, address).
+    client, then enqueue a pipeline_run with mode='enrich_assigned'
+    so the worker fills in the full enrichment (CH + DNS + Apollo +
+    LinkedIn + website + jobs + Gazette + scoring + drafted Day-1
+    email) in the background.
 
     Body:
       {client_id: int, results: [{google_place_id, business_name, ...}]}
     Returns:
-      {inserted: N, skipped_dupes: N, lead_ids: [...]}
+      {inserted: N, skipped_dupes: N, lead_ids: [...], run_id: int|null}
+
+    run_id is null only when no leads were actually inserted (everything
+    was a dupe). UI polls /api/pipeline/run/<run_id> for progress.
     """
     payload = request.get_json(silent=True) or {}
     try:
@@ -1438,12 +1438,15 @@ def api_search_enrich_assign():
         if name.lower() in existing:
             skipped += 1
             continue
+        # source='outbound' is enforced by a CHECK constraint that only
+        # accepts ('outbound','inbound','referral'). Search-discovered
+        # leads are outbound (we found them and chose to contact them).
         row = db.fetch_one(
             """insert into crm.leads
                  (client_id, business_name, address, city, website,
                   google_rating, google_maps_url,
                   status, source)
-               values (%s, %s, %s, %s, %s, %s, %s, 'new', 'search')
+               values (%s, %s, %s, %s, %s, %s, %s, 'new', 'outbound')
                returning id""",
             (
                 client_id,
@@ -1459,10 +1462,36 @@ def api_search_enrich_assign():
             lead_ids.append(row['id'])
             existing.add(name.lower())
 
+    run_id = None
+    if lead_ids:
+        try:
+            row = db.fetch_one(
+                """insert into crm.pipeline_runs
+                     (client_id, status, mode, triggered_by, progress)
+                   values (%s, 'pending', 'enrich_assigned', 'operator', %s)
+                   returning id""",
+                (client_id, json.dumps({'phase': 'queued', 'lead_ids': lead_ids})),
+            )
+            if row:
+                run_id = row['id']
+        except Exception as e:
+            # Lead rows already inserted — surface the enqueue failure
+            # but don't roll back the inserts; the operator can manually
+            # trigger enrichment from the lead list if needed.
+            app.logger.exception('enqueue enrich_assigned run failed')
+            return jsonify({
+                'inserted': len(lead_ids),
+                'skipped_dupes': skipped,
+                'lead_ids': lead_ids,
+                'run_id': None,
+                'enqueue_error': str(e)[:200],
+            }), 201
+
     return jsonify({
         'inserted': len(lead_ids),
         'skipped_dupes': skipped,
         'lead_ids': lead_ids,
+        'run_id': run_id,
     }), 201
 
 

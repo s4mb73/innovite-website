@@ -5126,3 +5126,18 @@ a { color:inherit; text-decoration:none; }
   .search-action-controls { width:100%; }
   .search-client-select { flex:1; }
 }
+
+/* Action-bar inline status (enrichment progress) */
+.search-action-status {
+  margin-left:14px;
+  font-size:13px;
+  font-variant-numeric:tabular-nums;
+}
+.search-action-status:empty { display:none; }
+.action-status-progress { color:var(--accent); }
+.action-status-progress strong { color:var(--t1); }
+.action-status-done     { color:var(--green); }
+.action-status-partial  { color:var(--amber); }
+.action-drafted         { color:var(--green); }
+.action-err             { color:#fca5a5; }
+.action-link            { color:var(--accent); margin-left:4px; }

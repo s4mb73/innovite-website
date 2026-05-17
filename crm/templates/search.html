@@ -178,7 +178,10 @@
 {# ── Sticky bottom action bar — appears on first selection ── #}
 <div class="search-action-bar" id="actionBar" hidden role="region" aria-label="Assign selection">
   <div class="search-action-inner">
-    <div class="search-action-count"><strong id="selectedCount">0</strong> selected</div>
+    <div class="search-action-count">
+      <strong id="selectedCount">0</strong> selected
+      <span class="search-action-status" id="actionStatus"></span>
+    </div>
     <div class="search-action-controls">
       <select id="assignClient" class="search-client-select">
         <option value="">Assign to client…</option>
@@ -452,7 +455,11 @@
     const n = picks.length;
     document.getElementById('selectedCount').textContent = n;
     const bar = document.getElementById('actionBar');
-    bar.hidden = n === 0;
+    // Keep the bar visible while an enrichment status is showing, even
+    // when the user has cleared selections post-assign.
+    const status = document.getElementById('actionStatus');
+    const hasStatus = status && status.innerHTML.trim().length > 0;
+    bar.hidden = (n === 0 && !hasStatus);
     const clientChosen = !!document.getElementById('assignClient').value;
     document.getElementById('assignBtn').disabled = (n === 0 || !clientChosen);
   }
@@ -487,7 +494,45 @@
     }
   });
 
-  // ── Assign ─────────────────────────────────────────────
+  // ── Assign + live enrichment progress ─────────────────
+  let pollTimer = null;
+
+  function setActionStatus(html) {
+    const el = document.getElementById('actionStatus');
+    if (el) el.innerHTML = html;
+  }
+
+  async function pollEnrichRun(runId, clientName, clientId) {
+    if (pollTimer) clearTimeout(pollTimer);
+    try {
+      const resp = await fetch(`/api/pipeline/run/${runId}`);
+      const data = await resp.json();
+      if (!resp.ok) {
+        setActionStatus(`<span class="action-err">Poll failed.</span>`);
+        return;
+      }
+      const p = (data.progress && typeof data.progress === 'object') ? data.progress : {};
+      const total   = p.total ?? 0;
+      const done    = p.done  ?? 0;
+      const drafted = p.drafted ?? 0;
+      if (data.status === 'running' || data.status === 'pending') {
+        setActionStatus(
+          `<span class="action-status-progress">Enriching <strong>${done} / ${total}</strong>${drafted ? ` · <span class="action-drafted">${drafted} drafted</span>` : ''}</span>`
+        );
+        pollTimer = setTimeout(() => pollEnrichRun(runId, clientName, clientId), 2000);
+      } else {
+        // succeeded / partial / failed
+        const cls = data.status === 'succeeded' ? 'action-status-done' : 'action-status-partial';
+        setActionStatus(
+          `<span class="${cls}">Done · <strong>${done}</strong> enriched · <strong>${drafted}</strong> drafted` +
+          ` · <a href="/leads?client=${clientId}" class="action-link">View leads ↗</a></span>`
+        );
+      }
+    } catch (e) {
+      setActionStatus(`<span class="action-err">${escapeHtml(String(e).slice(0, 120))}</span>`);
+    }
+  }
+
   document.getElementById('assignBtn').addEventListener('click', async () => {
     const clientId = document.getElementById('assignClient').value;
     if (!clientId) return;
@@ -511,18 +556,22 @@
         showError(data.error || 'Assign failed.');
         return;
       }
+      const clientName = document.getElementById('assignClient').selectedOptions[0].textContent;
+
+      // Top success card stays the receipt; the inline action status
+      // shows the live enrichment progress so the operator never
+      // has to leave the page.
       const ok = document.getElementById('searchSuccess');
       ok.hidden = false;
       document.getElementById('searchSuccessTitle').textContent =
         `${data.inserted} lead${data.inserted === 1 ? '' : 's'} assigned`;
       const skipMsg = data.skipped_dupes ? ` (${data.skipped_dupes} already in this client's list)` : '';
-      const clientName = document.getElementById('assignClient').selectedOptions[0].textContent;
-      document.getElementById('searchSuccessMsg').textContent = `to ${clientName}${skipMsg}.`;
+      document.getElementById('searchSuccessMsg').textContent = `to ${clientName}${skipMsg}. Full enrichment running…`;
       const link = document.getElementById('searchSuccessLink');
       link.href = `/leads?client=${clientId}`;
       link.textContent = `View ${clientName}'s leads ↗`;
-      // Mark the assigned rows so the "Hide already-assigned" filter catches them
-      // and so the badge shows up immediately without re-fetching.
+
+      // Mark the assigned rows so the filter + badge update immediately.
       picks.forEach(cb => {
         const idx = parseInt(cb.dataset.idx, 10);
         if (lastResults[idx]) {
@@ -532,6 +581,16 @@
         cb.checked = false;
       });
       applyFiltersAndRender();
+
+      // Start polling the enrichment run.
+      if (data.run_id) {
+        setActionStatus(`<span class="action-status-progress">Queued — worker will start enriching shortly…</span>`);
+        pollEnrichRun(data.run_id, clientName, parseInt(clientId, 10));
+      } else if (data.enqueue_error) {
+        setActionStatus(`<span class="action-err">Enqueue failed: ${escapeHtml(data.enqueue_error)}</span>`);
+      } else {
+        setActionStatus('');  // no rows actually inserted
+      }
     } catch (e) {
       showError(String(e).slice(0, 160));
     } finally {
