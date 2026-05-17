@@ -157,6 +157,21 @@ def enrich(business: Business) -> Business:
     visible = det.get("visible_emails") or []
     if visible:
         business["website_visible_emails"] = visible[:10]
+
+    # LinkedIn URL discovery — the website scrape pass also captures
+    # /in/<slug> links. Pick the one whose slug best matches the chosen
+    # officer's name (surname required). When the site links exactly
+    # one /in/ URL, default to it (small-firm 'meet the founder'
+    # convention). This unblocks the downstream LinkedIn enricher
+    # that used to depend on Apollo's linkedin_url.
+    linkedin_urls = det.get("linkedin_urls") or []
+    if linkedin_urls:
+        business["website_linkedin_urls"] = linkedin_urls[:10]
+        chosen = email_patterns.match_linkedin_to_officer(
+            linkedin_urls, officer.get("name", "")
+        )
+        if chosen:
+            business["linkedin_url"] = chosen
     if det.get("errors"):
         business.setdefault("source_errors", {})["decision_maker"] = " | ".join(det["errors"])[:240]
     return business

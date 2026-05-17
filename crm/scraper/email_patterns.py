@@ -47,6 +47,14 @@ EMAIL_RE = re.compile(
     r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
 )
 
+# LinkedIn personal-profile URL — /in/<slug>. Slug allows lowercase
+# alphanumerics, hyphens, and percent-encoded chars. We strip the
+# trailing slash + any query/fragment.
+LINKEDIN_IN_RE = re.compile(
+    r"https?://(?:www\.|uk\.)?linkedin\.com/in/([A-Za-z0-9\-_%]+)/?",
+    re.IGNORECASE,
+)
+
 # Paths to probe in addition to the homepage. Limit to 4 to keep the
 # proxy budget tight: 5 fetches per lead is the absolute ceiling.
 EXTRA_PATHS = ("about", "team", "contact", "privacy")
@@ -152,6 +160,55 @@ def _fetch_pages(website: str) -> list[tuple[str, str]]:
 
 
 # ── Email extraction + classification ────────────────────────────────
+def _extract_linkedin_urls(body: str) -> list[str]:
+    """Pull every linkedin.com/in/<slug> URL from a page body, deduped
+    + normalised (lowercased slug, no trailing slash, no query)."""
+    if not body:
+        return []
+    seen: set[str] = set()
+    for m in LINKEDIN_IN_RE.finditer(body):
+        slug = m.group(1).lower().strip("-_/")
+        if not slug or slug in ("company", "in", "school", "showcase"):
+            continue
+        url = f"https://www.linkedin.com/in/{slug}"
+        if url not in seen:
+            seen.add(url)
+    return sorted(seen)
+
+
+def match_linkedin_to_officer(linkedin_urls: list[str], officer_name: str) -> str | None:
+    """Pick the LinkedIn URL whose slug best matches the officer's
+    name. Falls back to the only URL when there's exactly one
+    /in/ link on the page (small B2B sites typically link only their
+    own founder)."""
+    if not linkedin_urls:
+        return None
+    first, last = _split_officer_name(officer_name)
+    if not first or not last:
+        return linkedin_urls[0] if len(linkedin_urls) == 1 else None
+
+    # Slugs typically look like "jane-smith-12345abc" or "janesmith".
+    # Score each by token presence.
+    scored: list[tuple[int, str]] = []
+    for url in linkedin_urls:
+        slug = url.rsplit("/", 1)[-1].lower()
+        score = 0
+        if first in slug:
+            score += 2
+        if last in slug:
+            score += 3  # surname is more disambiguating
+        scored.append((score, url))
+    scored.sort(reverse=True)
+    best_score, best_url = scored[0]
+    if best_score >= 3:  # require at least the surname match
+        return best_url
+    # No name match — but if there's exactly one /in/ URL on the
+    # site, default to it (small-firm 'meet the founder' convention).
+    if len(linkedin_urls) == 1:
+        return linkedin_urls[0]
+    return None
+
+
 def _extract_emails(body: str, domain: str) -> list[str]:
     """Pull every email on the company's own domain from a page body."""
     if not body or not domain:
@@ -287,6 +344,7 @@ def detect(website: str | None, officers: list[dict] | None) -> dict:
         "visible_emails":   [],
         "personal_emails":  [],
         "role_emails":      [],
+        "linkedin_urls":    [],
         "inferred_pattern": None,
         "confidence":       "none",
         "errors":           [],
@@ -304,11 +362,15 @@ def detect(website: str | None, officers: list[dict] | None) -> dict:
         return result
 
     visible: set[str] = set()
-    for url, body in pages:
+    linkedin_urls: set[str] = set()
+    for _url, body in pages:
         for e in _extract_emails(body, domain):
             visible.add(e)
+        for u in _extract_linkedin_urls(body):
+            linkedin_urls.add(u)
     visible_sorted = sorted(visible)
     result["visible_emails"] = visible_sorted
+    result["linkedin_urls"]  = sorted(linkedin_urls)
 
     personal, role = _classify_emails(visible_sorted)
     result["personal_emails"] = personal
