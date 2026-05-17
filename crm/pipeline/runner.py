@@ -49,6 +49,7 @@ from scraper import enricher as website_scraper
 from scraper import gazette as gazette_scraper
 from scraper import jobs as jobs_scraper
 from scraper import linkedin as linkedin_scraper
+from scraper import website_discovery
 
 logger = logging.getLogger("crm.pipeline.runner")
 
@@ -420,6 +421,18 @@ def run(run_id: int) -> dict:
                     logger.info("stage1 filter dropped %r — %s",
                                 biz.get("business_name", "")[:60], filter_reason)
                     continue
+
+                # ── Stage 2a: Website discovery from the CH name ──
+                # Heuristic slug-to-domain guessing with a DNS pre-check.
+                # No-op when Google Places (or any earlier source) has
+                # already supplied a URL — only backfills the gaps.
+                # Cheap and unconditional: a single DNS resolve per
+                # candidate, then HTTPS fetch only for resolving hosts.
+                try:
+                    biz = website_discovery.enrich(biz)
+                except Exception as e:
+                    logger.exception("Website discovery failed")
+                    biz.setdefault("source_errors", {})["website_discovery"] = str(e)
 
                 try:
                     biz = apollo.enrich(biz)
