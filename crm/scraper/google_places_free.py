@@ -180,6 +180,130 @@ def _match_score(query_name: str, query_city: str | None,
     return score
 
 
+# UK postcode pattern — matches "CB1 2LA", "SW1A 1AA", etc. Case
+# insensitive. Used to pull the postcode out of the free endpoint's
+# formatted_address string (the paid Places API gave us structured
+# address_components; the free one doesn't, so we regex it).
+_UK_POSTCODE_RE = re.compile(
+    r"\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_postcode(address: str | None) -> str | None:
+    if not address:
+        return None
+    m = _UK_POSTCODE_RE.search(address)
+    return m.group(1).upper().replace("  ", " ") if m else None
+
+
+def _extract_city_from_address(address: str | None, fallback: str | None) -> str | None:
+    """Best-effort city extraction from a "{name}, {street}, {town} {postcode}"
+    style address. Returns the requested location as fallback when parsing
+    is ambiguous — the operator searched for it, so it's a reasonable default."""
+    if not address:
+        return fallback
+    # Strip postcode tail if present.
+    body = _UK_POSTCODE_RE.sub("", address).strip().rstrip(",")
+    parts = [p.strip() for p in body.split(",") if p.strip()]
+    if len(parts) >= 2:
+        # Last segment after stripping postcode is typically the town/city.
+        return parts[-1]
+    return fallback
+
+
+def _hit_maps(query: str) -> tuple[list[dict], list[str]]:
+    """Shared pb-endpoint fetch + parse. Returns (candidates, errors).
+    Used by both find() (single lookup) and discover() (category search)."""
+    if not scraper_client.is_available():
+        return [], ["scraper disabled (wreq/proxy pool)"]
+
+    params = urllib.parse.urlencode({
+        "tbm":  "map",
+        "hl":   "en",
+        "gl":   "uk",
+        "q":    query,
+        "pb":   _DEFAULT_PB,
+        "tch":  "1",
+    })
+    body = scraper_client.fetch(f"{SEARCH_URL}?{params}", max_bytes=500_000)
+    if not body:
+        return [], ["fetch failed"]
+
+    try:
+        payload = _strip_jsonp_trailer(body)
+        outer = json.loads(payload)
+        inner = outer.get("d", "")
+        if not isinstance(inner, str):
+            return [], ["response missing 'd' string"]
+        inner = inner.lstrip(")]}'").lstrip("\n")
+        data = json.loads(inner)
+    except (json.JSONDecodeError, ValueError) as e:
+        return [], [f"parse: {str(e)[:80]}"]
+
+    raw_places = _safe(data, 0, 1) or []
+    candidates: list[dict] = []
+    for entry in raw_places:
+        cand = _extract_place(_safe(entry, 14))
+        if cand:
+            candidates.append(cand)
+    return candidates, []
+
+
+def discover(industry: str, location: str, limit: int = 60) -> list[dict]:
+    """Find businesses matching (industry x location) — discovery role
+    previously held by the paid Places API. Returns a list of Business
+    dicts shaped exactly like pipeline.sources.google_places.discover
+    so the runner can use this as a drop-in.
+
+    Cheap (one HTTP call via wreq + proxy), no API key, no per-call cost.
+    Trade-off vs paid:
+      - No review count (free endpoint can't fetch it HTTP-only).
+      - Address comes as a single string; we regex out postcode + city.
+      - No phone number (paid Place Details had it; free doesn't).
+        Backfilled later by the website scraper when present on-site.
+
+    Returns up to `limit` results (free endpoint returns ~20 per request;
+    higher caps require pagination not implemented yet — punt until needed).
+    """
+    query = f"{industry} {location}, UK"
+    candidates, errors = _hit_maps(query)
+    if errors:
+        # Mirror the paid module's error-stub shape so the runner's
+        # quota-error handling continues to work as-is.
+        return [{
+            "source_errors": {"google_places": " | ".join(errors)},
+            "business_name": "(fetch failed)",
+        }]
+
+    results: list[dict] = []
+    seen_place_ids: set[str] = set()
+    for c in candidates:
+        if len(results) >= limit:
+            break
+        place_id = c.get("place_id")
+        if place_id:
+            if place_id in seen_place_ids:
+                continue
+            seen_place_ids.add(place_id)
+        if not c.get("name"):
+            continue
+
+        results.append({
+            "business_name":        c["name"],
+            "address":              c.get("address") or "",
+            "postcode":             _extract_postcode(c.get("address")) or "",
+            "city":                 _extract_city_from_address(c.get("address"), location) or "",
+            "phone":                "",  # not in free endpoint; website scrape will backfill if present
+            "website":              c.get("website") or "",
+            "google_rating":        float(c["rating"]) if c.get("rating") is not None else None,
+            "google_review_count":  None,  # not extractable HTTP-only — see module docstring
+            "google_maps_url":      f"https://www.google.com/maps/place/?q=place_id:{place_id}" if place_id else "",
+            "google_place_id":      place_id or "",
+        })
+    return results
+
+
 # ── Public entry ────────────────────────────────────────────────────
 def find(business_name: str, city: str | None = None) -> dict:
     """Look up a business via the free Google Maps pb endpoint.
@@ -198,53 +322,14 @@ def find(business_name: str, city: str | None = None) -> dict:
         result["errors"].append("no business_name")
         return result
 
-    if not scraper_client.is_available():
-        result["errors"].append("scraper disabled (wreq/proxy pool)")
-        return result
-
     query = business_name.strip()
     if city:
         query = f"{query} {city}"
 
-    params = urllib.parse.urlencode({
-        "tbm":  "map",
-        "hl":   "en",
-        "gl":   "uk",
-        "q":    query,
-        "pb":   _DEFAULT_PB,
-        "tch":  "1",
-    })
-    url = f"{SEARCH_URL}?{params}"
-    body = scraper_client.fetch(url, max_bytes=500_000)
-    if not body:
-        result["errors"].append("fetch failed")
+    candidates, errors = _hit_maps(query)
+    if errors:
+        result["errors"].extend(errors)
         return result
-
-    try:
-        payload = _strip_jsonp_trailer(body)
-        outer = json.loads(payload)
-        inner = outer.get("d", "")
-        if not isinstance(inner, str):
-            result["errors"].append("response missing 'd' string")
-            return result
-        # Strip Google's XSSI prefix — first 4 or 5 chars depending on
-        # whether the newline is present.
-        inner = inner.lstrip(")]}'").lstrip("\n")
-        data = json.loads(inner)
-    except (json.JSONDecodeError, ValueError) as e:
-        result["errors"].append(f"parse: {str(e)[:80]}")
-        return result
-
-    # Place list is at data[0][1][1..N]; data[0][1][0] is sometimes
-    # query metadata. We try a wide slice and filter to those with a
-    # valid name extraction.
-    raw_places = _safe(data, 0, 1) or []
-    candidates: list[dict] = []
-    for entry in raw_places:
-        pm = _safe(entry, 14)
-        cand = _extract_place(pm)
-        if cand:
-            candidates.append(cand)
 
     result["candidates"] = candidates
     if not candidates:

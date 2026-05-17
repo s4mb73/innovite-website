@@ -3741,7 +3741,6 @@ def _build_signature() -> str:
 # (env_name, friendly label, hostname/short identifier, prefix retained)
 _INTEGRATION_KEYS = [
     ('ANTHROPIC_API_KEY',       'Anthropic Claude',       'api.anthropic.com',                     'sk-ant-'),
-    ('GOOGLE_PLACES_API_KEY',   'Google Places',          'maps.googleapis.com',                   'AIza'),
     ('APOLLO_API_KEY',          'Apollo (decision-makers)', 'api.apollo.io',                       ''),
     ('COMPANIES_HOUSE_API_KEY', 'Companies House API',    'api.company-information.service.gov.uk',''),
     ('DATABASE_URL',            'Supabase Postgres',      'pooler.supabase.co',                    ''),
@@ -3751,9 +3750,10 @@ _INTEGRATION_KEYS = [
 
 # Keys whose absence blocks real pipeline runs. Surface these as 'missing'
 # (red) instead of 'idle' (grey) so an operator can't ship without them.
+# Google Places is no longer here — discovery now runs via the free
+# scraper (scraper/google_places_free.py), no key required.
 _REQUIRED_FOR_PIPELINE = {
     'ANTHROPIC_API_KEY',
-    'GOOGLE_PLACES_API_KEY',
     'APOLLO_API_KEY',
 }
 
