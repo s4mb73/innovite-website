@@ -47,6 +47,7 @@ from pipeline import scoring, drafter
 from pipeline.sources import google_places, companies_house, apollo
 from scraper import enricher as website_scraper
 from scraper import gazette as gazette_scraper
+from scraper import google_places_free
 from scraper import jobs as jobs_scraper
 from scraper import linkedin as linkedin_scraper
 from scraper import website_discovery
@@ -433,6 +434,20 @@ def run(run_id: int) -> dict:
                 except Exception as e:
                     logger.exception("Website discovery failed")
                     biz.setdefault("source_errors", {})["website_discovery"] = str(e)
+
+                # ── Stage 3a: Free Google Maps rating backfill ──
+                # The paid Places API is the discovery source today, so
+                # leads coming in via that path already have rating set
+                # and this enricher is a no-op. For leads from CSV
+                # import, manual entry, or any future non-Places
+                # discovery, this fills rating + place_id from the
+                # free pb endpoint (no review count — see module
+                # docstring for the trade-off rationale).
+                try:
+                    biz = google_places_free.enrich(biz)
+                except Exception as e:
+                    logger.exception("Free Places enrich failed")
+                    biz.setdefault("source_errors", {})["google_places_free"] = str(e)
 
                 try:
                     biz = apollo.enrich(biz)
