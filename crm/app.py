@@ -211,6 +211,21 @@ def client_new():
             errors=errors,
         ), 500
 
+    # The wizard's step 3 has two submit buttons:
+    #   'save_and_run' (primary, default) — queue the first pipeline run
+    #   'save_only'                       — land on client detail, no run
+    # Legacy callers that don't post a save_action default to save_and_run
+    # so the existing redirect-to-approvals UX is preserved.
+    save_action = (request.form.get('save_action') or 'save_and_run').strip()
+
+    if save_action == 'save_only':
+        flash(
+            f"{form_in['name']} added. Click Find new leads when you're ready "
+            f"to start the first pipeline run.",
+            'success',
+        )
+        return redirect(url_for('client_detail', client_id=new_id))
+
     # Save & run: enqueue the first pipeline run immediately so the
     # operator lands on /approvals already populating instead of having
     # to click 'Find new leads' from client detail. The worker picks the
