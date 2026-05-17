@@ -1366,6 +1366,30 @@ def api_search_discover():
                 r['matched_industry'] = ind
                 r['matched_location'] = loc
                 out.append(r)
+
+    # Cross-client already-assigned lookup. Single query joins all leads
+    # across all clients so the UI can flag rows the operator has
+    # already pitched (under any client). Name-based match is good
+    # enough for the UI hint; the assign endpoint dedupes more strictly
+    # per-client.
+    if out:
+        names_lower = list({(r['business_name'] or '').strip().lower()
+                            for r in out if r.get('business_name')})
+        if names_lower:
+            assigned_rows = db.fetch_all(
+                """select lower(l.business_name) as name_lower, c.name as client_name
+                   from crm.leads l
+                   join crm.clients c on c.id = l.client_id
+                   where lower(l.business_name) = any(%s)""",
+                (names_lower,),
+            )
+            assigned_map = {r['name_lower']: r['client_name'] for r in assigned_rows}
+            for r in out:
+                name_lower = (r.get('business_name') or '').strip().lower()
+                if name_lower in assigned_map:
+                    r['already_assigned'] = True
+                    r['assigned_to_client'] = assigned_map[name_lower]
+
     return jsonify({'count': len(out), 'results': out, 'errors': errors})
 
 
