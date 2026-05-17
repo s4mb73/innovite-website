@@ -44,7 +44,7 @@ from psycopg.types.json import Jsonb
 # so 'pipeline' and 'db' resolve from sys.path directly.
 import db
 from pipeline import scoring, drafter
-from pipeline.sources import google_places, companies_house, apollo
+from pipeline.sources import google_places, companies_house, decision_maker
 from scraper import dns_signals
 from scraper import enricher as website_scraper
 from scraper import gazette as gazette_scraper
@@ -201,12 +201,14 @@ def _enrich_chain(biz: dict) -> dict:
         logger.exception("Free Places enrich failed")
         biz.setdefault("source_errors", {})["google_places_free"] = str(e)
 
-    # Stage 3b — Apollo decision-maker lookup
+    # Stage 3b — Decision-maker: CH officers + email pattern detection.
+    # Replaces the old Apollo call. Free, no API key, runs against the
+    # officer list CH already attached to biz earlier in the chain.
     try:
-        biz = apollo.enrich(biz)
+        biz = decision_maker.enrich(biz)
     except Exception as e:
-        logger.exception("Apollo enrich failed")
-        biz.setdefault("source_errors", {})["apollo"] = str(e)
+        logger.exception("decision_maker enrich failed")
+        biz.setdefault("source_errors", {})["decision_maker"] = str(e)
 
     # Stage 4 — LinkedIn profile parse (skipped silently without linkedin_url)
     try:

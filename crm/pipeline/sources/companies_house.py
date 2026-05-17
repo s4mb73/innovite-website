@@ -273,9 +273,20 @@ def enrich(business: Business) -> Business:
         business["companies_house_revenue_band"] = band
 
     # Officer count — only counts active officers (no resigned_on).
+    # Also stash the active officer list for the decision_maker
+    # source to pick from without a second CH round-trip.
     if officers and isinstance(officers.get("items"), list):
         active = [o for o in officers["items"] if not o.get("resigned_on")]
         business["companies_house_officer_count"] = len(active)
+        business["companies_house_officers"] = [
+            {
+                "name":          (o.get("name") or "").strip(),
+                "role":          (o.get("officer_role") or "").strip(),
+                "appointed_on":  o.get("appointed_on") or "",
+            }
+            for o in active
+            if (o.get("name") or "").strip()
+        ]
 
     # Items 1-4: derive timing + pain signals from data already in memory.
     # Each is best-effort and never raises — partial enrichment is fine.
