@@ -370,6 +370,7 @@ def get_client(client_id: int) -> dict | None:
         select id, name, industry, contact_name, contact_email,
                monthly_fee, pricing_tier, status,
                target_industries, target_locations, targeting_filters,
+               daily_pipeline_run_at, pipeline_paused,
                onboarded_at, created_at
         from crm.clients
         where id = %s
