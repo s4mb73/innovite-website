@@ -251,11 +251,22 @@ def _score_with_errors(biz: dict) -> dict:
     return score
 
 
+import re as _re
+_UK_POSTCODE_RE = _re.compile(
+    r"\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b",
+    _re.IGNORECASE,
+)
+
+
 def _lead_row_to_biz(row: dict) -> dict:
     """Convert a DB lead row into the biz-dict shape the enrichers
     expect. The lead row uses the same column names as the biz dict
     for most fields, so this is mostly a copy with a couple of
     aliases (decision_maker_email is stored as 'email' in some places).
+
+    Postcode is not its own column on crm.leads — we regex it out of
+    the formatted address string so CH fuzzy matching has the
+    disambiguator it needs.
     """
     biz: dict = {}
     for k in (
@@ -275,6 +286,15 @@ def _lead_row_to_biz(row: dict) -> dict:
             biz[k] = v
     if row.get("email"):
         biz["decision_maker_email"] = row["email"]
+
+    # Postcode extraction from the formatted address. Without it, the
+    # CH fuzzy match short-circuits with "missing name or postcode"
+    # and the whole enrichment chain downstream stops.
+    addr = (row.get("address") or "").strip()
+    if addr:
+        m = _UK_POSTCODE_RE.search(addr)
+        if m:
+            biz["postcode"] = m.group(1).upper().strip()
     return biz
 
 
@@ -731,8 +751,11 @@ def run(run_id: int) -> dict:
     onto the lead and the run continues.
     """
     started = datetime.now(timezone.utc)
-    _set_status(run_id, status="running", started_at=started, progress={"phase": "loading_client"})
 
+    # Read mode + progress BEFORE any _set_status call — otherwise the
+    # default "loading_client" progress overwrites the lead_ids that
+    # the Search → Assign API endpoint stashed in progress for the
+    # enrich_assigned path.
     run_row = db.fetch_one(
         "select client_id, mode, progress from crm.pipeline_runs where id = %s",
         (run_id,),
@@ -745,7 +768,12 @@ def run(run_id: int) -> dict:
     # run with this mode and lead_ids in progress JSONB. No discovery,
     # no targeting required — we just walk the list.
     if run_row.get("mode") == "enrich_assigned":
+        _set_status(run_id, status="running", started_at=started)
         return _run_enrich_assigned(run_id, run_row)
+
+    # Discovery path — safe to overwrite progress now.
+    _set_status(run_id, status="running", started_at=started,
+                progress={"phase": "loading_client"})
 
     client_id = run_row["client_id"]
     client = _load_client(client_id)
