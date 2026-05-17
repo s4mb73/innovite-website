@@ -229,27 +229,59 @@ def _search_match(business_name: str, postcode: str) -> dict | None:
 
 
 def enrich(business: Business) -> Business:
-    """Attach CH fields to the business if a confident match exists."""
+    """Attach CH fields to the business if a confident match exists.
+
+    Match strategy (tiered):
+      Tier 1 — Footer scrape: if the lead's website displays its CH
+               number (Companies Act s.82 requires it), use that
+               directly. 100% accurate, no fuzzy match needed.
+      Tier 2 — Fuzzy name + postcode search via the CH API.
+    """
     bname = business.get("business_name", "")
-    pc = business.get("postcode", "")
+    website = (business.get("website") or "").strip()
 
-    if not bname or not pc:
-        business.setdefault("source_errors", {})["companies_house"] = "missing name or postcode"
-        return business
+    company_number: str | None = None
+    match_source = "fuzzy"
 
-    try:
-        match = _search_match(bname, pc)
-    except Exception as e:
-        business.setdefault("source_errors", {})["companies_house"] = f"search failed: {e}"
-        return business
+    # Tier 1 — footer scrape. Cheap when the homepage's already in cache;
+    # ~2-4 proxy hits worst case (homepage + 1-3 legal pages until match).
+    if website:
+        try:
+            # Local import avoids a circular dep at module load — the
+            # scraper package imports from pipeline.sources for typing
+            # in some adapters; safer to defer.
+            from scraper import ch_footer as ch_footer_mod
+            found = ch_footer_mod.find_for_website(website)
+            if found:
+                company_number = found
+                match_source = "footer"
+        except Exception as e:
+            # Footer extraction is a nice-to-have; fall through to fuzzy.
+            logger.exception("ch_footer extract failed for %s", website[:80])
+            business.setdefault("source_errors", {})["ch_footer"] = f"unexpected: {str(e)[:120]}"
 
-    if not match:
-        business.setdefault("source_errors", {})["companies_house"] = "no confident match"
-        return business
-
-    company_number = match.get("company_number")
+    # Tier 2 — fuzzy name+postcode search (existing path).
     if not company_number:
-        return business
+        pc = business.get("postcode", "")
+        if not bname or not pc:
+            business.setdefault("source_errors", {})["companies_house"] = "missing name or postcode (and no footer match)"
+            return business
+
+        try:
+            match = _search_match(bname, pc)
+        except Exception as e:
+            business.setdefault("source_errors", {})["companies_house"] = f"search failed: {e}"
+            return business
+
+        if not match:
+            business.setdefault("source_errors", {})["companies_house"] = "no confident match"
+            return business
+
+        company_number = match.get("company_number")
+        if not company_number:
+            return business
+
+    business["companies_house_match_source"] = match_source
 
     try:
         profile = _http_get(CH_PROFILE_URL.format(number=company_number))
