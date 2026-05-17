@@ -206,6 +206,10 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             jobs_last_checked_at, jobs_source_url,
             linkedin_status, linkedin_current_title,
             linkedin_headline, linkedin_last_checked_at,
+            linkedin_current_company, linkedin_location,
+            linkedin_previous_companies, linkedin_follower_count,
+            linkedin_profile_image_url,
+            linkedin_recent_post_at, linkedin_recent_post_title,
             status, source
         )
         values (%s, %s, %s, %s, %s, %s,
@@ -223,6 +227,10 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 %s, %s, %s, %s,
+                %s, %s,
+                %s, %s,
+                %s,
+                %s, %s,
                 'new', 'outbound')
         returning id
     """
@@ -274,6 +282,13 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         business.get("linkedin_current_title") or None,
         business.get("linkedin_headline") or None,
         business.get("linkedin_last_checked_at") or None,
+        business.get("linkedin_current_company") or None,
+        business.get("linkedin_location") or None,
+        business.get("linkedin_previous_companies") or None,
+        business.get("linkedin_follower_count") if business.get("linkedin_follower_count") is not None else None,
+        business.get("linkedin_profile_image_url") or None,
+        business.get("linkedin_recent_post_at") or None,
+        business.get("linkedin_recent_post_title") or None,
     ))
     return row["id"] if row else None
 

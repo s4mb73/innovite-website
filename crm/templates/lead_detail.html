@@ -110,9 +110,33 @@
       </div>
       {% if lead.decision_maker_name %}
         <div class="dm-name">{{ lead.decision_maker_name }}</div>
-        <div class="dm-title">{{ effective_title or '—' }}</div>
+        <div class="dm-title">
+          {{ effective_title or '—' }}
+          {% if lead.linkedin_current_company %} · {{ lead.linkedin_current_company }}{% endif %}
+        </div>
+        {% if lead.linkedin_location or lead.linkedin_follower_count %}
+          <div class="dm-meta">
+            {% if lead.linkedin_location %}<span>{{ lead.linkedin_location }}</span>{% endif %}
+            {% if lead.linkedin_location and lead.linkedin_follower_count %}<span class="dm-sep">·</span>{% endif %}
+            {% if lead.linkedin_follower_count %}<span>{{ '{:,}'.format(lead.linkedin_follower_count) }} followers</span>{% endif %}
+          </div>
+        {% endif %}
         {% if lead.linkedin_headline and lead.linkedin_headline != effective_title %}
           <blockquote class="intel-summary">{{ lead.linkedin_headline }}</blockquote>
+        {% endif %}
+        {% if lead.linkedin_recent_post_title %}
+          <div class="intel-block">
+            <div class="intel-label">Latest post · {{ lead.linkedin_recent_post_at|relative_time if lead.linkedin_recent_post_at else 'recent' }}</div>
+            <div class="intel-post">"{{ lead.linkedin_recent_post_title }}"</div>
+          </div>
+        {% endif %}
+        {% if lead.linkedin_previous_companies %}
+          <div class="intel-block">
+            <div class="intel-label">Previously at</div>
+            <div class="intel-chips intel-chips-muted">
+              {% for cp in lead.linkedin_previous_companies %}<span class="intel-chip">{{ cp }}</span>{% endfor %}
+            </div>
+          </div>
         {% endif %}
         {% if lead.linkedin_url %}<a class="card-link" href="{{ lead.linkedin_url }}" target="_blank" rel="noopener">LinkedIn ↗</a>{% endif %}
       {% else %}
