@@ -1,4 +1,4 @@
-// Stockwise — single bundle: nav, reveal, FAQ, waitlist form.
+// Stockwise — nav, reveal, count-up, cursor glow, waitlist form.
 
 // ── Nav toggle ─────────────────────────────────────────
 function toggleNav(){const n=document.querySelector('nav');const o=n.classList.toggle('open');n.querySelector('.nav-toggle').setAttribute('aria-expanded',o)}
@@ -7,27 +7,48 @@ function closeNav(){const n=document.querySelector('nav');n.classList.remove('op
 // ── Reveal on scroll ───────────────────────────────────
 const io=new IntersectionObserver((entries)=>{
   entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}});
-},{rootMargin:'0px 0px -40px 0px',threshold:.05});
+},{rootMargin:'0px 0px -60px 0px',threshold:.05});
 document.querySelectorAll('.rv').forEach(el=>io.observe(el));
 
-// ── FAQ accordion ──────────────────────────────────────
-document.querySelectorAll('.fq').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    const fi=btn.parentElement;
-    const open=fi.classList.toggle('open');
-    btn.setAttribute('aria-expanded',open);
+// ── Count-up on dashboard numbers ──────────────────────
+const countIo=new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    if(!e.isIntersecting) return;
+    const el=e.target;
+    const target=parseFloat(el.dataset.count);
+    const suffix=el.dataset.suffix||'';
+    const dur=1400;
+    const start=performance.now();
+    const initial=0;
+    const step=(now)=>{
+      const t=Math.min(1,(now-start)/dur);
+      const eased=1-Math.pow(1-t,3);
+      const val=Math.round(initial+(target-initial)*eased);
+      el.textContent=val.toLocaleString('en-US')+suffix;
+      if(t<1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+    countIo.unobserve(el);
+  });
+},{threshold:.3});
+document.querySelectorAll('[data-count]').forEach(el=>countIo.observe(el));
+
+// ── Cursor glow on feature cards ───────────────────────
+document.querySelectorAll('[data-glow]').forEach(card=>{
+  card.addEventListener('pointermove',e=>{
+    const r=card.getBoundingClientRect();
+    card.style.setProperty('--mx',((e.clientX-r.left)/r.width*100)+'%');
+    card.style.setProperty('--my',((e.clientY-r.top)/r.height*100)+'%');
   });
 });
 
 // ── Waitlist form ──────────────────────────────────────
-const FORM_STEPS=4;             // 4 question steps then email step
 const ans={s1:null,s2:null,s3:null};
 let cur=1;
 
 function oF(){
   document.getElementById('fo').classList.add('on');
   document.body.style.overflow='hidden';
-  // Focus first option for keyboard users
   setTimeout(()=>{
     const first=document.querySelector('#f'+cur+' .fop, #f'+cur+' .fin');
     if(first) first.focus?.();
@@ -38,7 +59,6 @@ function cF(){
   document.body.style.overflow='';
 }
 
-// Select an option in current step
 function sO(el){
   const step=el.parentElement.dataset.s;
   el.parentElement.querySelectorAll('.fop').forEach(o=>o.classList.remove('sel'));
@@ -48,7 +68,7 @@ function sO(el){
 }
 
 function renderDots(){
-  for(let i=1;i<=FORM_STEPS;i++){
+  for(let i=1;i<=4;i++){
     const d=document.getElementById('dd'+i);
     if(!d) continue;
     d.classList.remove('ac','dn');
@@ -58,7 +78,6 @@ function renderDots(){
   document.getElementById('fbk').style.display=cur>1?'block':'none';
 }
 
-// Steps: f1-f3 are MCQs, f4 is name/company/email inputs, f5 is the success screen.
 function showStep(n){
   for(let i=1;i<=5;i++){
     const el=document.getElementById('f'+i);
@@ -67,18 +86,6 @@ function showStep(n){
   document.getElementById('fnv').style.display=n===5?'none':'flex';
   cur=n;
   renderDots();
-}
-
-let emailWired=false;
-function wireEmailStep(){
-  if(emailWired) return; emailWired=true;
-  const en=()=>{
-    const name=document.getElementById('fN').value.trim();
-    const email=document.getElementById('fE').value.trim();
-    const ok=name.length>=2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    document.getElementById('fnx').disabled=!ok;
-  };
-  ['fN','fE'].forEach(id=>document.getElementById(id).addEventListener('input',en));
 }
 
 function syncNextBtn(){
@@ -92,6 +99,13 @@ function syncNextBtn(){
     btn.textContent='Next';
     btn.disabled=!ans['s'+cur];
   }
+}
+
+let emailWired=false;
+function wireEmailStep(){
+  if(emailWired) return; emailWired=true;
+  const en=()=>syncNextBtn();
+  ['fN','fE'].forEach(id=>document.getElementById(id).addEventListener('input',en));
 }
 
 function nx(){
@@ -136,7 +150,6 @@ async function submitForm(){
   }
 }
 
-// Close on Escape
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if(document.getElementById('fo').classList.contains('on')) cF();
@@ -144,5 +157,4 @@ document.addEventListener('keydown',e=>{
   }
 });
 
-// Init dots
 renderDots();
