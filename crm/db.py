@@ -4102,6 +4102,8 @@ def upsert_vidora_lead(payload: dict, pdf_path: str | None) -> int:
             'trend':                        payload.get('trend'),
             'analysed_at':                  payload.get('analysed_at'),
         }),
+        'mode':                       'media',
+        'audit_version':              payload.get('audit_version'),
     }
 
     cols = list(row.keys())

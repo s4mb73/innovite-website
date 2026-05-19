@@ -1,18 +1,25 @@
 -- Innovite CRM — Mode (Accountancy vs Media) for clients, leads, searches
 --
 -- The vision audit engine (Claude Sonnet 4.6 scoring Instagram grids) is
--- the keeper IP from the Vidora rebuild. Everything else got rebuilt on
--- the Linux VPS — Google Places, public IG profile snapshot, no login.
+-- the keeper IP from the Vidora pivot. Discovery + snapshot got rebuilt
+-- native on the Linux VPS — Google Places + public IG web_profile_info,
+-- no login required (see 0034_vidora_bridge.sql).
 --
 -- This migration introduces the Mode abstraction so the CRM can hold
 -- two pipelines under one roof:
---   - Accountancy Mode -> ROCA pipeline (Companies House + LinkedIn)
+--   - Accountancy Mode -> ROCA pipeline (Companies House + DNS +
+--                         LinkedIn + Gazette + Reed + website scrape)
 --   - Media Mode       -> Vidora pipeline (Google Places + IG audit)
 --
 -- A universal lead schema with mode-conditional fields. We denormalise
 -- `mode` onto leads (instead of always joining through clients) so the
--- leads table query path stays one read. Clients don't change type in
+-- leads page query path stays one read. Clients don't change type in
 -- practice, so drift risk is zero.
+--
+-- Per-dimension Vidora vision scores already live in leads.vidora_data
+-- (jsonb, added by 0034) — no per-column promotion here. The universal
+-- columns (grade, overall_score, weakness_profile, email_*) cover the
+-- promoted summary fields for both modes.
 --
 -- Why CHECK constraints rather than enums: matches the existing schema
 -- convention and lets us add modes later without an ALTER TYPE dance.
@@ -28,7 +35,7 @@ alter table crm.clients
   add column if not exists client_type text not null default 'accountancy'
     check (client_type in ('accountancy','media'));
 
--- Backfill: Vidora Media is the only media client currently seeded.
+-- Backfill: Vidora Media is the only seeded media client (0034 inserts it).
 update crm.clients
    set client_type = 'media'
  where name ilike 'vidora%'
@@ -37,11 +44,15 @@ update crm.clients
 -- ─────────────────────────────────────────────────────────────────────
 -- 2. crm.leads.mode (denormalised from clients.client_type)
 -- ─────────────────────────────────────────────────────────────────────
+-- Naming note: this is the "pipeline strategy" mode, distinct from
+-- crm.pipeline_runs.mode which is the trigger-type mode
+-- (manual/scheduled/onboarding/enrich_assigned). Two different axes,
+-- two different scopes — overload accepted.
 alter table crm.leads
   add column if not exists mode text not null default 'accountancy'
     check (mode in ('accountancy','media'));
 
--- Backfill: any lead whose client is media-type.
+-- Backfill by client type.
 update crm.leads l
    set mode = c.client_type
   from crm.clients c
@@ -49,37 +60,31 @@ update crm.leads l
    and c.client_type = 'media'
    and l.mode <> 'media';
 
+-- Belt-and-braces: any existing vidora_instagram-sourced lead is media.
+update crm.leads
+   set mode = 'media'
+ where source = 'vidora_instagram'
+   and mode <> 'media';
+
 create index if not exists leads_mode_idx on crm.leads(mode);
 
 -- ─────────────────────────────────────────────────────────────────────
 -- 3. crm.leads.audit_version
 -- ─────────────────────────────────────────────────────────────────────
--- Tracks which audit-engine version graded this lead. Lets us re-grade
--- a row when the audit logic changes without losing prior context.
+-- Tracks which audit-engine version graded this row. Lets us re-grade
+-- when the audit logic / model alias changes without losing prior
+-- context. Top-level column (not in vidora_data) so the leads page
+-- can filter on it cheaply.
 alter table crm.leads
   add column if not exists audit_version text;
 
 -- ─────────────────────────────────────────────────────────────────────
--- 4. Vidora vision-audit columns (media-mode-specific, all nullable)
--- ─────────────────────────────────────────────────────────────────────
--- Wide-table approach. With two modes and ~6 net-new columns, sidecar
--- tables would cost more in joins than they save in schema cleanliness.
--- Revisit if mode count hits 4+.
-alter table crm.leads
-  add column if not exists vidora_audit_grade text
-    check (vidora_audit_grade in ('A','B','C','D','F') or vidora_audit_grade is null),
-  add column if not exists vidora_audit_score integer,
-  add column if not exists vidora_audit_weaknesses jsonb,
-  add column if not exists vidora_sales_hook text,
-  add column if not exists vidora_snapshot jsonb,
-  add column if not exists vidora_audited_at timestamptz;
-
--- ─────────────────────────────────────────────────────────────────────
--- 5. crm.searches — search-run log (per-mode dispatch record)
+-- 4. crm.searches — search-run log (per-mode dispatch record)
 -- ─────────────────────────────────────────────────────────────────────
 -- Each row is one user-initiated search from the UI. The worker reads
 -- pending rows, dispatches to the mode strategy, writes leads_found
--- and status back.
+-- + status back. Parallel to crm.pipeline_runs (which tracks recurring
+-- enrichment jobs) — searches are one-shot, user-triggered.
 create table if not exists crm.searches (
   id            bigint generated always as identity primary key,
   client_id     bigint not null references crm.clients(id) on delete cascade,

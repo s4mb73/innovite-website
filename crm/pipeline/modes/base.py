@@ -1,4 +1,16 @@
-"""Mode protocol and registry."""
+"""Mode protocol and registry.
+
+Mode = "which pipeline strategy turns a search row into rows in crm.leads".
+Each mode owns its own orchestration end-to-end. We deliberately do NOT
+force a shared discover/enrich/audit/write lifecycle: accountancy runs
+~8 enrichment passes plus a PECR compliance gate plus a drafter, while
+media has an IG-handle resolution step that can fail before any audit
+work happens. Forcing both into a common shape produces leaky
+abstractions both directions.
+
+A mode is just `name + run(search_id) -> dict`. The dict shape is the
+counters written back to crm.searches (leads_found, errors, ...).
+"""
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
@@ -6,32 +18,15 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class Mode(Protocol):
-    """A pipeline strategy for one client_type.
-
-    Lifecycle of a search run:
-        candidates = mode.discover(params)
-        for c in candidates:
-            enriched = mode.enrich(c)
-            audited  = mode.audit(enriched)
-            mode.write(client_id, audited)
-    """
-
     name: str
 
-    def discover(self, params: dict[str, Any]) -> list[dict[str, Any]]:
-        """Return raw candidate businesses from the mode's discovery source."""
-        ...
+    def run(self, search_id: int) -> dict[str, Any]:
+        """Execute the strategy for one crm.searches row.
 
-    def enrich(self, lead: dict[str, Any]) -> dict[str, Any]:
-        """Add mode-specific enrichment (Companies House, IG snapshot, etc.)."""
-        ...
-
-    def audit(self, lead: dict[str, Any]) -> dict[str, Any]:
-        """Grade the lead. Returns the lead dict with grade + weaknesses set."""
-        ...
-
-    def write(self, client_id: int, lead: dict[str, Any]) -> int:
-        """Persist to crm.leads. Returns the new lead id."""
+        Returns a result dict the worker writes back to crm.searches.
+        Must include at least `leads_found: int`. May include `error: str`
+        on partial failure (raising is reserved for unrecoverable errors).
+        """
         ...
 
 
