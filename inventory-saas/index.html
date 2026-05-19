@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stockwise — Inventory OS for ticket brokers</title>
+<meta name="description" content="Sync StubHub, SeatGeek, Vivid Seats and Ticketmaster from a single source of truth. No double-sells. No stale prices. Stockwise is inventory management built for ticket brokers.">
+<meta property="og:title" content="Stockwise — Inventory OS for ticket brokers">
+<meta property="og:description" content="One inventory. Every marketplace. Built for high-volume ticket brokers tired of spreadsheets and stale prices.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://stockwise.app">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://stockwise.app">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231a1c25'/><rect x='7' y='15' width='4' height='10' rx='1.5' fill='%238FB7FF'/><rect x='14' y='9' width='4' height='16' rx='1.5' fill='%238FB7FF'/><rect x='21' y='5' width='4' height='20' rx='1.5' fill='%238FB7FF'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav><div class="w"><div class="nr">
+  <a class="logo" href="/" aria-label="Stockwise">
+    <svg class="logo-mark" viewBox="0 0 28 20" fill="none" aria-hidden="true">
+      <rect x="0" y="10" width="6" height="10" rx="1.6" fill="currentColor"/>
+      <rect x="11" y="4" width="6" height="16" rx="1.6" fill="currentColor"/>
+      <rect x="22" y="0" width="6" height="20" rx="1.6" fill="currentColor"/>
+    </svg>
+    <span class="logo-word">stockwise</span>
+  </a>
+  <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" onclick="toggleNav()">
+    <svg class="nav-toggle-i nav-toggle-open" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+    </svg>
+    <svg class="nav-toggle-i nav-toggle-close" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/>
+    </svg>
+  </button>
+  <div class="nl">
+    <a href="#features" class="na" onclick="closeNav()">Features</a>
+    <a href="#how" class="na" onclick="closeNav()">How it works</a>
+    <a href="#who" class="na" onclick="closeNav()">Who it's for</a>
+    <a href="#faq" class="na" onclick="closeNav()">FAQ</a>
+    <a href="#" onclick="closeNav();oF();return false" class="btn btn-nav">Join waitlist</a>
+  </div>
+</div></div></nav>
+
+<!-- HERO -->
+<section class="hero"><div class="w"><div class="hg">
+  <div>
+    <div class="hb rv"><span class="hb-dot"></span>Private beta — Q3 2026</div>
+    <h1 class="rv d1">One inventory.<br><em>Every marketplace.</em></h1>
+    <p class="hsub rv d2">Stockwise syncs StubHub, SeatGeek, Vivid Seats and Ticketmaster from a single source of truth. No double-sells. No stale prices. No more spreadsheets that fall apart at 5,000 tickets.</p>
+    <div class="hbtns rv d3">
+      <a href="#" onclick="oF();return false" class="btn btn-a btn-al">Join the waitlist</a>
+      <a href="#how" class="btn btn-g">See how it works</a>
+    </div>
+    <div class="hp rv d4"><span class="hp-line"></span>Currently testing with 8 brokers managing 40k+ active listings.</div>
+  </div>
+  <div class="lp rv d2">
+    <div class="lp-top">
+      <span class="lp-brand">Inventory &mdash; Live sync</span>
+      <span class="lp-status"><span class="lp-status-dot"></span>4 markets connected</span>
+    </div>
+    <div class="lp-rev">
+      <div class="lp-rev-cell">
+        <div class="lp-rev-l">Active listings</div>
+        <div class="lp-rev-v">5,247</div>
+      </div>
+      <div class="lp-rev-cell">
+        <div class="lp-rev-l">Sold today</div>
+        <div class="lp-rev-v lp-rev-won">84</div>
+      </div>
+      <div class="lp-rev-cell">
+        <div class="lp-rev-l">Avg margin</div>
+        <div class="lp-rev-v">31%</div>
+      </div>
+    </div>
+    <div class="lp-outcomes">
+      <div class="lp-outcome">
+        <span class="lp-dot lp-dot-blue"></span>
+        <div class="lp-ev-body">
+          <div class="lp-ev-t">Auto-priced 312 listings against market</div>
+          <div class="lp-ev-s">Knicks vs Celtics &mdash; MSG, Feb 14</div>
+        </div>
+      </div>
+      <div class="lp-outcome">
+        <span class="lp-dot lp-dot-green"></span>
+        <div class="lp-ev-body">
+          <div class="lp-ev-t">Sold 6 seats on SeatGeek</div>
+          <div class="lp-ev-s">Pulled from StubHub, Vivid, Tixstar in &lt;3s</div>
+        </div>
+      </div>
+      <div class="lp-outcome">
+        <span class="lp-dot lp-dot-blue"></span>
+        <div class="lp-ev-body">
+          <div class="lp-ev-t">New event detected: Taylor Swift &mdash; SoFi</div>
+          <div class="lp-ev-s">Comp pricing pulled, ready to list</div>
+        </div>
+      </div>
+      <div class="lp-outcome">
+        <span class="lp-dot lp-dot-green"></span>
+        <div class="lp-ev-body">
+          <div class="lp-ev-t">0 double-sells this month</div>
+          <div class="lp-ev-s">Down from 14 on the prior tool</div>
+        </div>
+      </div>
+    </div>
+    <div class="lp-caption">Example dashboard &mdash; private beta data</div>
+  </div>
+</div></div></section>
+
+<!-- SOCIAL PROOF STRIP -->
+<div class="proof-strip"><div class="w">
+  <div class="proof-inner">
+    <p class="proof-quote">&ldquo;Cut my double-sell rate to zero and saved me four hours a day on pricing.&rdquo;</p>
+    <div class="proof-divider"></div>
+    <div class="proof-attr"><strong>Beta broker, NYC</strong>NBA &amp; Broadway &mdash; 2,800 active listings</div>
+  </div>
+</div></div>
+
+<!-- MARQUEE -->
+<div class="mq"><div class="mq-t">
+  <span class="mq-i">StubHub</span><span class="mq-i">SeatGeek</span><span class="mq-i">Vivid Seats</span><span class="mq-i">Ticketmaster</span><span class="mq-i">TickPick</span><span class="mq-i">AXS</span><span class="mq-i">Gametime</span><span class="mq-i">TicketNetwork</span><span class="mq-i">Tixstar</span><span class="mq-i">Ticombo</span>
+  <span class="mq-i">StubHub</span><span class="mq-i">SeatGeek</span><span class="mq-i">Vivid Seats</span><span class="mq-i">Ticketmaster</span><span class="mq-i">TickPick</span><span class="mq-i">AXS</span><span class="mq-i">Gametime</span><span class="mq-i">TicketNetwork</span><span class="mq-i">Tixstar</span><span class="mq-i">Ticombo</span>
+</div></div>
+
+<!-- STATS -->
+<section class="stats"><div class="w"><div class="sr">
+  <div class="si rv"><div class="sn">10</div><div class="sl">Marketplaces<br>synced from day one</div></div>
+  <div class="si rv d1"><div class="sn">&lt;60s</div><div class="sl">For a sale to pull<br>from every channel</div></div>
+  <div class="si rv d2"><div class="sn">0</div><div class="sl">Double-sells<br>across beta cohort</div></div>
+  <div class="si rv d3"><div class="sn">4 hrs</div><div class="sl">Saved per day<br>on pricing &amp; relisting</div></div>
+</div>
+<p class="stats-note">Numbers from the private beta &mdash; 8 brokers running between 500 and 12,000 active listings.</p>
+</div></section>
+
+<!-- PROBLEM -->
+<section class="sec" id="problem"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">The problem</span></div>
+  <h2 class="sh rv">A spreadsheet stopped being enough<br>around the 1,000-ticket mark.</h2>
+  <p class="ss rv">Every broker hits the same wall. The tools either cost a fortune or don't sync the marketplaces you actually sell on.</p>
+  <div class="svg rv">
+    <div class="svc">
+      <div class="svc-i" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="40" y1="216" x2="216" y2="40"/>
+          <line x1="40" y1="40" x2="216" y2="216"/>
+        </svg>
+      </div>
+      <h3>Double-sells eat margin</h3>
+      <p>One slow sync between StubHub and Vivid and you're refunding a buyer, paying a penalty, and watching your seller rating drop a tier. One bad week wipes a month of profit.</p>
+      <div class="svc-tags"><span class="svc-tag">Penalties</span><span class="svc-tag">Rating loss</span><span class="svc-tag">Refunds</span></div>
+    </div>
+    <div class="svc">
+      <div class="svc-i" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="128" cy="128" r="96"/>
+          <polyline points="128 72 128 128 168 152"/>
+        </svg>
+      </div>
+      <h3>Manual repricing burns hours</h3>
+      <p>Checking comps across four marketplaces, three times a day, on a thousand listings &mdash; it's a full-time job that gets done badly because nobody has the time. Leaving money on the table every event.</p>
+      <div class="svc-tags"><span class="svc-tag">Slow</span><span class="svc-tag">Error-prone</span><span class="svc-tag">Expensive</span></div>
+    </div>
+    <div class="svc">
+      <div class="svc-i" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="40" y="56" width="176" height="144" rx="8"/>
+          <line x1="40" y1="104" x2="216" y2="104"/>
+          <line x1="88" y1="56" x2="88" y2="200"/>
+        </svg>
+      </div>
+      <h3>P&amp;L is a guess</h3>
+      <p>Cost basis lives in one tool, sales in four others, fees and shipping in your inbox. By the time you reconcile, the event's over. You can't optimize what you can't measure.</p>
+      <div class="svc-tags"><span class="svc-tag">No cost basis</span><span class="svc-tag">Hidden fees</span><span class="svc-tag">No reporting</span></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- FEATURES -->
+<section class="sec" id="features"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Features</span></div>
+  <h2 class="sh rv">Everything one broker needs<br>to run like a desk of ten.</h2>
+  <p class="ss rv">Built with brokers in the loop. If we wouldn't use it ourselves, it doesn't ship.</p>
+  <div class="svg rv">
+    <div class="svc">
+      <div class="svc-i" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="128" cy="128" r="96"/>
+          <path d="M32 128h192"/>
+          <path d="M128 32a160 160 0 010 192M128 32a160 160 0 000 192"/>
+        </svg>
+      </div>
+      <h3>Multi-market sync</h3>
+      <p>StubHub, SeatGeek, Vivid Seats, Ticketmaster, TickPick, AXS, Gametime, TicketNetwork, Tixstar, Ticombo. One listing, all channels. Sales pull in under a minute.</p>
+      <div class="svc-tags"><span class="svc-tag">10 markets</span><span class="svc-tag">Real-time</span><span class="svc-tag">No double-sells</span></div>
+    </div>
+    <div class="svc">
+      <div class="svc-i" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="24 200 88 136 144 192 232 64"/>
+          <polyline points="176 64 232 64 232 120"/>
+        </svg>
+      </div>
+      <h3>AutoPrice engine</h3>
+      <p>Scrapes live comps every minute, applies your floor and ceiling rules, and updates every channel automatically. Set the strategy once. Run it across every event.</p>
+      <div class="svc-tags"><span class="svc-tag">Live comps</span><span class="svc-tag">Floors</span><span class="svc-tag">Rules</span></div>
+    </div>
+    <div class="svc">
+      <div class="svc-i" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="32" y="48" width="192" height="160" rx="8"/>
+          <line x1="32" y1="96" x2="224" y2="96"/>
+          <line x1="80" y1="48" x2="80" y2="208"/>
+        </svg>
+      </div>
+      <h3>True P&amp;L per seat</h3>
+      <p>Cost basis, fees, shipping, refunds &mdash; tracked at the seat level. Filter by event, tour, venue, account. Know your margin before the night of the show, not three weeks after.</p>
+      <div class="svc-tags"><span class="svc-tag">Seat-level</span><span class="svc-tag">Fees tracked</span><span class="svc-tag">Filterable</span></div>
+    </div>
+    <div class="svc">
+      <div class="svc-i" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="128" cy="128" r="40"/>
+          <circle cx="128" cy="128" r="88"/>
+          <line x1="128" y1="40" x2="128" y2="64"/>
+          <line x1="128" y1="192" x2="128" y2="216"/>
+        </svg>
+      </div>
+      <h3>Speculation tracking</h3>
+      <p>Spec a section before tickets drop, hedge against the on-sale, and Stockwise reconciles the position automatically the moment the seats hit your account.</p>
+      <div class="svc-tags"><span class="svc-tag">Hedging</span><span class="svc-tag">Reconciliation</span><span class="svc-tag">Open positions</span></div>
+    </div>
+    <div class="svc">
+      <div class="svc-i" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M32 96l96-56 96 56-96 56-96-56z"/>
+          <path d="M32 160l96 56 96-56"/>
+          <path d="M32 128l96 56 96-56"/>
+        </svg>
+      </div>
+      <h3>Fulfillment automation</h3>
+      <p>Transfers, PDFs, mobile passes, hard tickets &mdash; Stockwise queues each delivery method, schedules the send, and chases what's outstanding. You stop being the bottleneck.</p>
+      <div class="svc-tags"><span class="svc-tag">Mobile transfer</span><span class="svc-tag">PDF</span><span class="svc-tag">Reminders</span></div>
+    </div>
+    <div class="svc">
+      <div class="svc-i" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="88" cy="108" r="40"/>
+          <circle cx="168" cy="108" r="32"/>
+          <path d="M16 196c0-30 32-48 72-48s72 18 72 48"/>
+          <path d="M168 148c30 0 64 14 64 44"/>
+        </svg>
+      </div>
+      <h3>Multi-account ops</h3>
+      <p>Run a dozen StubHub seller accounts cleanly. Stockwise routes inventory between them, isolates risk, and keeps each footprint independent. Built for brokers operating at real scale.</p>
+      <div class="svc-tags"><span class="svc-tag">Account routing</span><span class="svc-tag">Isolation</span><span class="svc-tag">Footprint mgmt</span></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- HOW IT WORKS -->
+<section class="sec" id="how"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">How it works</span></div>
+  <h2 class="sh rv">From SkyBox export to live<br>across every marketplace in a day.</h2>
+  <p class="ss rv">No 90-day onboarding. No professional services contract. You're listing through Stockwise by the end of the first afternoon.</p>
+  <div class="tline rv">
+    <div class="tline-track" aria-hidden="true"></div>
+    <div class="tstep">
+      <div class="tstep-dot">01</div>
+      <h3>Connect</h3>
+      <p>Plug in your marketplace accounts. OAuth where supported, API keys where not. Read-only first, so you can see the data before anything goes live.</p>
+    </div>
+    <div class="tstep">
+      <div class="tstep-dot">02</div>
+      <h3>Import</h3>
+      <p>Drop your SkyBox or POS export, or pull from CSV. Stockwise reconciles every seat with what's actually listed on each marketplace, flags discrepancies, then takes over.</p>
+    </div>
+    <div class="tstep">
+      <div class="tstep-dot">03</div>
+      <h3>Run</h3>
+      <p>List once. Stockwise pushes to every connected channel, prices against live comps, pulls on sale, and reports your real margin. You manage the strategy. The platform handles the rest.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- PLATFORM PREVIEW -->
+<section class="sec" id="platform"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">The platform</span></div>
+  <h2 class="sh rv">Every listing. Every market. One screen.</h2>
+  <p class="ss rv">A real-time view of your inventory across every connected marketplace. No tab-switching. No CSV exports. No "let me check the other tool".</p>
+
+  <div class="pp rv">
+    <div class="pp-top">
+      <div class="pp-brand">
+        <svg class="logo-mark" viewBox="0 0 28 20" fill="none" aria-hidden="true">
+          <rect x="0" y="10" width="6" height="10" rx="1.6" fill="currentColor"/>
+          <rect x="11" y="4" width="6" height="16" rx="1.6" fill="currentColor"/>
+          <rect x="22" y="0" width="6" height="20" rx="1.6" fill="currentColor"/>
+        </svg>
+        <span class="pp-word">stockwise</span>
+      </div>
+      <div class="pp-status"><span class="pp-status-dot"></span>4 markets in sync</div>
+    </div>
+
+    <div class="pp-metrics">
+      <div class="pp-metric"><div class="pp-n">5,247</div><div class="pp-l">Listings</div></div>
+      <div class="pp-metric"><div class="pp-n">84</div><div class="pp-l">Sold today</div></div>
+      <div class="pp-metric"><div class="pp-n">31%</div><div class="pp-l">Avg margin</div></div>
+      <div class="pp-metric"><div class="pp-n">0</div><div class="pp-l">Double-sells</div></div>
+    </div>
+
+    <div class="pp-table-wrap">
+      <div class="pp-table" aria-hidden="true">
+        <div class="pp-row"><span class="pp-c1">Knicks vs Celtics</span><span class="pp-c2">MSG &mdash; Sec 117</span><span class="pp-c3">Auto-priced</span><span class="pp-c4">Just now</span></div>
+        <div class="pp-row"><span class="pp-c1">Taylor Swift</span><span class="pp-c2">SoFi &mdash; Sec 240</span><span class="pp-c3">Listed</span><span class="pp-c4">2 min ago</span></div>
+        <div class="pp-row"><span class="pp-c1">Hamilton</span><span class="pp-c2">Richard Rodgers &mdash; Orch</span><span class="pp-c3">Sold</span><span class="pp-c4">5 min ago</span></div>
+        <div class="pp-row"><span class="pp-c1">Lakers vs Warriors</span><span class="pp-c2">Crypto Arena &mdash; Sec 110</span><span class="pp-c3">Synced</span><span class="pp-c4">8 min ago</span></div>
+      </div>
+      <div class="pp-overlay"><span>Beta access only</span></div>
+    </div>
+  </div>
+
+  <p class="pp-note rv">Beta cohort gets full dashboard access plus a direct line to the team building it.</p>
+</div></section>
+
+<!-- WHO -->
+<section class="sec" id="who"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">Who it's for</span></div>
+  <h2 class="sh rv">Brokers who've outgrown the tools<br>they started on.</h2>
+  <p class="ss rv">If you're moving real volume, running multiple accounts, or sick of paying enterprise prices for software that still doesn't sync the marketplaces you sell on &mdash; this is built for you.</p>
+  <div class="wlist rv">
+    <div class="wrow"><h3>High-volume brokers</h3><p>2,000+ active listings. The point where spreadsheets break and SkyBox fees start to bite. Stockwise scales with you, not against you.</p></div>
+    <div class="wrow"><h3>Multi-account operators</h3><p>Running multiple seller accounts on each marketplace to hedge footprint risk. Stockwise routes between them without leaking the connection.</p></div>
+    <div class="wrow"><h3>Speculation desks</h3><p>If half your book is shorts you haven't taken delivery on yet, you need open-position tracking. Stockwise treats spec as a first-class object, not a workaround.</p></div>
+    <div class="wrow"><h3>Sports &amp; concert resellers</h3><p>NBA, NFL, MLB, NHL, Broadway, arena tours. Whatever your category mix, the platform doesn't care &mdash; the comps and rules just work.</p></div>
+  </div>
+  <div class="wn rv"><strong>Not for everyone.</strong> If you're a hobby seller doing under 100 listings a year, the spreadsheet's still fine. Come back when it isn't.</div>
+</div></section>
+
+<!-- FAQ -->
+<section class="sec" id="faq"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">FAQ</span></div>
+  <h2 class="sh rv">The questions every broker asks first.</h2>
+  <div class="rv" style="margin-top:28px">
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa1">Can I migrate from SkyBox?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa1" role="region">Yes. Drop your SkyBox export and we map every column. Most brokers are fully migrated within a day &mdash; the long part is just verifying the reconciliation matches what's live across your channels.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa2">Which marketplaces do you sync?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa2" role="region">At launch: StubHub, SeatGeek, Vivid Seats, Ticketmaster, TickPick, AXS, Gametime, TicketNetwork, Tixstar, Ticombo. New marketplaces ship roughly every quarter &mdash; usually voted on by the beta cohort.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa3">How fast is the sync?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa3" role="region">A sale on any connected marketplace pulls the listing from every other channel in under 60 seconds. Beta cohort is averaging 18 seconds. Zero double-sells across the cohort since we rebuilt the sync layer in late 2025.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa4">Does AutoPrice work for spec?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa4" role="region">Yes. Spec positions get their own pricing rules &mdash; usually wider floors and tighter ceilings &mdash; and the engine knows to factor in your expected cost on delivery, not the listed price.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa5">What does it cost?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa5" role="region">We're holding pricing until the beta closes so we get it right. The intent is flat-rate monthly, no per-listing fees, no per-sale fees &mdash; priced against the SkyBox tier you're on today, not a percentage of what you sell.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa6">Is there an API?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa6" role="region">Yes, REST plus webhooks. Read your inventory, push listings, subscribe to sale events. Beta brokers have built their own internal dashboards on top of it.</div></div>
+    <div class="fi"><button class="fq" aria-expanded="false" aria-controls="fa7">When can I get in?<span class="fic" aria-hidden="true">+</span></button><div class="fa" id="fa7" role="region">Private beta is full. We're onboarding from the waitlist every two weeks in cohorts of three. Sign up below &mdash; we'll tell you where you sit in the queue.</div></div>
+  </div>
+</div></section>
+
+<!-- INLINE MID-PAGE CTA -->
+<div class="w midcta-w">
+  <div class="midcta rv">
+    <p>Ready to see the platform?</p>
+    <a href="#" onclick="oF();return false" class="btn btn-a">Join the waitlist &rarr;</a>
+  </div>
+</div>
+
+<!-- FOUNDER / ABOUT -->
+<section class="sec"><div class="w">
+  <div class="ey rv"><span class="ey-d"></span><span class="ey-t">About</span></div>
+  <h2 class="sh rv">Built by brokers and the engineers<br>who couldn't stand watching them suffer.</h2>
+  <div class="fc rv" style="margin-top:28px">
+    <div class="fc-av">SW</div>
+    <div>
+      <div class="fc-n">The Stockwise team</div>
+      <div class="fc-t">Brokers + ex-fintech engineers</div>
+      <p class="fc-b">We started this after spending a season inside a real broker operation and watching them lose money to the same three problems every single week. Software exists for this. It's expensive, brittle, and built for a market that hasn't moved in a decade. We're building what we wanted to use.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- CTA -->
+<div class="w cta-w"><div class="cta rv"><div class="cta-i">
+  <h2>Stop running inventory in your head.</h2>
+  <p>Join the waitlist. We'll pull you into the next beta cohort and walk you through it personally before you commit to anything.</p>
+  <a href="#" onclick="oF();return false" class="btn btn-a btn-al">Join the waitlist &rarr;</a>
+  <p class="cta-s">No credit card. No demo gauntlet. Just access.</p>
+</div></div></div>
+
+<footer><div class="w"><div class="fr">
+  <div class="fl">
+    <a class="logo logo-sm" href="/" aria-label="Stockwise">
+      <svg class="logo-mark" viewBox="0 0 28 20" fill="none" aria-hidden="true">
+        <rect x="0" y="10" width="6" height="10" rx="1.6" fill="currentColor"/>
+        <rect x="11" y="4" width="6" height="16" rx="1.6" fill="currentColor"/>
+        <rect x="22" y="0" width="6" height="20" rx="1.6" fill="currentColor"/>
+      </svg>
+      <span class="logo-word">stockwise</span>
+    </a>
+    <span class="fc2">&copy; <script>document.write(new Date().getFullYear())</script> Stockwise</span>
+  </div>
+  <div class="fr2">
+    <a href="mailto:hello@stockwise.app">hello@stockwise.app</a>
+    <span class="fr2-sep" aria-hidden="true">&middot;</span>
+    <a href="#features">Features</a>
+    <span class="fr2-sep" aria-hidden="true">&middot;</span>
+    <a href="#faq">FAQ</a>
+  </div>
+</div></div></footer>
+
+<!-- WAITLIST FORM MODAL -->
+<div class="fo" id="fo" role="dialog" aria-modal="true" aria-labelledby="ftl-main" onclick="if(event.target===this)cF()">
+  <div class="fcard">
+    <button class="fx" onclick="cF()">&#x2715;</button>
+    <div id="f1">
+      <div class="fh"><div class="fsl">Step 1 of 4</div><div class="ftl" id="ftl-main">How many active listings do you run?</div><div class="fsb">So we can prioritize the right cohort for you.</div></div>
+      <div class="fbd"><div class="fos" data-s="1">
+        <div class="fop" onclick="sO(this)">Under 500</div>
+        <div class="fop" onclick="sO(this)">500 &mdash; 2,000</div>
+        <div class="fop" onclick="sO(this)">2,000 &mdash; 10,000</div>
+        <div class="fop" onclick="sO(this)">10,000+</div>
+      </div></div>
+    </div>
+    <div id="f2" style="display:none">
+      <div class="fh"><div class="fsl">Step 2 of 4</div><div class="ftl">What are you using right now?</div><div class="fsb">Honest answer is fine. Most brokers we talk to use two or three of these.</div></div>
+      <div class="fbd"><div class="fos" data-s="2">
+        <div class="fop" onclick="sO(this)">SkyBox</div>
+        <div class="fop" onclick="sO(this)">Brokergenius / AutoProcessor</div>
+        <div class="fop" onclick="sO(this)">Spreadsheets</div>
+        <div class="fop" onclick="sO(this)">In-house tool</div>
+        <div class="fop" onclick="sO(this)">Something else</div>
+      </div></div>
+    </div>
+    <div id="f3" style="display:none">
+      <div class="fh"><div class="fsl">Step 3 of 4</div><div class="ftl">Where do you sell?</div><div class="fsb">Pick your main channel &mdash; we'll cover the rest.</div></div>
+      <div class="fbd"><div class="fos" data-s="3">
+        <div class="fop" onclick="sO(this)">StubHub</div>
+        <div class="fop" onclick="sO(this)">SeatGeek</div>
+        <div class="fop" onclick="sO(this)">Vivid Seats</div>
+        <div class="fop" onclick="sO(this)">Ticketmaster</div>
+        <div class="fop" onclick="sO(this)">Multiple &mdash; it's a mix</div>
+      </div></div>
+    </div>
+    <div id="f4" style="display:none">
+      <div class="fh"><div class="fsl">Step 4 of 4</div><div class="ftl">Where do we reach you?</div><div class="fsb">We'll be in touch when the next cohort opens.</div></div>
+      <div class="fbd">
+        <label for="fN" class="sr-only">Your name</label>
+        <input class="fin" type="text" id="fN" name="name" placeholder="Your name" required autocomplete="name">
+        <label for="fC" class="sr-only">Company name</label>
+        <input class="fin" type="text" id="fC" name="company" placeholder="Company name (optional)" autocomplete="organization">
+        <label for="fE" class="sr-only">Work email</label>
+        <input class="fin" type="email" id="fE" name="email" placeholder="Work email" required autocomplete="email">
+        <div id="fErr" role="alert" style="font-size:11.5px;color:#f87171;margin-top:6px;display:none"></div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:6px">We never share your information.</div>
+      </div>
+    </div>
+    <div id="f5" style="display:none">
+      <div class="fsc">
+        <div class="fsc-i"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="fsc-h">You're on the list.</div>
+        <div class="fsc-p">We'll be in touch the moment the next cohort opens up. In the meantime, expect a short note from the team.</div>
+      </div>
+    </div>
+    <div class="fnv" id="fnv">
+      <div class="fds"><div class="fd ac" id="dd1"></div><div class="fd" id="dd2"></div><div class="fd" id="dd3"></div><div class="fd" id="dd4"></div></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="fbk" id="fbk" onclick="pv()" style="display:none">Back</button>
+        <button class="fnx" id="fnx" onclick="nx()" disabled>Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js" defer></script>
+</body>
+</html>
