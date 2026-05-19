@@ -119,9 +119,10 @@ def _parse_json(raw: str) -> dict | None:
     return None
 
 
-# Marker text the fallback body carries. Any draft body containing this
-# substring is operator-debug output, not a real outbound email; the
-# caller raises on it rather than queueing it for a clinic to read.
+# Marker text the fallback body used to carry. Any draft body containing
+# this substring is operator-debug output, not a real outbound email;
+# kept as a constant so the belt-and-braces check below can spot it if
+# Anthropic ever echoes the phrase back inside a real response.
 _FALLBACK_MARKER = "[Templated fallback"
 
 
@@ -129,23 +130,6 @@ class TemplatedFallbackError(RuntimeError):
     """Raised when the drafter could only produce the operator-debug
     templated fallback. Forces the caller to mark the lead email_status=
     'not_found' rather than queueing the marker as a real send."""
-
-
-def _fallback(business_name: str) -> dict[str, str]:
-    return {
-        "subject": f"quick thought on {business_name}",
-        "body": (
-            "Hi,\n\n"
-            f"Took a look at {business_name} on Instagram — the photography "
-            "is clean but the grid leans heavily on static posts.\n\n"
-            "We work with consumer-facing service businesses to upgrade "
-            "that kind of grid into scripted short-form video — the kind "
-            "that turns a casual scroll into a booking enquiry.\n\n"
-            "Worth a 15-minute call to walk you through what we'd change?\n\n"
-            "Louis\n\n"
-            f"{_FALLBACK_MARKER} — Anthropic call did not complete.]"
-        ),
-    }
 
 
 def draft_day1(audit: dict[str, Any], snapshot: dict[str, Any],

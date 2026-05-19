@@ -1,12 +1,11 @@
-"""Decision-maker enrichment — Apollo replacement.
+"""Decision-maker enrichment — CH officers + website-scraped email pattern.
 
-Combines two free sources to produce the same biz-dict fields that
-apollo.enrich used to populate:
+Produces the biz-dict fields the runner expects:
 
   - decision_maker_name   ← CH officers (first active director, ranked)
   - decision_maker_title  ← CH officer role
   - decision_maker_email  ← website-scraped pattern + best guess
-  - decision_maker_source ← 'ch_officers' (vs the old 'apollo')
+  - decision_maker_source ← 'ch_officers'
 
 What we DON'T get vs Apollo
 ---------------------------

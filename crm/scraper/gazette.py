@@ -250,7 +250,7 @@ def check(business_name: str, *, companies_house_number: str | None = None) -> d
 
 # ── Pipeline adapter ────────────────────────────────────────────────
 # Thin wrapper matching the EnrichmentSource protocol so the runner
-# can call this just like companies_house.enrich / apollo.enrich.
+# can call this just like companies_house.enrich / decision_maker.enrich.
 
 name = "gazette"
 
