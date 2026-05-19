@@ -3,6 +3,7 @@
 Uses Supabase's transaction pooler (port 6543) via DATABASE_URL.
 Raw SQL via psycopg — no ORM. All read functions return list[dict].
 """
+import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -3956,3 +3957,167 @@ def mailboxes_summary() -> dict:
         'total_capacity':   int(row.get('total_capacity') or 0),
         'total_sent_today': int(row.get('total_sent_today') or 0),
     }
+
+
+# ── Vidora Media ─────────────────────────────────────────────────────
+# Lead writes for Media Mode — Google Places discovery + IG snapshot +
+# Claude Vision content audit. Pipeline lives in crm/pipeline + crm/scraper
+# (instagram_snapshot, instagram_link, vidora_audit). See migration
+# 0034_vidora_bridge.sql for the schema additions (external_id,
+# vidora_data jsonb, source enum).
+
+_VIDORA_CLIENT_NAME = 'Vidora Media'
+
+
+def vidora_client_id() -> int:
+    """Resolve the Vidora Media client_id. Migration 0034 ensures the row
+    exists; we still SELECT each call rather than caching so a manual rename
+    in the dashboard doesn't strand the bridge."""
+    row = fetch_one(
+        "select id from crm.clients where name = %s",
+        (_VIDORA_CLIENT_NAME,),
+    )
+    if not row:
+        raise RuntimeError(
+            f"Vidora client ('{_VIDORA_CLIENT_NAME}') not found — apply migration 0034."
+        )
+    return int(row['id'])
+
+
+def _parse_posts_per_week(freq: str | None) -> float | None:
+    """Vidora stores posting_frequency as a string ('3.5/week', 'daily',
+    'rare'). Innovite's column is numeric. Best-effort coerce — anything
+    we can't parse stays in vidora_data."""
+    if not freq:
+        return None
+    s = str(freq).strip().lower()
+    if s in ('daily', 'every day'):
+        return 7.0
+    if 'rare' in s or 'inactive' in s or 'dead' in s:
+        return 0.0
+    # Pull the first numeric token.
+    import re
+    m = re.search(r'(\d+\.?\d*)', s)
+    return float(m.group(1)) if m else None
+
+
+def _empty_to_none(v):
+    """Vidora often emits '' for missing scalar fields. Postgres rejects
+    empty strings for date/numeric columns, so coerce '' → None before
+    insert. Pass-through for everything else."""
+    if isinstance(v, str) and v.strip() == "":
+        return None
+    return v
+
+
+def _to_int(v):
+    """Coerce to int or None. Tolerates strings, floats, '' and None."""
+    if v is None or v == "":
+        return None
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float(v):
+    """Coerce to float or None. Tolerates strings, '' and None."""
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def upsert_vidora_lead(payload: dict, pdf_path: str | None) -> int:
+    """Insert or update a lead from a Vidora pipeline result.
+
+    Idempotent on (source='vidora_instagram', external_id=<username>).
+    Returns the Innovite leads.id.
+    """
+    client_id = vidora_client_id()
+    username = (payload.get('username') or '').strip()
+    if not username:
+        raise ValueError("vidora lead missing 'username'")
+
+    competitors = payload.get('competitors') or []
+    def _comp(i: int, k: str):
+        return competitors[i].get(k) if i < len(competitors) and isinstance(competitors[i], dict) else None
+
+    row = {
+        'client_id':                  client_id,
+        'external_id':                username,
+        'source':                     'vidora_instagram',
+        'business_name':              payload.get('business_name') or username,
+        'address':                    payload.get('maps_address'),
+        'phone':                      payload.get('maps_phone'),
+        'website':                    payload.get('maps_website'),
+        'email':                      payload.get('email'),
+        'google_rating':              _to_float(payload.get('maps_rating')),
+        'google_review_count':        _to_int(payload.get('maps_review_count')),
+        'google_maps_url':            payload.get('maps_url'),
+        'instagram_handle':           username,
+        'instagram_followers':        _to_int(payload.get('followers')),
+        'instagram_engagement_rate':  _to_float(payload.get('engagement_rate')),
+        'instagram_posts_per_week':   _parse_posts_per_week(payload.get('posting_frequency')),
+        'instagram_avg_likes':        _to_int(payload.get('avg_likes')),
+        'instagram_last_post_date':   _empty_to_none(payload.get('last_post_date')),
+        'website_score':              _to_int((payload.get('website_analysis') or {}).get('score')),
+        'grade':                      _empty_to_none(payload.get('lead_grade')),
+        'overall_score':              _to_int(payload.get('overall_score')),
+        'weakness_profile':           json.dumps(payload.get('top_weaknesses') or payload.get('weaknesses') or []),
+        'competitor_1_name':          _comp(0, 'name'),
+        'competitor_1_reviews':       _to_int(_comp(0, 'review_count') or _comp(0, 'reviews')),
+        'competitor_1_score':         _to_int(_comp(0, 'score')),
+        'competitor_2_name':          _comp(1, 'name'),
+        'competitor_2_reviews':       _to_int(_comp(1, 'review_count') or _comp(1, 'reviews')),
+        'competitor_2_score':         _to_int(_comp(1, 'score')),
+        'competitor_3_name':          _comp(2, 'name'),
+        'competitor_3_reviews':       _to_int(_comp(2, 'review_count') or _comp(2, 'reviews')),
+        'competitor_3_score':         _to_int(_comp(2, 'score')),
+        'email_subject':              payload.get('email_subject'),
+        'email_body_day1':            payload.get('email_body'),
+        'pdf_path':                   pdf_path,
+        'vidora_data':                json.dumps({
+            'scores':                       payload.get('scores'),
+            'sales_notes':                  payload.get('sales_notes'),
+            'personalised_pitch':           payload.get('personalised_pitch'),
+            'business_intent_score':        payload.get('business_intent_score'),
+            'business_type':                payload.get('business_type'),
+            'location_match':               payload.get('location_match'),
+            'location_signals':             payload.get('location_signals'),
+            'selling_signals':              payload.get('selling_signals'),
+            'priority_flag':                payload.get('priority_flag'),
+            'upgrade_potential':            payload.get('upgrade_potential'),
+            'estimated_audience_size':      payload.get('estimated_audience_size'),
+            'competitor_avg_score':         payload.get('competitor_avg_score'),
+            'competitor_benchmark':         payload.get('competitor_benchmark'),
+            'has_link_in_bio':              payload.get('has_link_in_bio'),
+            'bio_text':                     payload.get('bio_text'),
+            'bio_website':                  payload.get('bio_website'),
+            'avg_comments':                 payload.get('avg_comments'),
+            'post_count':                   payload.get('post_count'),
+            'story_highlight_categories':   payload.get('story_highlight_categories'),
+            'trend':                        payload.get('trend'),
+            'analysed_at':                  payload.get('analysed_at'),
+        }),
+    }
+
+    cols = list(row.keys())
+    placeholders = ','.join(['%s'] * len(cols))
+    # Update everything except client_id (immutable) and external_id (the key).
+    update_cols = [c for c in cols if c not in ('client_id', 'external_id', 'source')]
+    update_clause = ','.join(f"{c} = excluded.{c}" for c in update_cols)
+    sql = (
+        f"insert into crm.leads ({','.join(cols)}) values ({placeholders}) "
+        f"on conflict (source, external_id) where external_id is not null "
+        f"do update set {update_clause} "
+        f"returning id"
+    )
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, [row[c] for c in cols])
+            lead_id = cur.fetchone()[0]
+        conn.commit()
+    return int(lead_id)
