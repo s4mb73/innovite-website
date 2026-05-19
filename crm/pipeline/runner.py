@@ -278,8 +278,11 @@ def _lead_row_to_biz(row: dict) -> dict:
         "companies_house_recent_director_change",
         "companies_house_director_appointed_days_ago",
         "companies_house_accounts_overdue", "companies_house_confirmation_overdue",
+        "companies_house_status", "companies_house_match_source",
         "decision_maker_name", "decision_maker_title",
-        "linkedin_url",
+        "linkedin_url", "linkedin_company_url",
+        "email_verification_status", "email_verification_confidence",
+        "email_verification_source", "email_verification_checked_at",
     ):
         v = row.get(k)
         if v is not None:
@@ -335,7 +338,9 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             companies_house_recent_director_change,
             companies_house_director_appointed_days_ago,
             companies_house_accounts_overdue, companies_house_confirmation_overdue,
+            companies_house_status, companies_house_match_source,
             decision_maker_name, decision_maker_title, email, linkedin_url,
+            linkedin_company_url,
             grade, overall_score, pain_score, hook_type, weakness_profile,
             website_signals, website_scraped_at, website_scrape_status,
             gazette_status, gazette_notice_count,
@@ -349,6 +354,8 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             linkedin_profile_image_url,
             linkedin_recent_post_at, linkedin_recent_post_title,
             email_provider, website_host, dmarc_present, spf_present,
+            email_verification_status, email_verification_confidence,
+            email_verification_source, email_verification_checked_at,
             status, source
         )
         values (%s, %s, %s, %s, %s, %s,
@@ -360,7 +367,9 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
                 %s,
                 %s,
                 %s, %s,
+                %s, %s,
                 %s, %s, %s, %s,
+                %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
                 %s, %s, %s, %s,
@@ -370,6 +379,7 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
                 %s, %s,
                 %s,
                 %s, %s,
+                %s, %s, %s, %s,
                 %s, %s, %s, %s,
                 'new', 'outbound')
         returning id
@@ -398,10 +408,13 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         business.get("companies_house_director_appointed_days_ago") or None,
         business.get("companies_house_accounts_overdue") or None,
         business.get("companies_house_confirmation_overdue") or None,
+        business.get("companies_house_status") or None,
+        business.get("companies_house_match_source") or None,
         business.get("decision_maker_name") or None,
         business.get("decision_maker_title") or None,
         business.get("decision_maker_email") or None,
         business.get("linkedin_url") or None,
+        business.get("linkedin_company_url") or None,
         score["grade"],
         score["overall_score"],
         pain,
@@ -433,6 +446,10 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         business.get("website_host") or None,
         business.get("dmarc_present") if business.get("dmarc_present") is not None else None,
         business.get("spf_present") if business.get("spf_present") is not None else None,
+        business.get("email_verification_status") or None,
+        business.get("email_verification_confidence") or None,
+        business.get("email_verification_source") or None,
+        business.get("email_verification_checked_at") or None,
     ))
     return row["id"] if row else None
 
@@ -462,10 +479,13 @@ def _update_lead(lead_id: int, business: dict, score: dict) -> None:
             companies_house_director_appointed_days_ago = coalesce(%s, companies_house_director_appointed_days_ago),
             companies_house_accounts_overdue           = coalesce(%s, companies_house_accounts_overdue),
             companies_house_confirmation_overdue       = coalesce(%s, companies_house_confirmation_overdue),
+            companies_house_status                     = coalesce(%s, companies_house_status),
+            companies_house_match_source               = coalesce(%s, companies_house_match_source),
             decision_maker_name                        = coalesce(%s, decision_maker_name),
             decision_maker_title                       = coalesce(%s, decision_maker_title),
             email                                      = coalesce(%s, email),
             linkedin_url                               = coalesce(%s, linkedin_url),
+            linkedin_company_url                       = coalesce(%s, linkedin_company_url),
             grade                                      = %s,
             overall_score                              = %s,
             pain_score                                 = %s,
@@ -496,7 +516,11 @@ def _update_lead(lead_id: int, business: dict, score: dict) -> None:
             email_provider                             = coalesce(%s, email_provider),
             website_host                               = coalesce(%s, website_host),
             dmarc_present                              = coalesce(%s, dmarc_present),
-            spf_present                                = coalesce(%s, spf_present)
+            spf_present                                = coalesce(%s, spf_present),
+            email_verification_status                  = coalesce(%s, email_verification_status),
+            email_verification_confidence              = coalesce(%s, email_verification_confidence),
+            email_verification_source                  = coalesce(%s, email_verification_source),
+            email_verification_checked_at              = coalesce(%s, email_verification_checked_at)
         where id = %s
     """
     incorp = business.get("companies_house_incorporated") or None
@@ -521,10 +545,13 @@ def _update_lead(lead_id: int, business: dict, score: dict) -> None:
         business.get("companies_house_director_appointed_days_ago") or None,
         business.get("companies_house_accounts_overdue") or None,
         business.get("companies_house_confirmation_overdue") or None,
+        business.get("companies_house_status") or None,
+        business.get("companies_house_match_source") or None,
         business.get("decision_maker_name") or None,
         business.get("decision_maker_title") or None,
         business.get("decision_maker_email") or None,
         business.get("linkedin_url") or None,
+        business.get("linkedin_company_url") or None,
         score["grade"],
         score["overall_score"],
         pain,
@@ -556,6 +583,10 @@ def _update_lead(lead_id: int, business: dict, score: dict) -> None:
         business.get("website_host") or None,
         business.get("dmarc_present") if business.get("dmarc_present") is not None else None,
         business.get("spf_present") if business.get("spf_present") is not None else None,
+        business.get("email_verification_status") or None,
+        business.get("email_verification_confidence") or None,
+        business.get("email_verification_source") or None,
+        business.get("email_verification_checked_at") or None,
         lead_id,
     ))
 
@@ -580,7 +611,11 @@ def enrich_existing_lead(lead_id: int) -> dict:
                   companies_house_recent_director_change,
                   companies_house_director_appointed_days_ago,
                   companies_house_accounts_overdue, companies_house_confirmation_overdue,
-                  decision_maker_name, decision_maker_title, email, linkedin_url
+                  companies_house_status, companies_house_match_source,
+                  decision_maker_name, decision_maker_title, email,
+                  linkedin_url, linkedin_company_url,
+                  email_verification_status, email_verification_confidence,
+                  email_verification_source, email_verification_checked_at
            from crm.leads where id = %s""",
         (lead_id,),
     )
@@ -596,7 +631,13 @@ def enrich_existing_lead(lead_id: int) -> dict:
 
     drafted = False
     is_corporate = bool(biz.get("companies_house_number"))
-    if score["grade"] in ("A", "B", "C") and is_corporate:
+    # Verification gate. If the verifier has positively determined the
+    # email is dead (no_mx / invalid / disposable / syntax_invalid),
+    # don't waste a draft we'd never send. Lead stays scored + queued
+    # for manual research. Confidence='low' (catch-all, Reoon errored)
+    # still drafts — those are worth a manual sender's judgement.
+    email_dead = (biz.get("email_verification_confidence") == "none")
+    if score["grade"] in ("A", "B", "C") and is_corporate and not email_dead:
         try:
             campaign_id = db.find_or_create_campaign(client_id, score["hook_type"])
             template_hint = db.best_template(campaign_id, step=1)
@@ -611,10 +652,11 @@ def enrich_existing_lead(lead_id: int) -> dict:
             logger.exception("Draft/queue failed for lead %s", lead_id)
 
     return {
-        "lead_id": lead_id,
-        "grade":   score["grade"],
-        "score":   score["overall_score"],
-        "drafted": drafted,
+        "lead_id":      lead_id,
+        "grade":        score["grade"],
+        "score":        score["overall_score"],
+        "drafted":      drafted,
+        "skipped_dead_email": email_dead,
     }
 
 
@@ -902,8 +944,13 @@ def run(run_id: int) -> dict:
                 is_corporate = bool(biz.get("companies_house_number"))
 
                 # Draft Day-1 only for grades worth contacting AND
-                # verified-corporate subscribers.
-                if score["grade"] in ("A", "B", "C") and is_corporate:
+                # verified-corporate subscribers AND with a deliverable
+                # email. Verifier-confidence 'none' covers no_mx /
+                # invalid / disposable / syntax_invalid — drafts to
+                # these would bounce, so we save the Anthropic spend
+                # and surface the skip in run progress for the operator.
+                email_dead = (biz.get("email_verification_confidence") == "none")
+                if score["grade"] in ("A", "B", "C") and is_corporate and not email_dead:
                     try:
                         # Resolve the campaign first — every email is
                         # owned by exactly one campaign for (client,
@@ -931,6 +978,10 @@ def run(run_id: int) -> dict:
                     # Audit the compliance-gated skip — surfaces in the
                     # run progress for the operator.
                     progress["compliance_gated"] = progress.get("compliance_gated", 0) + 1
+                elif score["grade"] in ("A", "B", "C") and email_dead:
+                    # Audit dead-email skip separately from compliance —
+                    # operator may want to research these manually.
+                    progress["email_dead_skipped"] = progress.get("email_dead_skipped", 0) + 1
 
                 counts["added"] += 1
 

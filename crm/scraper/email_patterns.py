@@ -32,8 +32,10 @@ results with a structured error list when fetches fail.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
+import time
 import unicodedata
 from urllib.parse import urljoin, urlparse
 
@@ -55,9 +57,40 @@ LINKEDIN_IN_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Paths to probe in addition to the homepage. Limit to 4 to keep the
-# proxy budget tight: 5 fetches per lead is the absolute ceiling.
-EXTRA_PATHS = ("about", "team", "contact", "privacy")
+# LinkedIn company-page URL — /company/<slug>. Most UK SMB target sites
+# (accountancy practices, agencies) link a company page rather than the
+# founder's personal profile, so this is the workhorse for downstream
+# LinkedIn enrichment (follower count, recent company posts).
+LINKEDIN_COMPANY_RE = re.compile(
+    r"https?://(?:www\.|uk\.)?linkedin\.com/company/([A-Za-z0-9\-_%]+)/?",
+    re.IGNORECASE,
+)
+
+# Paths to probe in addition to the homepage. We've expanded from the
+# original 4 to 8 to chase pages where UK SMBs are more likely to
+# expose personal emails — case studies typically credit the partner
+# who led the engagement, press releases include a PR contact, careers
+# pages list a recruiting contact. The trade-off is proxy budget: a
+# typical lead now costs 9 fetches in the happy path (homepage + 8
+# extras), capped via _MAX_CONSECUTIVE_FAIL early-termination.
+EXTRA_PATHS = (
+    "about", "about-us",
+    "team", "our-team",
+    "contact",
+    "case-studies", "press", "careers",
+)
+
+# Stop trying extra paths after this many consecutive failures —
+# usually a sign the site has a strict routing convention we'll never
+# match (single-page sites, hash-routed SPAs, broken proxies for the
+# host). Saves proxy budget on the long tail.
+_MAX_CONSECUTIVE_FAIL = 3
+
+# Per-domain page-fetch cache. UK SMB targets often have multiple
+# active officers; without this we'd re-fetch the same 9 pages for
+# every officer. Process-lifetime, bounded LRU.
+_PAGES_CACHE: dict[str, tuple[list[tuple[str, str]], float]] = {}
+_PAGES_CACHE_MAX = 1_000
 
 # Role / generic addresses we ignore when inferring patterns. These
 # don't carry pattern signal (info@ tells us nothing about the
@@ -129,12 +162,36 @@ def _domain_of(website: str | None) -> str | None:
 
 
 # ── Page fetching ────────────────────────────────────────────────────
+def _evict_pages_cache_oldest() -> None:
+    """Drop the oldest half of the per-domain page cache when over cap.
+    Cheap because we only run when full, not per-lookup."""
+    if len(_PAGES_CACHE) <= _PAGES_CACHE_MAX:
+        return
+    target = _PAGES_CACHE_MAX // 2
+    oldest = sorted(_PAGES_CACHE.items(), key=lambda kv: kv[1][1])[: len(_PAGES_CACHE) - target]
+    for k, _ in oldest:
+        _PAGES_CACHE.pop(k, None)
+
+
 def _fetch_pages(website: str) -> list[tuple[str, str]]:
     """Return [(url, body)] for the homepage + a small set of common
     paths. Skips any path that 404s or fails to fetch. Caps each body
-    at MAX_BYTES."""
+    at MAX_BYTES.
+
+    Per-domain caching: identical domain → returns cached page set
+    without hitting the proxy stack again. The cache key is the
+    parsed domain, not the raw website string — so trailing slashes,
+    UTM params, www. prefix etc. all hit the same entry.
+    """
     if not scraper_client.is_available():
         return []
+
+    # Cache lookup before any work.
+    domain = _domain_of(website)
+    if domain and domain in _PAGES_CACHE:
+        cached, _ = _PAGES_CACHE[domain]
+        return cached
+
     out: list[tuple[str, str]] = []
     base = website.rstrip("/")
     if "://" not in base:
@@ -148,14 +205,27 @@ def _fetch_pages(website: str) -> list[tuple[str, str]]:
     # Extra paths — only attempt when homepage succeeded so we don't
     # waste fetches against a site that's clearly unreachable.
     if out:
+        consecutive_fail = 0
         for p in EXTRA_PATHS:
+            if consecutive_fail >= _MAX_CONSECUTIVE_FAIL:
+                # Bail early — site clearly doesn't use these path
+                # conventions. Saves the rest of the proxy budget.
+                break
             url = urljoin(base + "/", p)
             try:
                 body = scraper_client.fetch(url, max_bytes=MAX_BYTES)
             except Exception:
+                consecutive_fail += 1
                 continue
             if body:
                 out.append((url, body))
+                consecutive_fail = 0
+            else:
+                consecutive_fail += 1
+
+    if domain:
+        _PAGES_CACHE[domain] = (out, time.time())
+        _evict_pages_cache_oldest()
     return out
 
 
@@ -174,6 +244,60 @@ def _extract_linkedin_urls(body: str) -> list[str]:
         if url not in seen:
             seen.add(url)
     return sorted(seen)
+
+
+# Slugs we reject because they appear in patterns like
+# "linkedin.com/company/setup" or "/company/admin" rather than being a
+# real company page. Cheap belt-and-braces in case a site templates
+# something odd.
+_NON_COMPANY_SLUGS = {"setup", "admin", "products", "showcase"}
+
+
+def _extract_linkedin_company_urls(body: str) -> list[str]:
+    """Pull every linkedin.com/company/<slug> URL from a page body."""
+    if not body:
+        return []
+    seen: set[str] = set()
+    for m in LINKEDIN_COMPANY_RE.finditer(body):
+        slug = m.group(1).lower().strip("-_/")
+        if not slug or slug in _NON_COMPANY_SLUGS:
+            continue
+        url = f"https://www.linkedin.com/company/{slug}"
+        seen.add(url)
+    return sorted(seen)
+
+
+def match_linkedin_company_to_business(urls: list[str], business_name: str) -> str | None:
+    """Pick the /company/ URL whose slug best matches the business name.
+
+    Heuristic:
+      - Single URL → take it (the site links its own page; almost
+        never links a partner / supplier company page).
+      - Multiple URLs → score by token overlap between business name
+        and slug. Return the highest-scoring one if it overlaps at
+        all; otherwise the first (sorted) URL as a deterministic
+        fallback.
+
+    Corporate-form suffixes (limited / ltd / plc / llp / uk / the /
+    and / co) are stripped from the business name tokens because they
+    almost never appear in LinkedIn slugs.
+    """
+    if not urls:
+        return None
+    if len(urls) == 1:
+        return urls[0]
+    tokens = re.findall(r"[a-z0-9]+", (business_name or "").lower())
+    tokens = [t for t in tokens if t not in {"ltd", "limited", "llp", "plc", "uk", "the", "and", "co"}]
+    if not tokens:
+        return urls[0]
+    scored: list[tuple[int, str]] = []
+    for url in urls:
+        slug = url.rsplit("/", 1)[-1].lower()
+        score = sum(1 for t in tokens if t in slug)
+        scored.append((score, url))
+    scored.sort(reverse=True)
+    best_score, best_url = scored[0]
+    return best_url if best_score > 0 else urls[0]
 
 
 def match_linkedin_to_officer(linkedin_urls: list[str], officer_name: str) -> str | None:
@@ -223,6 +347,63 @@ def _extract_emails(body: str, domain: str) -> list[str]:
         host = e.split("@", 1)[1]
         if host == domain_lower or host.endswith("." + domain_lower):
             found.add(e)
+    return sorted(found)
+
+
+# JSON-LD blocks often contain structured contact data — Person.email,
+# Organization.email, ContactPoint.email — that the regex over body
+# may miss (especially when the email is rendered behind JS but
+# still in the JSON-LD source). Higher-trust source: structured data
+# is the company's own declaration, not free-text we might have parsed
+# from a footer disclaimer.
+_JSONLD_BLOCK_RE = re.compile(
+    r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _walk_jsonld_emails(node) -> list[str]:
+    """Recursively pull every `email` field value from a JSON-LD tree.
+    The schema can be deeply nested (Organization → ContactPoint →
+    email, or @graph → list of nodes → email). Returns lowercased
+    addresses; the caller filters to the own domain."""
+    out: list[str] = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "email" and isinstance(v, str):
+                # Strip mailto: prefix if present (schema.org allows
+                # both 'mailto:foo@bar' and 'foo@bar').
+                addr = v.strip()
+                if addr.lower().startswith("mailto:"):
+                    addr = addr[7:]
+                if "@" in addr:
+                    out.append(addr.lower())
+            else:
+                out.extend(_walk_jsonld_emails(v))
+    elif isinstance(node, list):
+        for item in node:
+            out.extend(_walk_jsonld_emails(item))
+    return out
+
+
+def _extract_emails_from_jsonld(body: str, domain: str) -> list[str]:
+    """Pull structured-data emails on the company's own domain. JSON-LD
+    parse errors are swallowed silently — a malformed block shouldn't
+    abort the rest of the page's signal extraction."""
+    if not body or not domain:
+        return []
+    domain_lower = domain.lower()
+    found: set[str] = set()
+    for m in _JSONLD_BLOCK_RE.finditer(body):
+        raw = m.group(1)
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        for addr in _walk_jsonld_emails(data):
+            host = addr.split("@", 1)[1] if "@" in addr else ""
+            if host == domain_lower or host.endswith("." + domain_lower):
+                found.add(addr)
     return sorted(found)
 
 
@@ -300,6 +481,64 @@ def _infer_pattern(personal_emails: list[str], officers: list[dict]) -> str | No
     return None
 
 
+def _detect_format_from_local(local: str) -> str | None:
+    """Inspect one local part and infer the pattern structure from
+    shape alone — no name cross-check needed.
+
+    Returns the pattern string ('{first}.{last}', '{f}.{last}', etc.)
+    or None when the structure is too ambiguous to claim. We're
+    deliberately conservative: a long single token like 'janedoe'
+    could be `{first}{last}` or `{first}` or even `{last}{first}` —
+    we'd need a name match to disambiguate, so we return None instead
+    of guessing.
+    """
+    if not local:
+        return None
+    # Strip trailing digits ('jane.doe2@') so they don't break the
+    # structural match.
+    base = re.sub(r"\d+$", "", local)
+    if not base or not all(c.isalpha() or c in "._-" for c in base):
+        return None
+
+    for sep, full_pattern, initial_pattern in (
+        (".", "{first}.{last}", "{f}.{last}"),
+        ("_", "{first}_{last}", None),
+        ("-", "{first}-{last}", None),
+    ):
+        if base.count(sep) != 1:
+            continue
+        left, right = base.split(sep)
+        if not (left.isalpha() and right.isalpha()):
+            continue
+        if len(left) == 1 and len(right) >= 3 and initial_pattern:
+            return initial_pattern
+        if len(left) >= 2 and len(right) >= 2:
+            return full_pattern
+    return None
+
+
+def _infer_pattern_from_format(personal_emails: list[str]) -> str | None:
+    """Pattern inference from email FORMAT alone — no officer match
+    required. Useful when the company exposes ANY personal email
+    (e.g. a partner credited in a case study, the PR contact on a
+    press page) but the visible address isn't one of our CH officers.
+
+    Returns the most common confident pattern across the observed
+    emails, ties broken alphabetically for stability. Returns None
+    if no email had a confidently-detectable structure.
+    """
+    if not personal_emails:
+        return None
+    counts: dict[str, int] = {}
+    for em in personal_emails:
+        pat = _detect_format_from_local(_local_part(em))
+        if pat:
+            counts[pat] = counts.get(pat, 0) + 1
+    if not counts:
+        return None
+    return max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+
+
 def generate_candidates(officer_name: str, domain: str,
                         pattern: str | None = None) -> list[str]:
     """Ranked email guesses for one officer. If `pattern` is known
@@ -340,14 +579,15 @@ def detect(website: str | None, officers: list[dict] | None) -> dict:
       }
     """
     result: dict = {
-        "domain":           None,
-        "visible_emails":   [],
-        "personal_emails":  [],
-        "role_emails":      [],
-        "linkedin_urls":    [],
-        "inferred_pattern": None,
-        "confidence":       "none",
-        "errors":           [],
+        "domain":                None,
+        "visible_emails":        [],
+        "personal_emails":       [],
+        "role_emails":           [],
+        "linkedin_urls":         [],
+        "linkedin_company_urls": [],
+        "inferred_pattern":      None,
+        "confidence":            "none",
+        "errors":                [],
     }
 
     domain = _domain_of(website)
@@ -363,28 +603,56 @@ def detect(website: str | None, officers: list[dict] | None) -> dict:
 
     visible: set[str] = set()
     linkedin_urls: set[str] = set()
+    linkedin_company_urls: set[str] = set()
     for _url, body in pages:
         for e in _extract_emails(body, domain):
             visible.add(e)
+        for e in _extract_emails_from_jsonld(body, domain):
+            visible.add(e)
         for u in _extract_linkedin_urls(body):
             linkedin_urls.add(u)
+        for u in _extract_linkedin_company_urls(body):
+            linkedin_company_urls.add(u)
     visible_sorted = sorted(visible)
-    result["visible_emails"] = visible_sorted
-    result["linkedin_urls"]  = sorted(linkedin_urls)
+    result["visible_emails"]        = visible_sorted
+    result["linkedin_urls"]         = sorted(linkedin_urls)
+    result["linkedin_company_urls"] = sorted(linkedin_company_urls)
 
     personal, role = _classify_emails(visible_sorted)
     result["personal_emails"] = personal
     result["role_emails"]     = role
 
+    # Two-tier pattern inference:
+    #   Tier 1 — officer-name match. Highest confidence: we have a
+    #            visible email that maps exactly to a CH officer's
+    #            (first, last) under a known pattern.
+    #   Tier 2 — format-only. We see personal emails on the domain
+    #            but none of them are our CH officers. The structural
+    #            pattern (jane.doe@) still tells us the convention,
+    #            which we can apply to our target. Lower confidence
+    #            because we haven't verified the convention works for
+    #            our specific officer, but far better than guessing.
     inferred = _infer_pattern(personal, officers or [])
-    result["inferred_pattern"] = inferred
+    inferred_source = "officer_match" if inferred else None
+    if not inferred:
+        inferred = _infer_pattern_from_format(personal)
+        if inferred:
+            inferred_source = "format_only"
+    result["inferred_pattern"]        = inferred
+    result["inferred_pattern_source"] = inferred_source
 
-    if inferred:
+    if inferred_source == "officer_match":
         result["confidence"] = "high"
+    elif inferred_source == "format_only":
+        # Format inferred from at least one visible personal email's
+        # shape — the convention is real but we haven't proven it for
+        # our target. Medium-confidence: better than guessing, worse
+        # than name-match.
+        result["confidence"] = "medium"
     elif personal:
-        # We saw personal emails but couldn't tie them to an officer —
-        # the pattern is still inferrable in theory but we don't know
-        # which one. Mark medium so the operator can investigate.
+        # Personal emails exist but had no inferrable structure
+        # (single-word locals like 'janedoe@' that could be many
+        # patterns). Operator can investigate.
         result["confidence"] = "medium"
     elif role:
         result["confidence"] = "low"

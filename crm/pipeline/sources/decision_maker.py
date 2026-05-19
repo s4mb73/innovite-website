@@ -42,9 +42,12 @@ Ordering of the chain (skip-on-fail)
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from pipeline.sources import Business
 from scraper import email_patterns
+from scraper import email_verifier
+from scraper import email_verifier_local
 
 logger = logging.getLogger("crm.pipeline.sources.decision_maker")
 
@@ -136,20 +139,59 @@ def enrich(business: Business) -> Business:
         business.setdefault("source_errors", {})["decision_maker"] = "website has no parseable domain"
         return business
 
-    candidates = email_patterns.generate_candidates(
-        officer.get("name", ""), domain,
-        pattern=det.get("inferred_pattern"),
-    )
-    if not candidates:
+    # MX gate. Strict MX-only check (not the implicit-MX-via-A-record
+    # fallback the local precheck allows) — in practice no real UK SMB
+    # operates without explicit MX records. Absence of MX means the
+    # domain doesn't accept mail, even if a website apex A record is
+    # present. Every pattern guess would bounce; paying Reoon is
+    # wasted. Mark verification status directly and skip the whole
+    # candidate-generation + paid-verifier branch. We still drop
+    # through to LinkedIn URL extraction below so the operator has a
+    # research path when the email path is dead.
+    if not email_verifier_local.has_mx_records(domain):
         business.setdefault("source_errors", {})["decision_maker"] = (
-            "couldn't generate email candidates (officer name parse failed?)"
+            f"domain {domain} has no MX records — email infra absent, "
+            "skipped pattern generation"
         )
-        return business
+        business["email_verification_status"]     = "no_mx"
+        business["email_verification_confidence"] = "none"
+        business["email_verification_source"]     = "local_only"
+        business["email_verification_checked_at"] = datetime.now(timezone.utc)
+    else:
+        candidates = email_patterns.generate_candidates(
+            officer.get("name", ""), domain,
+            pattern=det.get("inferred_pattern"),
+        )
+        if not candidates:
+            business.setdefault("source_errors", {})["decision_maker"] = (
+                "couldn't generate email candidates (officer name parse failed?)"
+            )
+        else:
+            business["decision_maker_email"] = candidates[0]
+            business["decision_maker_email_candidates"] = candidates[:5]
+            business["decision_maker_email_confidence"] = det.get("confidence", "none")
+            business["decision_maker_email_pattern"]   = det.get("inferred_pattern") or "default_first_dot_last"
 
-    business["decision_maker_email"] = candidates[0]
-    business["decision_maker_email_candidates"] = candidates[:5]
-    business["decision_maker_email_confidence"] = det.get("confidence", "none")
-    business["decision_maker_email_pattern"]   = det.get("inferred_pattern") or "default_first_dot_last"
+            # Verify the top candidate. Two-stage: free local pre-check
+            # first (kills syntax-invalid / no-MX / disposable for $0),
+            # then Reoon paid call for the catch-all detection we
+            # can't do ourselves. Never raises.
+            try:
+                v = email_verifier.verify(candidates[0])
+            except Exception as e:
+                logger.exception("email_verifier crashed for %s", candidates[0][:80])
+                business.setdefault("source_errors", {})["email_verifier"] = (
+                    f"unexpected: {str(e)[:120]}"
+                )
+            else:
+                business["email_verification_status"]     = v["status"]
+                business["email_verification_confidence"] = v["confidence"]
+                business["email_verification_source"]     = v["source"]
+                business["email_verification_checked_at"] = v["checked_at"]
+                if v.get("errors"):
+                    business.setdefault("source_errors", {})["email_verifier"] = (
+                        " | ".join(v["errors"])[:240]
+                    )
 
     # Surface the visible emails so the operator can verify our work.
     # Useful when the inferred pattern looks wrong and a manual lookup
@@ -172,6 +214,20 @@ def enrich(business: Business) -> Business:
         )
         if chosen:
             business["linkedin_url"] = chosen
+
+    # LinkedIn company-page discovery — many UK SMB sites (especially
+    # accountancy practices) link /company/<slug> rather than the
+    # founder's personal /in/ page. Capture it so the LinkedIn
+    # enricher can fall back to company-page signals (follower count,
+    # recent company posts) when no personal profile is available.
+    linkedin_company_urls = det.get("linkedin_company_urls") or []
+    if linkedin_company_urls:
+        business["website_linkedin_company_urls"] = linkedin_company_urls[:10]
+        chosen_co = email_patterns.match_linkedin_company_to_business(
+            linkedin_company_urls, business.get("business_name", "")
+        )
+        if chosen_co:
+            business["linkedin_company_url"] = chosen_co
     if det.get("errors"):
         business.setdefault("source_errors", {})["decision_maker"] = " | ".join(det["errors"])[:240]
     return business

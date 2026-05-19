@@ -81,11 +81,25 @@
 <div class="lead-grid">
   {# Left column: Business + Decision-maker + Google + Companies House #}
   <div class="lead-col">
+    {# Verification badge next to the email. The verifier two-stages
+       a free local pre-check + a Reoon paid call, so the four
+       confidence bands collapse to a single operator-readable pill.
+       Suppress entirely when we never ran the verifier (legacy leads). #}
+    {% set vpill = {
+        'high':   ('green', 'Verified ✓'),
+        'medium': ('amber', 'Catch-all ⚠' if lead.email_verification_status == 'catch_all' else 'Likely ✓'),
+        'low':    ('amber', 'Unverified'),
+        'none':   ('red',   'Invalid'),
+    }.get(lead.email_verification_confidence) %}
     <div class="card">
       <div class="card-title">Business</div>
       <ul class="kv">
         <li><span class="kv-icon">📞</span> {{ lead.phone or '—' }}</li>
-        <li><span class="kv-icon">✉</span>  {% if lead.email %}<a href="mailto:{{ lead.email }}">{{ lead.email }}</a>{% else %}—{% endif %}</li>
+        <li>
+          <span class="kv-icon">✉</span>
+          {% if lead.email %}<a href="mailto:{{ lead.email }}">{{ lead.email }}</a>{% else %}—{% endif %}
+          {% if vpill %}<span class="pill pill-{{ vpill[0] }} pill-sm">{{ vpill[1] }}</span>{% endif %}
+        </li>
         <li><span class="kv-icon">🌐</span> {% if lead.website %}<a href="{{ lead.website if '://' in lead.website else 'https://' ~ lead.website }}" target="_blank" rel="noopener">{{ lead.website }}</a>{% else %}—{% endif %}</li>
         <li><span class="kv-icon">📍</span> {% if lead.address %}{{ lead.address }}{% else %}—{% endif %}{% if lead.google_maps_url %} · <a href="{{ lead.google_maps_url }}" target="_blank" rel="noopener">Maps ↗</a>{% endif %}</li>
       </ul>
@@ -98,9 +112,10 @@
        pill is shown only when we actually attempted a fetch (no_url
        is the silent common case). #}
     {% set li_pill = {
-        'verified':  ('green', 'LinkedIn verified'),
-        'blocked':   ('amber', 'LinkedIn blocked'),
-        'not_found': ('grey',  'LinkedIn not found'),
+        'verified':         ('green', 'LinkedIn verified'),
+        'verified_company': ('green', 'LinkedIn (company)'),
+        'blocked':          ('amber', 'LinkedIn blocked'),
+        'not_found':        ('grey',  'LinkedIn not found'),
     }.get(lead.linkedin_status) %}
     {% set effective_title = lead.linkedin_current_title or lead.decision_maker_title %}
     <div class="card">
@@ -156,14 +171,33 @@
       {% endif %}
     </div>
 
+    {# Companies House — live status pill + match-provenance caption.
+       Status pill: green for 'active', red for terminal states (dissolved,
+       liquidation, receivership, administration), amber for in-flight
+       (voluntary-arrangement, converted-closed), grey otherwise. Match
+       source caption tells the operator whether the CH match came from
+       a high-trust footer scrape or fuzzy multi-signal heuristic. #}
+    {% set chpill = {
+        'active':                ('green', 'Active'),
+        'dissolved':             ('red',   'Dissolved'),
+        'liquidation':           ('red',   'Liquidation'),
+        'receivership':          ('red',   'Receivership'),
+        'administration':        ('red',   'Administration'),
+        'voluntary-arrangement': ('amber', 'CVA'),
+        'converted-closed':      ('amber', 'Converted/closed'),
+    }.get(lead.companies_house_status, None) %}
     <div class="card">
-      <div class="card-title">Companies House</div>
+      <div class="card-head">
+        <div class="card-title">Companies House</div>
+        {% if chpill %}<span class="pill pill-{{ chpill[0] }}">{{ chpill[1] }}</span>{% endif %}
+      </div>
       {% if lead.companies_house_number or lead.companies_house_revenue_band %}
         <ul class="kv">
           {% if lead.companies_house_revenue_band %}<li>Revenue · {{ lead.companies_house_revenue_band }}</li>{% endif %}
           {% if lead.companies_house_sic_code %}<li>SIC · {{ lead.companies_house_sic_code }}</li>{% endif %}
           {% if lead.companies_house_incorporated %}<li>Incorporated · {{ lead.companies_house_incorporated.strftime('%b %Y') }}</li>{% endif %}
           {% if lead.companies_house_number %}<li>No · {{ lead.companies_house_number }}</li>{% endif %}
+          {% if lead.companies_house_match_source %}<li>Matched via · {{ 'website footer' if lead.companies_house_match_source == 'footer' else 'fuzzy search' }}</li>{% endif %}
         </ul>
       {% else %}
         <div class="empty empty-sm">No Companies House data yet.</div>
