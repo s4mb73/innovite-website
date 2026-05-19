@@ -40,6 +40,7 @@ from typing import Any
 
 import db
 from pipeline import vidora_audit, vidora_drafter
+from pipeline.vidora_drafter import TemplatedFallbackError
 from pipeline.sources import google_places
 from scraper import (
     email_patterns,
@@ -209,6 +210,20 @@ class MediaMode:
                     business=biz,
                     candidate_email=candidate_email,
                 )
+            except TemplatedFallbackError as e:
+                # Drafter couldn't produce a real email — flag the lead for
+                # manual follow-up instead of shipping the debug fallback.
+                # The audit + recipient are already persisted; only the
+                # email_subject/body and crm.emails row are missing.
+                logger.warning(
+                    "vidora lead %s: %s — marking email_status=not_found",
+                    lead_id, e,
+                )
+                db.execute(
+                    "update crm.leads set email_status = 'not_found' "
+                    "where id = %s",
+                    (lead_id,),
+                )
             except Exception:
                 logger.exception("vidora draft/queue failed for lead %s", lead_id)
                 counts["errored"] += 1
@@ -360,8 +375,10 @@ def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
     db.execute(
         """insert into crm.emails
              (lead_id, client_id, email_number, subject, body,
-              to_address, status, scheduled_at)
-           values (%s, %s, 1, %s, %s, %s, 'scheduled', null)""",
+              to_address, status, scheduled_at,
+              needs_approval, approved_at, approved_by)
+           values (%s, %s, 1, %s, %s, %s, 'scheduled', null,
+                   false, now(), 'mediamode_auto')""",
         (lead_id, client_id, draft["subject"], draft["body"], candidate_email),
     )
 

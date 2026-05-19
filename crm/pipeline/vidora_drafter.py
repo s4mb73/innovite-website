@@ -119,6 +119,18 @@ def _parse_json(raw: str) -> dict | None:
     return None
 
 
+# Marker text the fallback body carries. Any draft body containing this
+# substring is operator-debug output, not a real outbound email; the
+# caller raises on it rather than queueing it for a clinic to read.
+_FALLBACK_MARKER = "[Templated fallback"
+
+
+class TemplatedFallbackError(RuntimeError):
+    """Raised when the drafter could only produce the operator-debug
+    templated fallback. Forces the caller to mark the lead email_status=
+    'not_found' rather than queueing the marker as a real send."""
+
+
 def _fallback(business_name: str) -> dict[str, str]:
     return {
         "subject": f"quick thought on {business_name}",
@@ -131,7 +143,7 @@ def _fallback(business_name: str) -> dict[str, str]:
             "that turns a casual scroll into a booking enquiry.\n\n"
             "Worth a 15-minute call to walk you through what we'd change?\n\n"
             "Louis\n\n"
-            "[Templated fallback — Anthropic call did not complete.]"
+            f"{_FALLBACK_MARKER} — Anthropic call did not complete.]"
         ),
     }
 
@@ -175,10 +187,25 @@ def draft_day1(audit: dict[str, Any], snapshot: dict[str, Any],
     raw = _call_anthropic(prompt)
     parsed = _parse_json(raw or "")
     if not parsed or not parsed.get("subject") or not parsed.get("body"):
-        logger.info("vidora drafter: falling back to template for %s", business_name)
-        return _fallback(business_name)
+        logger.info(
+            "vidora drafter: Anthropic call failed for %s — refusing to "
+            "ship the templated fallback as a real email",
+            business_name,
+        )
+        raise TemplatedFallbackError(
+            f"no valid draft produced for {business_name!r}"
+        )
+
+    out_body = str(parsed["body"]).strip()
+    # Belt-and-braces: if Anthropic ever echoes the marker back inside a
+    # genuine response, treat it the same as a fallback. Cheaper than
+    # sending the marker to a clinic and discovering the leak later.
+    if _FALLBACK_MARKER in out_body:
+        raise TemplatedFallbackError(
+            f"draft body contained fallback marker for {business_name!r}"
+        )
 
     return {
         "subject": str(parsed["subject"]).strip()[:120],
-        "body":    str(parsed["body"]).strip(),
+        "body":    out_body,
     }
