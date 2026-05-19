@@ -1416,7 +1416,11 @@ def api_search_discover_media():
         limit = int(payload.get('limit') or 20)
     except (TypeError, ValueError):
         limit = 20
-    limit = max(1, min(limit, 40))
+    # Media discovery is async and per-candidate cost is real (one IG
+    # snapshot + one Sonnet vision audit per survivor). Cap at 500 to
+    # match the UI slider's ceiling. Beyond that, split into multiple
+    # searches so the operator can pause/resume between batches.
+    limit = max(1, min(limit, 500))
 
     if not industry or not location:
         return jsonify({'error': 'industry and location required'}), 400

@@ -4741,11 +4741,69 @@ a { color:inherit; text-decoration:none; }
 .search-bar { padding:22px 24px; margin-bottom:18px; }
 .search-row {
   display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;
+  grid-template-columns:auto minmax(0,1fr) minmax(0,1fr) 180px auto;
   gap:14px;
   align-items:end;
 }
 .search-field { min-width:0; }
+
+/* Slider field — sits between Locations and the Search button. */
+.search-field-limit { min-width:160px; }
+.search-field-limit label {
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:8px;
+}
+.search-limit-value {
+  font-size:13px;
+  color:var(--t1);
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.3px;
+}
+.search-limit-slider {
+  -webkit-appearance:none;
+  appearance:none;
+  width:100%;
+  height:42px;       /* match chip-input min-height for vertical alignment */
+  background:transparent;
+  margin:0;
+  cursor:pointer;
+}
+.search-limit-slider:focus { outline:none; }
+.search-limit-slider::-webkit-slider-runnable-track {
+  height:4px;
+  background:var(--s3);
+  border-radius:2px;
+}
+.search-limit-slider::-moz-range-track {
+  height:4px;
+  background:var(--s3);
+  border-radius:2px;
+}
+.search-limit-slider::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  appearance:none;
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  background:var(--accent);
+  border:none;
+  margin-top:-6px;   /* centre on the 4px track */
+  transition:background .15s var(--ease);
+}
+.search-limit-slider::-moz-range-thumb {
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  background:var(--accent);
+  border:none;
+  transition:background .15s var(--ease);
+}
+.search-limit-slider:hover::-webkit-slider-thumb,
+.search-limit-slider:focus-visible::-webkit-slider-thumb { background:var(--accent-h); }
+.search-limit-slider:hover::-moz-range-thumb,
+.search-limit-slider:focus-visible::-moz-range-thumb     { background:var(--accent-h); }
 .search-field label {
   display:block;
   font-size:12.5px;

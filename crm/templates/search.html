@@ -40,6 +40,15 @@
       </div>
     </div>
 
+    <div class="search-field search-field-limit">
+      <label for="searchLimit">
+        Candidates
+        <span id="searchLimitValue" class="search-limit-value">20</span>
+      </label>
+      <input type="range" id="searchLimit" class="search-limit-slider"
+             min="10" max="500" step="10" value="20">
+    </div>
+
     <div class="search-actions">
       <button type="button" class="btn btn-primary" id="searchRunBtn">
         <span class="search-btn-text">Search</span>
@@ -311,6 +320,8 @@
     document.getElementById('searchRunBtn').disabled = true;
 
     const mode = (document.getElementById('searchMode') || {}).value || 'accountancy';
+    const limitEl = document.getElementById('searchLimit');
+    const limit = Math.max(10, Math.min(parseInt(limitEl && limitEl.value, 10) || 20, 500));
 
     try {
       if (mode === 'media') {
@@ -324,7 +335,7 @@
           body: JSON.stringify({
             industry: industries[0],
             location: locations[0],
-            limit:    20,
+            limit:    limit,
           }),
         });
         const data = await resp.json();
@@ -344,7 +355,7 @@
       const resp = await fetch('/api/search/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ industries, locations, limit_per_pair: 20 }),
+        body: JSON.stringify({ industries, locations, limit_per_pair: limit }),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -531,6 +542,17 @@
       e.preventDefault(); runSearch();
     }
   });
+
+  // Slider live readout — fires on every value change so the operator
+  // sees the number they're about to commit before clicking Search.
+  (function bindSearchLimit() {
+    const slider = document.getElementById('searchLimit');
+    const out    = document.getElementById('searchLimitValue');
+    if (!slider || !out) return;
+    const sync = () => { out.textContent = slider.value; };
+    slider.addEventListener('input', sync);
+    sync();
+  })();
 
   // ── Assign + live enrichment progress ─────────────────
   let pollTimer = null;
