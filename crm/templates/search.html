@@ -1,0 +1,602 @@
+{% extends "base.html" %}
+{% block title %}Search · Innovite CRM{% endblock %}
+
+{% block content %}
+<div class="page-head search-page-head">
+  <div>
+    <h1 class="page-title">Search</h1>
+    <p class="page-sub">Find businesses to pitch. Pick a client to assign winners to.</p>
+  </div>
+</div>
+
+{# ── Search bar (top, full width) ─────────────────────────── #}
+<section class="search-bar card">
+  <div class="search-row">
+    <div class="search-field">
+      <label for="searchIndustries">Industries</label>
+      <div class="chip-input" data-chip-input data-initial="">
+        <input type="hidden" name="industries" value="">
+        <div class="chip-input-bag" aria-live="polite"></div>
+        <input type="text" id="searchIndustries" class="chip-input-entry"
+               placeholder="accountants, bookkeepers…" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="search-field">
+      <label for="searchLocations">Locations</label>
+      <div class="chip-input" data-chip-input data-initial="">
+        <input type="hidden" name="locations" value="">
+        <div class="chip-input-bag" aria-live="polite"></div>
+        <input type="text" id="searchLocations" class="chip-input-entry"
+               placeholder="Cambridge, Manchester…" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="search-actions">
+      <button type="button" class="btn btn-primary" id="searchRunBtn">
+        <span class="search-btn-text">Search</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="search-quick-row">
+    <span class="search-quick-label">Quick:</span>
+    <button type="button" class="quick-chip" data-quick="accountants">📊 Accountants</button>
+    <button type="button" class="quick-chip" data-quick="marketing">🎨 Marketing agencies</button>
+    <button type="button" class="quick-chip" data-quick="recruitment">🧑‍💼 Recruitment</button>
+    <button type="button" class="quick-chip" data-quick="it">💻 IT services</button>
+    <button type="button" class="quick-chip" data-quick="legal">⚖️ Solicitors</button>
+    <button type="button" class="quick-chip" data-quick="trades">🔧 Trade services</button>
+    <button type="button" class="quick-chip" data-quick="property">🏠 Estate agents</button>
+    <button type="button" class="quick-chip" data-quick="health">🩺 Healthcare</button>
+  </div>
+</section>
+
+{# ── Two-column layout: filter sidebar + results main ────── #}
+<div class="search-shell">
+  {# Filter sidebar — sticky inside the shell, collapses on mobile #}
+  <aside class="search-filters card" id="searchFilters">
+    <div class="search-filters-head">
+      <h3 class="search-filters-title">Filter results</h3>
+      <button type="button" class="search-filters-reset" id="filtersResetBtn">Reset</button>
+    </div>
+
+    <div class="filter-group">
+      <div class="filter-label">Minimum rating</div>
+      <div class="rating-toggle" role="group" aria-label="Minimum rating">
+        <label><input type="radio" name="min_rating" value="0" checked> Any</label>
+        <label><input type="radio" name="min_rating" value="3.0"> 3.0+</label>
+        <label><input type="radio" name="min_rating" value="3.5"> 3.5+</label>
+        <label><input type="radio" name="min_rating" value="4.0"> 4.0+</label>
+        <label><input type="radio" name="min_rating" value="4.5"> 4.5+</label>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <label class="filter-checkbox">
+        <input type="checkbox" id="filterHasWebsite">
+        <span>Has a website</span>
+      </label>
+      <label class="filter-checkbox">
+        <input type="checkbox" id="filterHideAssigned">
+        <span>Hide already-assigned</span>
+      </label>
+    </div>
+
+    <div class="filter-group">
+      <div class="filter-label">Exclude (name contains)</div>
+      <div class="chip-input chip-input-sm" data-chip-input id="filterExcludeChip" data-initial="">
+        <input type="hidden" name="exclude" value="">
+        <div class="chip-input-bag" aria-live="polite"></div>
+        <input type="text" class="chip-input-entry" placeholder="acme.co.uk, ABC Ltd…" autocomplete="off">
+      </div>
+      <div class="filter-hint">Drops rows whose name or website contains any term.</div>
+    </div>
+
+    <div class="filter-group">
+      <div class="filter-label">Sort by</div>
+      <select id="filterSort" class="filter-select">
+        <option value="rating_desc">Highest rating</option>
+        <option value="rating_asc">Lowest rating</option>
+        <option value="name_asc">Name A→Z</option>
+        <option value="name_desc">Name Z→A</option>
+        <option value="default">Google default</option>
+      </select>
+    </div>
+  </aside>
+
+  <main class="search-main">
+    {# Empty state — shown until first search runs #}
+    <section class="card search-empty" id="searchEmpty">
+      <div class="search-empty-inner">
+        <div class="search-empty-icon" aria-hidden="true">🔎</div>
+        <div class="search-empty-text">
+          <strong>Type an industry and a location.</strong>
+          <span>Click a Quick chip or hit Cmd+Enter to search.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card search-loading" id="searchLoading" hidden>
+      <div class="search-loading-inner">
+        <div class="spinner" aria-hidden="true"></div>
+        <span>Searching Google Maps…</span>
+      </div>
+    </section>
+
+    <section class="card search-error" id="searchError" hidden>
+      <div class="search-error-inner">
+        <strong>Search failed.</strong>
+        <span id="searchErrorMsg"></span>
+      </div>
+    </section>
+
+    <section class="card search-success" id="searchSuccess" hidden role="status">
+      <div class="search-success-inner">
+        <strong id="searchSuccessTitle">Assigned</strong>
+        <span id="searchSuccessMsg"></span>
+        <a class="card-link" id="searchSuccessLink" href="#">View leads ↗</a>
+      </div>
+    </section>
+
+    {# Results — visible after first search #}
+    <section class="card search-results" id="searchResults" hidden>
+      <div class="search-results-head">
+        <div class="search-results-title">
+          <strong id="resultsCount">0</strong>
+          <span class="search-results-total" id="resultsTotal"></span>
+          results
+          <span class="search-results-meta" id="resultsMeta"></span>
+        </div>
+        <label class="search-selectall">
+          <input type="checkbox" id="selectAll"> Select all visible
+        </label>
+      </div>
+
+      {# Active filter chip breadcrumb — appears when filters are non-default #}
+      <div class="search-chips-row" id="activeChipsRow" hidden></div>
+
+      <div class="search-table-wrap">
+        <table class="search-table">
+          <thead>
+            <tr>
+              <th class="col-pick"></th>
+              <th class="col-name">Business</th>
+              <th class="col-loc">Location</th>
+              <th class="col-rating">Rating</th>
+              <th class="col-site">Website</th>
+              <th class="col-source">Matched</th>
+            </tr>
+          </thead>
+          <tbody id="searchBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+{# ── Sticky bottom action bar — appears on first selection ── #}
+<div class="search-action-bar" id="actionBar" hidden role="region" aria-label="Assign selection">
+  <div class="search-action-inner">
+    <div class="search-action-count">
+      <strong id="selectedCount">0</strong> selected
+      <span class="search-action-status" id="actionStatus"></span>
+    </div>
+    <div class="search-action-controls">
+      <select id="assignClient" class="search-client-select">
+        <option value="">Assign to client…</option>
+        {% for c in clients %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" class="btn btn-primary" id="assignBtn" disabled>Assign ▶</button>
+      <button type="button" class="btn btn-quiet" id="clearSelectionBtn">Clear</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Chip input (same helper used elsewhere) ─────────────
+  (function () {
+    function init(root) {
+      const hidden = root.querySelector('input[type="hidden"]');
+      const bag    = root.querySelector('.chip-input-bag');
+      const entry  = root.querySelector('.chip-input-entry');
+      if (!hidden || !bag || !entry) return;
+      let chips = (root.dataset.initial || '').split(',').map(s => s.trim()).filter(Boolean);
+      function sync() {
+        hidden.value = chips.join(',');
+        render();
+        root.dispatchEvent(new CustomEvent('chip:change', { bubbles: true }));
+      }
+      function render() {
+        bag.innerHTML = '';
+        chips.forEach((c, i) => {
+          const el = document.createElement('span'); el.className = 'chip';
+          const txt = document.createElement('span'); txt.textContent = c; el.appendChild(txt);
+          const x = document.createElement('button'); x.type='button'; x.className='chip-x'; x.textContent='×';
+          x.setAttribute('aria-label', 'Remove ' + c);
+          x.addEventListener('click', () => { chips.splice(i, 1); sync(); entry.focus(); });
+          el.appendChild(x);
+          bag.appendChild(el);
+        });
+      }
+      function add(raw) {
+        const v = (raw || '').trim(); if (!v) return;
+        const lower = v.toLowerCase();
+        if (chips.some(c => c.toLowerCase() === lower)) return;
+        chips.push(v); sync();
+      }
+      root.__chipAdd = add;
+      root.__chipReset = () => { chips = []; sync(); };
+      entry.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ',') {
+          e.preventDefault(); add(entry.value); entry.value = '';
+        } else if (e.key === 'Backspace' && entry.value === '' && chips.length) {
+          chips.pop(); sync();
+        }
+      });
+      entry.addEventListener('blur', () => {
+        if (entry.value.trim()) { add(entry.value); entry.value = ''; }
+      });
+      root.addEventListener('click', e => {
+        if (e.target === root || e.target === bag) entry.focus();
+      });
+      render();
+    }
+    document.querySelectorAll('[data-chip-input]').forEach(init);
+  })();
+
+  // ── Quick-preset chips ─────────────────────────────────
+  const QUICK = {
+    accountants:  'accountants',
+    marketing:    'marketing agency',
+    recruitment:  'recruitment agency',
+    it:           'IT support',
+    legal:        'solicitors',
+    trades:       'builders',
+    property:     'estate agents',
+    health:       'dental practice',
+  };
+  document.querySelectorAll('.quick-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const term = QUICK[btn.dataset.quick];
+      if (!term) return;
+      const root = document.getElementById('searchIndustries').closest('.chip-input');
+      if (root && root.__chipAdd) root.__chipAdd(term);
+      document.getElementById('searchLocations').focus();
+    });
+  });
+
+  // ── State ──────────────────────────────────────────────
+  let lastResults = [];   // raw discovery payload
+  let visibleRows = [];   // post-filter, post-sort
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+    }[c]));
+  }
+
+  function showError(msg) {
+    document.getElementById('searchLoading').hidden = true;
+    document.getElementById('searchError').hidden = false;
+    document.getElementById('searchErrorMsg').textContent = msg;
+  }
+
+  // ── Run search ─────────────────────────────────────────
+  async function runSearch() {
+    const indEl = document.querySelector('input[name=industries]');
+    const locEl = document.querySelector('input[name=locations]');
+    const industries = (indEl.value || '').split(',').map(s => s.trim()).filter(Boolean);
+    const locations  = (locEl.value || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (industries.length === 0 || locations.length === 0) {
+      showError('Add at least one industry and one location.');
+      return;
+    }
+
+    document.getElementById('searchEmpty').hidden  = true;
+    document.getElementById('searchResults').hidden = true;
+    document.getElementById('searchError').hidden   = true;
+    document.getElementById('searchSuccess').hidden = true;
+    document.getElementById('searchLoading').hidden = false;
+    document.getElementById('searchRunBtn').disabled = true;
+
+    try {
+      const resp = await fetch('/api/search/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ industries, locations, limit_per_pair: 20 }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        showError(data.error || 'Search failed.');
+        return;
+      }
+      lastResults = data.results || [];
+      applyFiltersAndRender();
+      document.getElementById('searchResults').hidden = false;
+    } catch (e) {
+      showError(String(e).slice(0, 160));
+    } finally {
+      document.getElementById('searchLoading').hidden = true;
+      document.getElementById('searchRunBtn').disabled = false;
+    }
+  }
+
+  // ── Filters → visible rows ─────────────────────────────
+  function getActiveFilters() {
+    const ratingEl = document.querySelector('input[name=min_rating]:checked');
+    const minRating = ratingEl ? parseFloat(ratingEl.value) : 0;
+    const hasWebsite = document.getElementById('filterHasWebsite').checked;
+    const hideAssigned = document.getElementById('filterHideAssigned').checked;
+    const excludeHidden = document.querySelector('#filterExcludeChip input[type=hidden]');
+    const exclude = (excludeHidden ? excludeHidden.value : '')
+      .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    const sort = document.getElementById('filterSort').value;
+    return { minRating, hasWebsite, hideAssigned, exclude, sort };
+  }
+
+  function applyFiltersAndRender() {
+    const f = getActiveFilters();
+    visibleRows = lastResults.filter(r => {
+      if (f.minRating > 0 && !(r.google_rating && r.google_rating >= f.minRating)) return false;
+      if (f.hasWebsite && !r.website) return false;
+      if (f.hideAssigned && r.already_assigned) return false;
+      if (f.exclude.length) {
+        const blob = ((r.business_name || '') + ' ' + (r.website || '')).toLowerCase();
+        for (const term of f.exclude) {
+          if (blob.includes(term)) return false;
+        }
+      }
+      return true;
+    });
+
+    const cmp = {
+      rating_desc: (a,b) => (b.google_rating||0) - (a.google_rating||0),
+      rating_asc:  (a,b) => (a.google_rating||0) - (b.google_rating||0),
+      name_asc:    (a,b) => (a.business_name||'').localeCompare(b.business_name||''),
+      name_desc:   (a,b) => (b.business_name||'').localeCompare(a.business_name||''),
+      default:     () => 0,
+    }[f.sort] || (() => 0);
+    visibleRows.sort(cmp);
+
+    renderResults();
+    renderActiveChips(f);
+  }
+
+  function renderResults() {
+    const body = document.getElementById('searchBody');
+    body.innerHTML = '';
+    document.getElementById('resultsCount').textContent = visibleRows.length;
+    const totalEl = document.getElementById('resultsTotal');
+    totalEl.textContent = visibleRows.length === lastResults.length
+      ? ''
+      : ` of ${lastResults.length}`;
+
+    visibleRows.forEach((r, i) => {
+      const origIdx = lastResults.indexOf(r);
+      const tr = document.createElement('tr');
+      tr.dataset.idx = origIdx;
+      const ratingHtml = r.google_rating
+        ? `<span class="search-rating">★ ${Number(r.google_rating).toFixed(1)}</span>`
+        : '<span class="search-rating-none">—</span>';
+      let siteHtml = '<span class="search-rating-none">—</span>';
+      if (r.website) {
+        try {
+          siteHtml = `<a href="${escapeHtml(r.website)}" target="_blank" rel="noopener" class="search-site">${escapeHtml(new URL(r.website).hostname.replace(/^www\./, ''))}</a>`;
+        } catch { siteHtml = `<a href="${escapeHtml(r.website)}" target="_blank" rel="noopener" class="search-site">${escapeHtml(r.website)}</a>`; }
+      }
+      const assignedBadge = r.already_assigned
+        ? `<span class="search-badge-assigned" title="Already in ${escapeHtml(r.assigned_to_client || 'another client')}'s leads">✓ assigned</span>`
+        : '';
+      tr.innerHTML = `
+        <td class="col-pick"><input type="checkbox" class="search-pick" data-idx="${origIdx}"></td>
+        <td class="col-name">
+          <div class="search-name"><strong>${escapeHtml(r.business_name)}</strong>${assignedBadge}</div>
+          <div class="search-addr">${escapeHtml(r.address || '')}</div>
+        </td>
+        <td class="col-loc">${escapeHtml(r.city || '')} ${r.postcode ? `<span class="search-postcode">${escapeHtml(r.postcode)}</span>` : ''}</td>
+        <td class="col-rating">${ratingHtml}</td>
+        <td class="col-site">${siteHtml}</td>
+        <td class="col-source">
+          <span class="search-tag">${escapeHtml(r.matched_industry || '')}</span>
+          <span class="search-tag-loc">${escapeHtml(r.matched_location || '')}</span>
+        </td>`;
+      body.appendChild(tr);
+    });
+    document.getElementById('selectAll').checked = false;
+    updateActionBar();
+  }
+
+  function renderActiveChips(f) {
+    const row = document.getElementById('activeChipsRow');
+    const chips = [];
+    if (f.minRating > 0)     chips.push({ label: `Rating ${f.minRating}+`, clear: () => document.querySelector('input[name=min_rating][value="0"]').checked = true });
+    if (f.hasWebsite)        chips.push({ label: 'Has website',            clear: () => document.getElementById('filterHasWebsite').checked = false });
+    if (f.hideAssigned)      chips.push({ label: 'Hide assigned',          clear: () => document.getElementById('filterHideAssigned').checked = false });
+    if (f.exclude.length)    chips.push({ label: `${f.exclude.length} excluded`, clear: () => {
+      const root = document.getElementById('filterExcludeChip');
+      if (root.__chipReset) root.__chipReset();
+    }});
+    if (f.sort !== 'rating_desc' && f.sort !== 'default') {
+      const labels = { rating_asc: 'Rating ↑', name_asc: 'Name A→Z', name_desc: 'Name Z→A' };
+      chips.push({ label: labels[f.sort] || 'Sort', clear: () => document.getElementById('filterSort').value = 'rating_desc' });
+    }
+
+    if (!chips.length) {
+      row.hidden = true;
+      row.innerHTML = '';
+      return;
+    }
+    row.hidden = false;
+    row.innerHTML = chips.map((c, i) =>
+      `<span class="active-chip" data-active="${i}">${escapeHtml(c.label)}<button type="button" class="active-chip-x" data-active-x="${i}">×</button></span>`
+    ).join('');
+    row.querySelectorAll('[data-active-x]').forEach((btn, i) => {
+      btn.addEventListener('click', () => { chips[i].clear(); applyFiltersAndRender(); });
+    });
+  }
+
+  // Reset filters
+  document.getElementById('filtersResetBtn').addEventListener('click', () => {
+    document.querySelector('input[name=min_rating][value="0"]').checked = true;
+    document.getElementById('filterHasWebsite').checked = false;
+    document.getElementById('filterHideAssigned').checked = false;
+    const ex = document.getElementById('filterExcludeChip');
+    if (ex.__chipReset) ex.__chipReset();
+    document.getElementById('filterSort').value = 'rating_desc';
+    applyFiltersAndRender();
+  });
+
+  // ── Selection + sticky action bar ──────────────────────
+  function updateActionBar() {
+    const picks = document.querySelectorAll('.search-pick:checked');
+    const n = picks.length;
+    document.getElementById('selectedCount').textContent = n;
+    const bar = document.getElementById('actionBar');
+    // Keep the bar visible while an enrichment status is showing, even
+    // when the user has cleared selections post-assign.
+    const status = document.getElementById('actionStatus');
+    const hasStatus = status && status.innerHTML.trim().length > 0;
+    bar.hidden = (n === 0 && !hasStatus);
+    const clientChosen = !!document.getElementById('assignClient').value;
+    document.getElementById('assignBtn').disabled = (n === 0 || !clientChosen);
+  }
+
+  document.addEventListener('change', e => {
+    if (e.target.matches('.search-pick')) updateActionBar();
+    if (e.target.id === 'assignClient')    updateActionBar();
+    if (e.target.id === 'selectAll') {
+      document.querySelectorAll('.search-pick').forEach(cb => { cb.checked = e.target.checked; });
+      updateActionBar();
+    }
+    if (e.target.matches('input[name=min_rating]') ||
+        e.target.id === 'filterHasWebsite' ||
+        e.target.id === 'filterHideAssigned' ||
+        e.target.id === 'filterSort') {
+      applyFiltersAndRender();
+    }
+  });
+  // Exclude chip changes — listen on the chip-input root.
+  document.getElementById('filterExcludeChip').addEventListener('chip:change', applyFiltersAndRender);
+
+  document.getElementById('clearSelectionBtn').addEventListener('click', () => {
+    document.querySelectorAll('.search-pick').forEach(cb => { cb.checked = false; });
+    document.getElementById('selectAll').checked = false;
+    updateActionBar();
+  });
+
+  document.getElementById('searchRunBtn').addEventListener('click', runSearch);
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault(); runSearch();
+    }
+  });
+
+  // ── Assign + live enrichment progress ─────────────────
+  let pollTimer = null;
+
+  function setActionStatus(html) {
+    const el = document.getElementById('actionStatus');
+    if (el) el.innerHTML = html;
+  }
+
+  async function pollEnrichRun(runId, clientName, clientId) {
+    if (pollTimer) clearTimeout(pollTimer);
+    try {
+      const resp = await fetch(`/api/pipeline/run/${runId}`);
+      const data = await resp.json();
+      if (!resp.ok) {
+        setActionStatus(`<span class="action-err">Poll failed.</span>`);
+        return;
+      }
+      const p = (data.progress && typeof data.progress === 'object') ? data.progress : {};
+      const total   = p.total ?? 0;
+      const done    = p.done  ?? 0;
+      const drafted = p.drafted ?? 0;
+      if (data.status === 'running' || data.status === 'pending') {
+        setActionStatus(
+          `<span class="action-status-progress">Enriching <strong>${done} / ${total}</strong>${drafted ? ` · <span class="action-drafted">${drafted} drafted</span>` : ''}</span>`
+        );
+        pollTimer = setTimeout(() => pollEnrichRun(runId, clientName, clientId), 2000);
+      } else {
+        // succeeded / partial / failed
+        const cls = data.status === 'succeeded' ? 'action-status-done' : 'action-status-partial';
+        setActionStatus(
+          `<span class="${cls}">Done · <strong>${done}</strong> enriched · <strong>${drafted}</strong> drafted` +
+          ` · <a href="/leads?client=${clientId}" class="action-link">View leads ↗</a></span>`
+        );
+      }
+    } catch (e) {
+      setActionStatus(`<span class="action-err">${escapeHtml(String(e).slice(0, 120))}</span>`);
+    }
+  }
+
+  document.getElementById('assignBtn').addEventListener('click', async () => {
+    const clientId = document.getElementById('assignClient').value;
+    if (!clientId) return;
+    const picks = Array.from(document.querySelectorAll('.search-pick:checked'));
+    if (picks.length === 0) return;
+    const chosen = picks.map(cb => lastResults[parseInt(cb.dataset.idx, 10)]);
+
+    const btn = document.getElementById('assignBtn');
+    btn.disabled = true;
+    const origLabel = btn.innerHTML;
+    btn.innerHTML = 'Assigning…';
+
+    try {
+      const resp = await fetch('/api/search/enrich-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: parseInt(clientId, 10), results: chosen }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        showError(data.error || 'Assign failed.');
+        return;
+      }
+      const clientName = document.getElementById('assignClient').selectedOptions[0].textContent;
+
+      // Top success card stays the receipt; the inline action status
+      // shows the live enrichment progress so the operator never
+      // has to leave the page.
+      const ok = document.getElementById('searchSuccess');
+      ok.hidden = false;
+      document.getElementById('searchSuccessTitle').textContent =
+        `${data.inserted} lead${data.inserted === 1 ? '' : 's'} assigned`;
+      const skipMsg = data.skipped_dupes ? ` (${data.skipped_dupes} already in this client's list)` : '';
+      document.getElementById('searchSuccessMsg').textContent = `to ${clientName}${skipMsg}. Full enrichment running…`;
+      const link = document.getElementById('searchSuccessLink');
+      link.href = `/leads?client=${clientId}`;
+      link.textContent = `View ${clientName}'s leads ↗`;
+
+      // Mark the assigned rows so the filter + badge update immediately.
+      picks.forEach(cb => {
+        const idx = parseInt(cb.dataset.idx, 10);
+        if (lastResults[idx]) {
+          lastResults[idx].already_assigned = true;
+          lastResults[idx].assigned_to_client = clientName;
+        }
+        cb.checked = false;
+      });
+      applyFiltersAndRender();
+
+      // Start polling the enrichment run.
+      if (data.run_id) {
+        setActionStatus(`<span class="action-status-progress">Queued — worker will start enriching shortly…</span>`);
+        pollEnrichRun(data.run_id, clientName, parseInt(clientId, 10));
+      } else if (data.enqueue_error) {
+        setActionStatus(`<span class="action-err">Enqueue failed: ${escapeHtml(data.enqueue_error)}</span>`);
+      } else {
+        setActionStatus('');  // no rows actually inserted
+      }
+    } catch (e) {
+      showError(String(e).slice(0, 160));
+    } finally {
+      btn.innerHTML = origLabel;
+      updateActionBar();
+    }
+  });
+</script>
+{% endblock %}

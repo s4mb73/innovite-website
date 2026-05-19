@@ -102,6 +102,47 @@ HOOK_GUIDANCE = {
     "general_growth":
         "Open with the local-business growth angle — no specific weakness yet, so anchor on "
         "their industry and city and ask one specific question.",
+
+    # ── LinkedIn authority signals ───────────────────────────────────
+    "linkedin_recent_post":
+        "Open by referencing the decision maker's most recent LinkedIn post (title and date "
+        "are in the data). Be specific about what you found valuable in it, then bridge to a "
+        "single relevant question. Do NOT pretend to have read more than the title — keep it "
+        "honest and short.",
+    "linkedin_high_influence":
+        "Open noting the decision maker has a meaningful following (cite the rough number, "
+        "rounded down). Connect it to the credibility their content already gives them, then "
+        "ask one specific question about how they currently handle inbound from that audience.",
+
+    # ── Growth signals (jobs) ────────────────────────────────────────
+    "growth_scaling":
+        "Open with the hiring signal — they have multiple open roles on Reed right now. "
+        "Tie it to scaling pains (margin pressure, partner-time bottleneck, onboarding "
+        "training the new hires) and ask one specific question.",
+    "growth_hiring":
+        "Open noting they are actively hiring (cite the number of open roles). Keep it "
+        "tighter than scaling — one role doesn't justify a full pitch. Ask whether the "
+        "growth is creating any back-office strain.",
+
+    # ── Distress (Gazette) ───────────────────────────────────────────
+    "gazette_distressed":
+        "Open with care — they have an active insolvency notice in the Gazette. Do NOT "
+        "be aggressive or sales-y. Acknowledge the situation indirectly, offer one "
+        "specific way you can help (turnaround advisory, creditor communications, "
+        "restructure planning) and ask if a short conversation would be useful.",
+
+    # ── Email security / deliverability ──────────────────────────────
+    "deliverability_gap":
+        "Open with the email-security observation — their domain has neither SPF nor DMARC "
+        "configured. Tie it to deliverability (their cold emails will land in spam) and "
+        "compliance (anyone can spoof their domain). Concrete and technical — this audience "
+        "respects precision.",
+    "dmarc_missing":
+        "Open noting their domain is missing a DMARC record. Tie it to spoofing risk and "
+        "the new Google/Yahoo sender requirements.",
+    "spf_missing":
+        "Open noting their domain has no SPF record set. Tie it to outbound email "
+        "deliverability — without SPF their messages routinely get marked as spam.",
 }
 
 
@@ -188,6 +229,36 @@ def _build_prompt(business: dict, hook_type: str,
             parts.append(f"Team size signal: {web['team_size_hint']}")
         if web.get("recency_hint"):
             parts.append(f"Website activity: {web['recency_hint']}")
+
+    # LinkedIn rich profile — when the lead has linkedin_recent_post or
+    # follower counts, Haiku needs the actual title/numbers to reference
+    # them authentically. Without these, the hook guidance falls back
+    # to generic "open with a post reference" which sounds fake.
+    if business.get("linkedin_recent_post_title"):
+        post_date = business.get("linkedin_recent_post_at")
+        date_str = post_date.strftime("%-d %b") if post_date else "recently"
+        parts.append(f"DM's most recent LinkedIn post ({date_str}): \"{business['linkedin_recent_post_title']}\"")
+    if business.get("linkedin_current_company"):
+        parts.append(f"DM's current company (LinkedIn): {business['linkedin_current_company']}")
+    if business.get("linkedin_follower_count"):
+        parts.append(f"DM LinkedIn followers: {business['linkedin_follower_count']:,}")
+
+    # Open jobs — the actual number matters when the hook is growth.
+    if business.get("jobs_open_count"):
+        parts.append(f"Open roles on Reed: {business['jobs_open_count']}")
+
+    # Gazette — when distressed, surface the date so the email can
+    # be appropriately recent / non-cold-sounding.
+    if business.get("gazette_status") == "distressed":
+        last = business.get("gazette_last_notice_date")
+        date_str = last.strftime("%-d %b %Y") if last else "(date unknown)"
+        parts.append(f"Gazette insolvency notice on file — most recent {date_str}")
+
+    # DNS signals — only surface when the hook actually references them,
+    # to keep the prompt focused.
+    if hook_type in ("deliverability_gap", "dmarc_missing", "spf_missing"):
+        provider = business.get("email_provider") or "unknown"
+        parts.append(f"Email provider: {provider}, SPF: {business.get('spf_present')}, DMARC: {business.get('dmarc_present')}")
 
     guidance = HOOK_GUIDANCE.get(hook_type, HOOK_GUIDANCE["general_growth"])
 

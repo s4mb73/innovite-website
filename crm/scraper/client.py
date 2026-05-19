@@ -27,14 +27,19 @@ on the lead — the pipeline continues, the lead is just less enriched.
 """
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
+import os
 import random
 import threading
 import time
 from collections import defaultdict
+from datetime import timedelta
 from urllib.parse import urlparse
 
 from scraper.proxy_pool import get_pool, Proxy
+from scraper import linkedin_session
 
 logger = logging.getLogger("crm.scraper.client")
 
@@ -117,7 +122,7 @@ MAX_RETRIES = 2
 RETRY_BACKOFF = (4, 12)  # seconds between retries
 
 
-def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
+def fetch(url: str, *, max_bytes: int = 250_000, headers: dict | None = None) -> str | None:
     """Fetch a URL via the proxy pool with TLS fingerprint impersonation.
 
     Returns the response body as text, or None on any failure. Bodies
@@ -141,6 +146,13 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
         logger.warning("fetch called with malformed URL: %s", url[:80])
         return None
 
+    # LinkedIn requests are routed through a different path: per-account
+    # cookie, sticky proxy pinned to that account, halt-on-challenge.
+    # The cookie-based session lives or dies as one unit, so we never
+    # fall back to the generic round-robin path for these hosts.
+    if _is_linkedin_host(host):
+        return _fetch_linkedin(url, host, max_bytes=max_bytes)
+
     _wait_for_host_slot(host)
 
     pool = get_pool()
@@ -152,21 +164,40 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
 
         emulation = random.choice(_EMULATION_PROFILES) if _EMULATION_PROFILES else None
         try:
+            # wreq.Client takes `proxies=[Proxy.all(url)]` (plural, list
+            # of Proxy objects), not `proxy="url"`. Proxy.all() routes
+            # both HTTP and HTTPS traffic — what we want for SMB
+            # website scraping where targets are a mix of plain http
+            # redirects and https.
+            #
+            # wreq does NOT follow redirects by default — the default
+            # policy is `none`, which surfaces 301/302 as the final
+            # status. SMB sites redirect heavily (apex → www, http →
+            # https, /services → /our-services etc.), so without an
+            # explicit limited policy the sub-page fetch returns a 301
+            # body and we treat the proxy as broken. Bound to 10 hops
+            # to defeat redirect loops.
             client_kwargs: dict = {
-                "proxy":   proxy.as_url(),
-                "timeout": TIMEOUT_S,
+                "proxies": [wreq.Proxy.all(proxy.as_url())],
+                "timeout": timedelta(seconds=TIMEOUT_S),
+                "redirect": wreq.redirect.Policy.limited(10),
             }
             if emulation is not None:
                 client_kwargs["emulation"] = emulation
 
             client = wreq.Client(**client_kwargs)  # type: ignore[union-attr]
-            resp = client.get(url)
+            # wreq exposes an async API — client.get() returns a coroutine.
+            # Each call gets its own event loop (asyncio.run); cost is
+            # negligible relative to the HTTP request itself (~1ms vs
+            # ~1-3s on the wire).
+            resp, body = asyncio.run(_async_get(client, url, max_bytes, headers=headers))
             status = getattr(resp, "status", None) or getattr(resp, "status_code", None)
 
-            # 2xx → success. 3xx → wreq follows redirects by default; if
-            # we're seeing a 3xx here, the chain didn't resolve cleanly.
+            # 2xx → success. 3xx → with the limited redirect policy set
+            # above, wreq follows up to 10 hops; if we still see a 3xx
+            # here the chain hit the cap or pointed at a non-resolving
+            # host.
             if status is None or 200 <= status < 300:
-                body = _read_body(resp, max_bytes)
                 if body and _looks_like_challenge(body):
                     logger.info("CHALLENGE %s via %s — retrying",
                                 host, proxy.public_id())
@@ -178,18 +209,33 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
                 # Hard signal that this IP is no good for this target.
                 logger.info("HTTP %s on %s via %s", status, host, proxy.public_id())
                 pool.record_failure(proxy, f"HTTP {status}")
+            elif 400 <= status < 500:
+                # Target answered cleanly with "no" (404, 401, 410…) —
+                # the page doesn't exist, or the URL was malformed. Not
+                # a proxy problem. Don't bench, and don't retry through
+                # other proxies — re-fetching the same URL through a
+                # different IP won't conjure a missing page into being.
+                # This matters because the extractor probes a handful of
+                # candidate sub-paths (/about, /services, /what-we-do)
+                # — most sites don't have all of them. Without this
+                # branch each miss burns 3 proxies' health unfairly.
+                logger.info("HTTP %s on %s (target answered no) — giving up",
+                            status, host)
+                return None
             elif 500 <= status < 600:
-                # Target server problem, not our IP — don't bench harshly.
+                # Target server problem, not our IP — don't bench.
                 logger.info("HTTP %s on %s (target error)", status, host)
-                # Single bump rather than a full failure — proxy isn't at
-                # fault if the destination 5xx'd.
-                proxy.consecutive_failures += 0
             else:
                 logger.info("HTTP %s on %s via %s", status, host, proxy.public_id())
                 pool.record_failure(proxy, f"HTTP {status}")
         except Exception as e:
-            logger.info("fetch error %s via %s: %s",
-                        host, proxy.public_id(), str(e)[:80])
+            # Log type + message so config bugs (e.g. wrong kwarg type)
+            # don't get hidden as generic "fetch error". Connection
+            # errors still produce noisy lines — that's fine; this is
+            # an info-level scraper, the volume's bounded.
+            logger.warning("fetch error %s via %s: %s: %s",
+                           host, proxy.public_id(),
+                           type(e).__name__, str(e)[:200])
             pool.record_failure(proxy, type(e).__name__)
 
         attempts += 1
@@ -200,18 +246,28 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
     return None
 
 
-def _read_body(resp, max_bytes: int) -> str | None:
-    """Pull response text safely. wreq exposes .text() as a method (not
-    a property) on the Response object; we handle both for safety."""
-    try:
-        text = resp.text() if callable(getattr(resp, "text", None)) else resp.text
-        if text is None:
-            return None
-        if len(text) > max_bytes:
-            return text[:max_bytes]
-        return text
-    except Exception:
-        return None
+async def _async_get(client, url: str, max_bytes: int, headers: dict | None = None):
+    """Await `client.get(url)` and the response body in one shot.
+
+    wreq's Response.text() is also async in current versions but older
+    or future builds might expose it as a sync attribute. We probe with
+    `inspect.isawaitable` so this stays robust across the version
+    range without a hard version pin.
+    """
+    resp = await (client.get(url, headers=headers) if headers else client.get(url))
+
+    text_attr = getattr(resp, "text", None)
+    if callable(text_attr):
+        text_call = text_attr()
+        text = await text_call if inspect.isawaitable(text_call) else text_call
+    else:
+        text = text_attr  # plain attribute
+
+    if text is None:
+        return resp, None
+    if len(text) > max_bytes:
+        return resp, text[:max_bytes]
+    return resp, text
 
 
 # Cloudflare / DataDome / similar challenge-page markers. If we see
@@ -231,3 +287,204 @@ _CHALLENGE_MARKERS = (
 def _looks_like_challenge(body: str) -> bool:
     head = body[:4000].lower()
     return any(marker.lower() in head for marker in _CHALLENGE_MARKERS)
+
+
+# ── LinkedIn path ──────────────────────────────────────────────────
+# Cookie-based, single-account, pinned-proxy. Halts on 999 /
+# login-redirect / "verify you're not a bot" — at the first sign of a
+# challenge the account is parked in cooldown for 24h via
+# linkedin_session.record_challenge().
+
+_LINKEDIN_HOSTS = ("linkedin.com", "www.linkedin.com")
+_LINKEDIN_TIMEOUT_S = 15
+# Stricter per-host rate-limiting on LinkedIn — typical real-user
+# profile-view interval at the API layer is well above this. Adds
+# jitter on top in _fetch_linkedin so we don't look metronomic.
+_LINKEDIN_MIN_INTERVAL_S = 30.0
+_LINKEDIN_LAST_HIT_LOCK = threading.Lock()
+_LINKEDIN_LAST_HIT: float = 0.0
+
+
+def _is_linkedin_host(host: str) -> bool:
+    h = (host or "").lower()
+    return h in _LINKEDIN_HOSTS or h.endswith(".linkedin.com")
+
+
+def _linkedin_enabled() -> bool:
+    """Feature flag — set LINKEDIN_ENRICH_ENABLED=true in worker env
+    to flip on. Until then every LinkedIn fetch short-circuits to None
+    and linkedin.enrich() reports status='disabled'."""
+    val = (os.environ.get("LINKEDIN_ENRICH_ENABLED") or "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
+def _wait_for_linkedin_slot() -> None:
+    """Single-token bucket spanning ALL LinkedIn traffic, plus jitter.
+    Even with one account we never want to look like a metronome."""
+    global _LINKEDIN_LAST_HIT
+    with _LINKEDIN_LAST_HIT_LOCK:
+        now = time.monotonic()
+        wait = (_LINKEDIN_LAST_HIT + _LINKEDIN_MIN_INTERVAL_S) - now
+        _LINKEDIN_LAST_HIT = now + max(wait, 0)
+    jitter = random.uniform(0.0, 20.0)  # 0-20s on top of the floor
+    total = max(wait, 0) + jitter
+    if total > 0:
+        time.sleep(total)
+
+
+def _find_proxy_by_id(public_id: str) -> Proxy | None:
+    """Find the proxy whose public_id() matches; None if not in the pool."""
+    for p in get_pool().proxies:
+        if p.public_id() == public_id:
+            return p
+    return None
+
+
+_LINKEDIN_CHALLENGE_MARKERS = (
+    "authwall",
+    "checkpoint/challenge",
+    "uas/login",
+    "/login?",
+    "please verify you're not a bot",
+)
+
+
+def _linkedin_looks_challenged(body: str) -> bool:
+    head = body[:8000].lower()
+    return any(m in head for m in _LINKEDIN_CHALLENGE_MARKERS)
+
+
+def _fetch_linkedin(url: str, host: str, *, max_bytes: int) -> str | None:
+    """LinkedIn-specific fetch path.
+
+    1. Check the feature flag — if off, return None silently.
+    2. Pick an eligible account from the jar (cap, cooldown, status).
+    3. Resolve / pin a proxy to that account.
+    4. Attach Cookie: li_at=... and request as a logged-in browser.
+    5. Detect 999 / login-redirect → record_challenge + 24h cooldown.
+    6. Other failures → record_failure (short cooldown after a streak).
+    7. Success → record_success (bumps daily counter + last_used_at).
+    """
+    if not _linkedin_enabled():
+        logger.debug("LinkedIn fetch attempted but LINKEDIN_ENRICH_ENABLED is off")
+        return None
+    if not _WREQ_AVAILABLE:
+        return None
+
+    acct = linkedin_session.pick_account()
+    if acct is None:
+        logger.info("LinkedIn fetch %s skipped — no eligible account in jar", host)
+        return None
+
+    # Resolve the pinned proxy. If unset (first request), pin to the
+    # next healthy proxy and persist. If the previously-pinned proxy
+    # is no longer in the pool, the account goes into a short cooldown
+    # rather than rotating IP under an established cookie.
+    pool = get_pool()
+    proxy: Proxy | None = None
+    if acct.pinned_proxy_id:
+        proxy = _find_proxy_by_id(acct.pinned_proxy_id)
+        if proxy is None:
+            logger.error(
+                "LinkedIn account '%s' pinned to %s but proxy is gone from pool — "
+                "cooling down (manual repin required)",
+                acct.label, acct.pinned_proxy_id,
+            )
+            linkedin_session.record_failure(
+                acct.label, f"pinned proxy {acct.pinned_proxy_id} not in pool",
+                hours=4,
+            )
+            return None
+    else:
+        proxy = pool.next_proxy()
+        if proxy is None:
+            return None
+        linkedin_session.pin_proxy(acct.label, proxy.public_id())
+
+    _wait_for_linkedin_slot()
+
+    try:
+        client_kwargs: dict = {
+            "proxies": [wreq.Proxy.all(proxy.as_url())],
+            "timeout": timedelta(seconds=_LINKEDIN_TIMEOUT_S),
+            "redirect": wreq.redirect.Policy.limited(5),
+        }
+        # Force a Firefox-on-Windows emulation that matches the
+        # registration-time fingerprint (Pixelscan: Firefox 146 / Win64).
+        ff_profile = (
+            getattr(wreq.Emulation, "Firefox149", None)
+            or getattr(wreq.Emulation, "Firefox148", None)
+        )
+        if ff_profile is not None:
+            client_kwargs["emulation"] = ff_profile
+
+        client = wreq.Client(**client_kwargs)  # type: ignore[union-attr]
+        headers = {
+            "Cookie":          f"li_at={acct.li_at}",
+            "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-GB,en;q=0.5",
+            "DNT":             "1",
+            "Sec-GPC":         "1",
+            "Upgrade-Insecure-Requests": "1",
+        }
+        resp, body = asyncio.run(_async_get_with_headers(client, url, headers, max_bytes))
+        status = getattr(resp, "status", None) or getattr(resp, "status_code", None)
+
+        # LinkedIn's bot-block returns HTTP 999 — non-standard, but the
+        # de-facto signal that anti-bot intercepted the request.
+        if status == 999:
+            linkedin_session.record_challenge(acct.label, f"HTTP 999 from {host}")
+            return None
+        # Auth-wall / login redirect → final URL contains /authwall
+        # or /uas/login. wreq.redirect.Policy.limited follows the
+        # redirect, so we end up with a 200 + a login HTML body. The
+        # body sniffer covers that.
+        if status and 200 <= status < 300:
+            if body and _linkedin_looks_challenged(body):
+                linkedin_session.record_challenge(
+                    acct.label, f"challenge body served by {host}"
+                )
+                return None
+            linkedin_session.record_success(acct.label)
+            return body
+        if status in (401, 403):
+            linkedin_session.record_challenge(acct.label, f"HTTP {status} from {host}")
+            return None
+        if status == 429:
+            linkedin_session.record_failure(
+                acct.label, f"HTTP 429 from {host}", hours=2,
+            )
+            return None
+        if status and 500 <= status < 600:
+            # Server-side problem, not a session-trust signal — short cooldown
+            linkedin_session.record_failure(
+                acct.label, f"HTTP {status} from {host}", hours=0.25,
+            )
+            return None
+        # 404 etc → URL miss, no account-level penalty
+        logger.info("LinkedIn HTTP %s on %s (target answered no) — giving up", status, host)
+        return None
+    except Exception as e:
+        logger.warning("LinkedIn fetch error %s via %s: %s: %s",
+                       host, proxy.public_id() if proxy else "?",
+                       type(e).__name__, str(e)[:200])
+        linkedin_session.record_failure(
+            acct.label, f"{type(e).__name__}: {str(e)[:120]}",
+        )
+        return None
+
+
+async def _async_get_with_headers(client, url: str, headers: dict, max_bytes: int):
+    """Same shape as _async_get but with explicit headers (cookies)."""
+    resp = await client.get(url, headers=headers)
+    text_attr = getattr(resp, "text", None)
+    if callable(text_attr):
+        text_call = text_attr()
+        text = await text_call if inspect.isawaitable(text_call) else text_call
+    else:
+        text = text_attr
+    if text is None:
+        return resp, None
+    if len(text) > max_bytes:
+        return resp, text[:max_bytes]
+    return resp, text

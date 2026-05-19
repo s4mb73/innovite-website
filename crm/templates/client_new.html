@@ -16,12 +16,12 @@
 
 <div class="page-head">
   <div>
-    <h1 class="page-title">{% if is_edit %}Edit {{ client_name }}{% else %}New client{% endif %}</h1>
+    <h1 class="page-title">{% if is_edit %}Edit {{ client_name }}{% else %}Add a new client{% endif %}</h1>
     <p class="page-sub">
       {% if is_edit %}
         Update basics or refine targeting. Saved changes apply on the next pipeline run.
       {% else %}
-        Add a client and their targeting profile so the pipeline knows who to look for.
+        Three quick steps. We'll start finding leads as soon as you're done.
       {% endif %}
     </p>
   </div>
@@ -37,17 +37,16 @@
   {% endif %}
 {% endwith %}
 
+{% if is_edit %}
+{# ── EDIT MODE — keep the single-page form, no wizard ─────────── #}
 <form class="settings-stack" method="post"
-      action="{% if is_edit %}{{ url_for('client_edit', client_id=client_id) }}{% else %}{{ url_for('client_new') }}{% endif %}"
+      action="{{ url_for('client_edit', client_id=client_id) }}"
       novalidate>
-
-  {# ── Basics ─────────────────────────────────── #}
   <section class="card settings-card">
     <div class="settings-card-head">
       <h2 class="settings-card-title">Basics</h2>
       <p class="settings-card-sub">Who they are, and who we'll talk to during onboarding.</p>
     </div>
-
     <div class="settings-form">
       <div class="field-row">
         <label for="cn-name">Name <span class="req">*</span></label>
@@ -58,7 +57,6 @@
           {% if errors.name %}<div class="field-err">{{ errors.name }}</div>{% endif %}
         </div>
       </div>
-
       <div class="field-row">
         <label for="cn-industry">Industry</label>
         <div class="field-input">
@@ -67,7 +65,6 @@
                  value="{{ form.industry or '' }}">
         </div>
       </div>
-
       <div class="field-row">
         <label for="cn-contact-name">Contact name</label>
         <div class="field-input">
@@ -75,7 +72,6 @@
                  value="{{ form.contact_name or '' }}">
         </div>
       </div>
-
       <div class="field-row">
         <label for="cn-contact-email">Contact email</label>
         <div class="field-input">
@@ -88,48 +84,40 @@
     </div>
   </section>
 
-  {# ── Targeting ──────────────────────────────── #}
   <section class="card settings-card">
     <div class="settings-card-head">
       <h2 class="settings-card-title">Targeting</h2>
       <p class="settings-card-sub">What kind of leads should the pipeline look for?</p>
     </div>
-
     <div class="settings-form">
       <div class="field-row">
         <label for="cn-industries-input">Target industries <span class="req">*</span></label>
         <div class="field-input">
           <div class="chip-input {% if errors.target_industries %}is-invalid{% endif %}"
-               data-chip-input
-               data-initial="{{ form.target_industries or '' }}">
+               data-chip-input data-initial="{{ form.target_industries or '' }}">
             <input type="hidden" name="target_industries" value="{{ form.target_industries or '' }}">
             <div class="chip-input-bag" aria-live="polite"></div>
             <input type="text" id="cn-industries-input" class="chip-input-entry"
-                   placeholder="Construction, Property dev…"
-                   autocomplete="off">
+                   placeholder="Construction, Property dev…" autocomplete="off">
           </div>
-          <div class="field-hint">Press Enter or comma to add. Free text — typeahead comes later.</div>
+          <div class="field-hint">Press Enter or comma to add.</div>
           {% if errors.target_industries %}<div class="field-err">{{ errors.target_industries }}</div>{% endif %}
         </div>
       </div>
-
       <div class="field-row">
         <label for="cn-locations-input">Target locations <span class="req">*</span></label>
         <div class="field-input">
           <div class="chip-input {% if errors.target_locations %}is-invalid{% endif %}"
-               data-chip-input
-               data-initial="{{ form.target_locations or '' }}">
+               data-chip-input data-initial="{{ form.target_locations or '' }}">
             <input type="hidden" name="target_locations" value="{{ form.target_locations or '' }}">
             <div class="chip-input-bag" aria-live="polite"></div>
             <input type="text" id="cn-locations-input" class="chip-input-entry"
-                   placeholder="Manchester, Leeds, North West…"
-                   autocomplete="off">
+                   placeholder="Manchester, Leeds, North West…" autocomplete="off">
           </div>
-          <div class="field-hint">UK cities or regions. Postcode targeting comes later.</div>
+          <div class="field-hint">UK cities or regions.</div>
           {% if errors.target_locations %}<div class="field-err">{{ errors.target_locations }}</div>{% endif %}
         </div>
       </div>
-
       <div class="field-row">
         <label for="cn-min-age">Minimum company age</label>
         <div class="field-input field-input-inline">
@@ -141,7 +129,6 @@
           {% if errors.min_company_age %}<div class="field-err">{{ errors.min_company_age }}</div>{% endif %}
         </div>
       </div>
-
       <div class="field-row">
         <label>Employee size bands</label>
         <div class="field-input">
@@ -149,8 +136,7 @@
             {% for band in employee_bands %}
               {% set on = band in (form.employee_bands or []) %}
               <label class="band-chip {% if on %}is-on{% endif %}">
-                <input type="checkbox" name="employee_bands" value="{{ band }}"
-                       {% if on %}checked{% endif %}>
+                <input type="checkbox" name="employee_bands" value="{{ band }}" {% if on %}checked{% endif %}>
                 <span>{{ band }}</span>
               </label>
             {% endfor %}
@@ -158,59 +144,268 @@
           <div class="field-hint">Multi-select. Leave empty to allow any size.</div>
         </div>
       </div>
-
       <div class="field-row field-row-checkbox">
         <label class="checkbox">
-          <input type="checkbox" name="active_filing_only"
-                 {% if form.active_filing_only %}checked{% endif %}>
-          <span>Active filing only — exclude dormant or dissolved companies (Companies House)</span>
+          <input type="checkbox" name="active_filing_only" {% if form.active_filing_only %}checked{% endif %}>
+          <span>Active filing only — exclude dormant or dissolved companies</span>
         </label>
       </div>
-
       <div class="field-row">
         <label for="cn-exclusions-input">Exclusion list</label>
         <div class="field-input">
-          <div class="chip-input"
-               data-chip-input
-               data-initial="{{ form.exclusion_list or '' }}">
+          <div class="chip-input" data-chip-input data-initial="{{ form.exclusion_list or '' }}">
             <input type="hidden" name="exclusion_list" value="{{ form.exclusion_list or '' }}">
             <div class="chip-input-bag" aria-live="polite"></div>
             <input type="text" id="cn-exclusions-input" class="chip-input-entry"
-                   placeholder="acme.co.uk, Acme Ltd…"
-                   autocomplete="off">
+                   placeholder="acme.co.uk, Acme Ltd…" autocomplete="off">
           </div>
-          <div class="field-hint">
-            Domains and company names this client must never contact — their existing customers,
-            competitors, anyone they've already pitched. Optional.
-          </div>
+          <div class="field-hint">Domains and company names this client must never contact.</div>
         </div>
       </div>
     </div>
   </section>
 
-  {% if not is_edit %}
-  <p class="settings-card-sub form-foot-hint">
-    Status will be set to <strong>Active</strong>. No pipeline runs automatically — trigger
-    the first <strong>Find new leads</strong> from the client detail page when ready.
-  </p>
-  {% endif %}
-
   <div class="settings-form-foot client-new-foot">
-    {% if is_edit %}
-      <a class="btn btn-quiet" href="{{ url_for('client_detail', client_id=client_id) }}">Cancel</a>
-      <button type="submit" class="btn btn-primary">Save changes</button>
-    {% else %}
-      <a class="btn btn-quiet" href="{{ url_for('clients') }}">Cancel</a>
-      <button type="submit" class="btn btn-primary">Create client</button>
-    {% endif %}
+    <a class="btn btn-quiet" href="{{ url_for('client_detail', client_id=client_id) }}">Cancel</a>
+    <button type="submit" class="btn btn-primary">Save changes</button>
   </div>
 </form>
 
+{% else %}
+{# ── NEW CLIENT — wizard ────────────────────────────────────── #}
+<form class="wiz" method="post" action="{{ url_for('client_new') }}" novalidate id="wizForm">
+  <input type="hidden" name="save_action" value="save_and_run" id="wizSaveAction">
+
+  <ol class="wiz-steps" role="tablist" aria-label="Setup progress">
+    <li class="wiz-step is-active" data-go="1" role="tab" aria-selected="true">
+      <span class="wiz-dot">1</span>
+      <span class="wiz-step-label">About the client</span>
+    </li>
+    <li class="wiz-step" data-go="2" role="tab" aria-selected="false">
+      <span class="wiz-dot">2</span>
+      <span class="wiz-step-label">Who to find</span>
+    </li>
+    <li class="wiz-step" data-go="3" role="tab" aria-selected="false">
+      <span class="wiz-dot">3</span>
+      <span class="wiz-step-label">Confirm</span>
+    </li>
+  </ol>
+
+  {# ── Step 1 — About the client ─────────────────────────── #}
+  <section class="wiz-panel is-active" data-panel="1" role="tabpanel">
+    <div class="wiz-panel-head">
+      <h2 class="wiz-panel-title">About the client</h2>
+      <p class="wiz-panel-sub">Just the basics. You can add more later from their detail page.</p>
+    </div>
+
+    <div class="wiz-form">
+      <div class="field-row">
+        <label for="cn-name">Client name <span class="req">*</span></label>
+        <div class="field-input">
+          <input type="text" id="cn-name" name="name" autocomplete="organization"
+                 value="{{ form.name or '' }}" required
+                 placeholder="ROCA Accountants"
+                 class="{% if errors.name %}is-invalid{% endif %}"
+                 data-wiz-required="1">
+          {% if errors.name %}<div class="field-err">{{ errors.name }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-industry">What do they do?</label>
+        <div class="field-input">
+          <input type="text" id="cn-industry" name="industry"
+                 placeholder="e.g. Accountancy practice, Marketing agency"
+                 value="{{ form.industry or '' }}">
+          <div class="field-hint">Optional — helps us frame outreach copy.</div>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-contact-name">Their main contact</label>
+        <div class="field-input">
+          <input type="text" id="cn-contact-name" name="contact_name" autocomplete="name"
+                 placeholder="Sarah Patel" value="{{ form.contact_name or '' }}">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-contact-email">Contact email</label>
+        <div class="field-input">
+          <input type="email" id="cn-contact-email" name="contact_email" autocomplete="email"
+                 placeholder="sarah@example.co.uk" value="{{ form.contact_email or '' }}"
+                 class="{% if errors.contact_email %}is-invalid{% endif %}">
+          {% if errors.contact_email %}<div class="field-err">{{ errors.contact_email }}</div>{% endif %}
+          <div class="field-hint">Optional. Where status updates go.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wiz-foot">
+      <a class="btn btn-quiet" href="{{ url_for('clients') }}">Cancel</a>
+      <button type="button" class="btn btn-primary" data-wiz-next="2">Continue →</button>
+    </div>
+  </section>
+
+  {# ── Step 2 — Who to find ─────────────────────────────── #}
+  <section class="wiz-panel" data-panel="2" role="tabpanel" hidden>
+    <div class="wiz-panel-head">
+      <h2 class="wiz-panel-title">Who should we find for them?</h2>
+      <p class="wiz-panel-sub">Pick a preset to fill the defaults, or write your own.</p>
+    </div>
+
+    {# Industry presets — clicking fills target industries + employee bands. #}
+    <div class="wiz-presets" role="group" aria-label="Industry presets">
+      <button type="button" class="preset-chip" data-preset="accountancy">
+        <span class="preset-emoji" aria-hidden="true">📊</span> Accountancy
+      </button>
+      <button type="button" class="preset-chip" data-preset="marketing">
+        <span class="preset-emoji" aria-hidden="true">🎨</span> Marketing agencies
+      </button>
+      <button type="button" class="preset-chip" data-preset="recruitment">
+        <span class="preset-emoji" aria-hidden="true">🧑‍💼</span> Recruitment
+      </button>
+      <button type="button" class="preset-chip" data-preset="it">
+        <span class="preset-emoji" aria-hidden="true">💻</span> IT services
+      </button>
+      <button type="button" class="preset-chip" data-preset="legal">
+        <span class="preset-emoji" aria-hidden="true">⚖️</span> Solicitors
+      </button>
+      <button type="button" class="preset-chip" data-preset="trades">
+        <span class="preset-emoji" aria-hidden="true">🔧</span> Trade services
+      </button>
+      <button type="button" class="preset-chip" data-preset="property">
+        <span class="preset-emoji" aria-hidden="true">🏠</span> Estate agents
+      </button>
+      <button type="button" class="preset-chip" data-preset="health">
+        <span class="preset-emoji" aria-hidden="true">🩺</span> Healthcare clinics
+      </button>
+    </div>
+
+    <div class="wiz-form">
+      <div class="field-row">
+        <label for="cn-industries-input">Target industries <span class="req">*</span></label>
+        <div class="field-input">
+          <div class="chip-input {% if errors.target_industries %}is-invalid{% endif %}"
+               data-chip-input id="targetIndustriesChip"
+               data-initial="{{ form.target_industries or '' }}">
+            <input type="hidden" name="target_industries" value="{{ form.target_industries or '' }}">
+            <div class="chip-input-bag" aria-live="polite"></div>
+            <input type="text" id="cn-industries-input" class="chip-input-entry"
+                   placeholder="Accountants, bookkeepers…" autocomplete="off">
+          </div>
+          <div class="field-hint">Press Enter or comma to add each one.</div>
+          {% if errors.target_industries %}<div class="field-err">{{ errors.target_industries }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label for="cn-locations-input">Target locations <span class="req">*</span></label>
+        <div class="field-input">
+          <div class="chip-input {% if errors.target_locations %}is-invalid{% endif %}"
+               data-chip-input id="targetLocationsChip"
+               data-initial="{{ form.target_locations or '' }}">
+            <input type="hidden" name="target_locations" value="{{ form.target_locations or '' }}">
+            <div class="chip-input-bag" aria-live="polite"></div>
+            <input type="text" id="cn-locations-input" class="chip-input-entry"
+                   placeholder="Cambridge, Manchester, North West…" autocomplete="off">
+          </div>
+          <div class="field-hint">UK cities or regions.</div>
+          {% if errors.target_locations %}<div class="field-err">{{ errors.target_locations }}</div>{% endif %}
+        </div>
+      </div>
+
+      {# Advanced — collapsed by default so the page feels lighter. #}
+      <details class="wiz-advanced">
+        <summary>Advanced filters <span class="wiz-advanced-sub">company age, size, exclusions</span></summary>
+
+        <div class="field-row">
+          <label for="cn-min-age">Minimum company age</label>
+          <div class="field-input field-input-inline">
+            <input type="number" id="cn-min-age" name="min_company_age"
+                   min="0" max="200" value="{{ form.min_company_age or '' }}"
+                   class="{% if errors.min_company_age %}is-invalid{% endif %}">
+            <span class="field-suffix">years</span>
+            <span class="field-hint field-hint-inline">Filters out brand-new incorporations.</span>
+            {% if errors.min_company_age %}<div class="field-err">{{ errors.min_company_age }}</div>{% endif %}
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Employee size bands</label>
+          <div class="field-input">
+            <div class="band-group" role="group" aria-label="Employee size bands" id="bandGroup">
+              {% for band in employee_bands %}
+                {% set on = band in (form.employee_bands or []) %}
+                <label class="band-chip {% if on %}is-on{% endif %}">
+                  <input type="checkbox" name="employee_bands" value="{{ band }}" {% if on %}checked{% endif %}>
+                  <span>{{ band }}</span>
+                </label>
+              {% endfor %}
+            </div>
+            <div class="field-hint">Leave empty to allow any size.</div>
+          </div>
+        </div>
+
+        <div class="field-row field-row-checkbox">
+          <label class="checkbox">
+            <input type="checkbox" name="active_filing_only"
+                   {% if form.active_filing_only or form.active_filing_only is not defined %}checked{% endif %}>
+            <span>Active filing only — skip dormant or dissolved companies</span>
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label for="cn-exclusions-input">Exclusion list</label>
+          <div class="field-input">
+            <div class="chip-input" data-chip-input data-initial="{{ form.exclusion_list or '' }}">
+              <input type="hidden" name="exclusion_list" value="{{ form.exclusion_list or '' }}">
+              <div class="chip-input-bag" aria-live="polite"></div>
+              <input type="text" id="cn-exclusions-input" class="chip-input-entry"
+                     placeholder="acme.co.uk, Acme Ltd…" autocomplete="off">
+            </div>
+            <div class="field-hint">Domains or names this client must never contact.</div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="wiz-foot">
+      <button type="button" class="btn btn-quiet" data-wiz-back="1">← Back</button>
+      <button type="button" class="btn btn-primary" data-wiz-next="3">Continue →</button>
+    </div>
+  </section>
+
+  {# ── Step 3 — Confirm ─────────────────────────────────── #}
+  <section class="wiz-panel" data-panel="3" role="tabpanel" hidden>
+    <div class="wiz-panel-head">
+      <h2 class="wiz-panel-title">Ready to start finding leads?</h2>
+      <p class="wiz-panel-sub">Quick check before we kick off the first pipeline run.</p>
+    </div>
+
+    <div class="wiz-recap" id="wizRecap">
+      {# Filled by JS from form values on step entry. #}
+    </div>
+
+    <p class="wiz-recap-foot">
+      Hitting <strong>Save &amp; start finding leads</strong> queues the first pipeline run. The
+      first batch usually surfaces in <strong>3–8 minutes</strong>. You'll watch the run unfold
+      live in Approvals.
+    </p>
+
+    <div class="wiz-foot">
+      <button type="button" class="btn btn-quiet" data-wiz-back="2">← Back</button>
+      <button type="submit" class="btn btn-ghost"
+              data-wiz-action="save_only">Save without running</button>
+      <button type="submit" class="btn btn-primary"
+              data-wiz-action="save_and_run">Save &amp; start finding leads ▶</button>
+    </div>
+  </section>
+</form>
+{% endif %}
+
 <script>
-  // ── Chip input ─────────────────────────────────────────
-  // Comma-joined hidden input is the source of truth for form submit.
-  // Type + Enter or comma → add. Backspace on empty entry → remove last.
-  // Click × on a chip → remove that chip.
+  // ── Chip input (shared with edit mode) ─────────────────
   (function () {
     function init(root) {
       const hidden = root.querySelector('input[type="hidden"]');
@@ -224,6 +419,7 @@
       function sync() {
         hidden.value = chips.join(',');
         render();
+        root.dispatchEvent(new CustomEvent('chip:change', { bubbles: true }));
       }
 
       function render() {
@@ -257,6 +453,7 @@
         chips.push(v);
         sync();
       }
+      root.__chipAdd = add;  // Expose for preset-chip handlers.
 
       entry.addEventListener('keydown', e => {
         if (e.key === 'Enter' || e.key === ',') {
@@ -269,16 +466,11 @@
         }
       });
       entry.addEventListener('blur', () => {
-        if (entry.value.trim()) {
-          add(entry.value);
-          entry.value = '';
-        }
+        if (entry.value.trim()) { add(entry.value); entry.value = ''; }
       });
-      // Click anywhere on the shell focuses the entry — feels like one big input.
       root.addEventListener('click', e => {
         if (e.target === root || e.target === bag) entry.focus();
       });
-      // Clear is-invalid state once the user adds a chip.
       root.addEventListener('input', () => root.classList.remove('is-invalid'));
 
       render();
@@ -292,6 +484,162 @@
       const sync = () => input.closest('.band-chip').classList.toggle('is-on', input.checked);
       input.addEventListener('change', sync);
     });
+  })();
+
+  // ── Wizard nav + presets + recap (skipped in edit mode) ──
+  (function () {
+    const form = document.getElementById('wizForm');
+    if (!form) return;  // edit mode
+
+    const panels = form.querySelectorAll('.wiz-panel');
+    const steps  = form.querySelectorAll('.wiz-step');
+    let currentStep = 1;
+    let furthestReached = 1;
+
+    function show(step) {
+      panels.forEach(p => {
+        const on = parseInt(p.dataset.panel, 10) === step;
+        p.classList.toggle('is-active', on);
+        p.hidden = !on;
+      });
+      steps.forEach(s => {
+        const n = parseInt(s.dataset.go, 10);
+        s.classList.toggle('is-active', n === step);
+        s.classList.toggle('is-done', n < step || n <= furthestReached && n !== step);
+        s.setAttribute('aria-selected', n === step ? 'true' : 'false');
+      });
+      currentStep = step;
+      if (step > furthestReached) furthestReached = step;
+      if (step === 3) renderRecap();
+      // Scroll the form to the top so the operator sees the panel head.
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function validateStep(step) {
+      let ok = true;
+      if (step === 1) {
+        const name = form.querySelector('[name=name]');
+        if (!name.value.trim()) {
+          name.classList.add('is-invalid');
+          name.focus();
+          ok = false;
+        } else { name.classList.remove('is-invalid'); }
+      } else if (step === 2) {
+        const ti = form.querySelector('[name=target_industries]');
+        const tl = form.querySelector('[name=target_locations]');
+        const tiChip = document.getElementById('targetIndustriesChip');
+        const tlChip = document.getElementById('targetLocationsChip');
+        if (!ti.value.trim()) { tiChip.classList.add('is-invalid'); ok = false; }
+        if (!tl.value.trim()) { tlChip.classList.add('is-invalid'); ok = false; }
+        if (!ok) {
+          (tiChip.classList.contains('is-invalid') ? tiChip : tlChip)
+            .querySelector('.chip-input-entry').focus();
+        }
+      }
+      return ok;
+    }
+
+    form.querySelectorAll('[data-wiz-next]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = parseInt(btn.dataset.wizNext, 10);
+        if (validateStep(currentStep)) show(target);
+      });
+    });
+    form.querySelectorAll('[data-wiz-back]').forEach(btn => {
+      btn.addEventListener('click', () => show(parseInt(btn.dataset.wizBack, 10)));
+    });
+    steps.forEach(s => {
+      s.addEventListener('click', () => {
+        const target = parseInt(s.dataset.go, 10);
+        // Allow free navigation backward; forward only if previous steps pass.
+        if (target <= currentStep || target <= furthestReached) {
+          show(target);
+        } else if (validateStep(currentStep)) {
+          show(target);
+        }
+      });
+    });
+
+    // Save action toggle — primary vs secondary button on step 3.
+    form.querySelectorAll('[data-wiz-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('wizSaveAction').value = btn.dataset.wizAction;
+      });
+    });
+
+    // ── Industry presets ────────────────────────────────
+    // Each preset seeds a small set of target industries + employee bands.
+    // Operator can still edit anything afterwards.
+    const PRESETS = {
+      accountancy:  { industries: ['Accountants', 'Bookkeepers'],            bands: ['1-9', '10-49'] },
+      marketing:    { industries: ['Marketing agencies', 'Branding agencies'], bands: ['1-9', '10-49'] },
+      recruitment:  { industries: ['Recruitment agencies'],                  bands: ['1-9', '10-49'] },
+      it:           { industries: ['IT support', 'Managed service providers'], bands: ['1-9', '10-49'] },
+      legal:        { industries: ['Solicitors', 'Law firms'],               bands: ['1-9', '10-49'] },
+      trades:       { industries: ['Plumbers', 'Electricians', 'Builders'],  bands: ['1-9'] },
+      property:     { industries: ['Estate agents', 'Letting agents'],       bands: ['1-9', '10-49'] },
+      health:       { industries: ['Dental practices', 'Private clinics', 'Physiotherapy'], bands: ['1-9', '10-49'] },
+    };
+    function applyPreset(key) {
+      const p = PRESETS[key];
+      if (!p) return;
+      const tiRoot = document.getElementById('targetIndustriesChip');
+      p.industries.forEach(name => tiRoot.__chipAdd && tiRoot.__chipAdd(name));
+      // Toggle on the matching bands. Preserves any already-checked.
+      const bg = document.getElementById('bandGroup');
+      if (bg) {
+        p.bands.forEach(b => {
+          const input = bg.querySelector(`input[value="${b}"]`);
+          if (input && !input.checked) {
+            input.checked = true;
+            input.dispatchEvent(new Event('change'));
+          }
+        });
+      }
+      // Visual confirmation of which preset was used last.
+      document.querySelectorAll('.preset-chip').forEach(el => el.classList.remove('is-on'));
+      const el = document.querySelector(`.preset-chip[data-preset="${key}"]`);
+      if (el) el.classList.add('is-on');
+    }
+    document.querySelectorAll('.preset-chip').forEach(btn => {
+      btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+    });
+
+    // ── Recap on step 3 ─────────────────────────────────
+    function csv(name) {
+      const el = form.querySelector(`[name="${name}"]`);
+      return (el && el.value || '').split(',').map(s => s.trim()).filter(Boolean);
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+      }[c]));
+    }
+    function renderRecap() {
+      const recap = document.getElementById('wizRecap');
+      const name = (form.querySelector('[name=name]').value || '').trim();
+      const ind  = (form.querySelector('[name=industry]').value || '').trim();
+      const tis  = csv('target_industries');
+      const tls  = csv('target_locations');
+      const ages = (form.querySelector('[name=min_company_age]').value || '').trim();
+      const bands = Array.from(form.querySelectorAll('[name=employee_bands]:checked')).map(i => i.value);
+      const excl = csv('exclusion_list');
+      const active = form.querySelector('[name=active_filing_only]').checked;
+
+      const rows = [];
+      rows.push(`<div class="recap-row"><div class="recap-label">Client</div><div class="recap-value"><strong>${escapeHtml(name)}</strong>${ind ? ' · ' + escapeHtml(ind) : ''}</div></div>`);
+      rows.push(`<div class="recap-row"><div class="recap-label">Industries</div><div class="recap-value">${tis.map(t => `<span class="chip chip-inline">${escapeHtml(t)}</span>`).join(' ')}</div></div>`);
+      rows.push(`<div class="recap-row"><div class="recap-label">Locations</div><div class="recap-value">${tls.map(t => `<span class="chip chip-inline">${escapeHtml(t)}</span>`).join(' ')}</div></div>`);
+      const filters = [];
+      if (ages) filters.push(`min age ${escapeHtml(ages)}y`);
+      if (bands.length) filters.push(`size ${bands.map(escapeHtml).join(', ')}`);
+      if (active) filters.push('active-filing only');
+      if (excl.length) filters.push(`${excl.length} excluded`);
+      rows.push(`<div class="recap-row"><div class="recap-label">Filters</div><div class="recap-value">${filters.length ? filters.join(' · ') : '<span class="recap-muted">none</span>'}</div></div>`);
+      recap.innerHTML = rows.join('');
+    }
+
+    show(1);
   })();
 </script>
 {% endblock %}
