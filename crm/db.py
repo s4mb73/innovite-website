@@ -3,6 +3,7 @@
 Uses Supabase's transaction pooler (port 6543) via DATABASE_URL.
 Raw SQL via psycopg — no ORM. All read functions return list[dict].
 """
+import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -127,6 +128,84 @@ def recent_activity(limit: int = 20) -> list[dict]:
         r['colour']   = ACTION_COLOUR.get(r['action'], 'blue')
         r['relative'] = relative_time(r['created_at'])
     return rows
+
+
+# ── Scraper observability ───────────────────────────────────────────
+# Two helpers powering the Website intel UI:
+#  - scraper_health_summary(N): aggregate of the last N attempted scrapes
+#    → fuels the Overview "Scraper health" widget so the operator sees
+#    pool degradation before it eats a campaign.
+#  - scraper_offline_now(): true when the most recent attempts all came
+#    back 'disabled' → fuels the leads-list banner. 'disabled' is set
+#    when wreq isn't importable or the proxy pool is empty, so it's a
+#    binary "the worker can't scrape at all" signal, not "this one lead
+#    was unlucky". Sticky to the most recent run to avoid flapping.
+
+def scraper_health_summary(window: int = 200) -> dict:
+    """Counts of each website_scrape_status in the last `window` leads
+    that were *attempted* (i.e. status is not null). Returns:
+      {window: int, total: int, by_status: {status: count}, ok_pct,
+       blocked_pct, no_website_pct, last_attempt_at}.
+    Empty pipeline → total=0 and the template renders an empty state."""
+    sql = """
+        with recent as (
+          select website_scrape_status as s, website_scraped_at as at
+          from crm.leads
+          where website_scrape_status is not null
+          order by coalesce(website_scraped_at, created_at) desc
+          limit %s
+        )
+        select s, count(*) as n, max(at) as last_at
+        from recent
+        group by s
+    """
+    rows = fetch_all(sql, (window,))
+    by_status: dict[str, int] = {s: 0 for s in
+        ('ok','blocked','timeout','no_website','parse_failed','disabled')}
+    total = 0
+    last_attempt_at = None
+    for r in rows:
+        s = r['s']
+        n = int(r['n'])
+        by_status[s] = by_status.get(s, 0) + n
+        total += n
+        if r['last_at'] is not None and (last_attempt_at is None
+                                         or r['last_at'] > last_attempt_at):
+            last_attempt_at = r['last_at']
+
+    def pct(n: int) -> int:
+        return round(n / total * 100) if total else 0
+
+    return {
+        'window':           window,
+        'total':            total,
+        'by_status':        by_status,
+        'ok_pct':           pct(by_status.get('ok', 0)),
+        'blocked_pct':      pct(by_status.get('blocked', 0)
+                                + by_status.get('timeout', 0)
+                                + by_status.get('parse_failed', 0)),
+        'no_website_pct':   pct(by_status.get('no_website', 0)),
+        'disabled_pct':     pct(by_status.get('disabled', 0)),
+        'last_attempt_at':  last_attempt_at,
+        'last_relative':    relative_time(last_attempt_at) if last_attempt_at else None,
+    }
+
+
+def scraper_offline_now() -> bool:
+    """True when the worker scraper is currently broken — defined as
+    'the last 5 attempted scrapes all came back disabled'. Stricter
+    than checking just the most recent so a one-off race (e.g. proxy
+    pool reload mid-fetch) doesn't trigger an alarm banner."""
+    rows = fetch_all("""
+        select website_scrape_status as s
+        from crm.leads
+        where website_scrape_status is not null
+        order by coalesce(website_scraped_at, created_at) desc
+        limit 5
+    """)
+    if len(rows) < 5:
+        return False
+    return all(r['s'] == 'disabled' for r in rows)
 
 
 # ── Display helpers ──────────────────────────────────────────────────
@@ -292,6 +371,7 @@ def get_client(client_id: int) -> dict | None:
         select id, name, industry, contact_name, contact_email,
                monthly_fee, pricing_tier, status,
                target_industries, target_locations, targeting_filters,
+               daily_pipeline_run_at, pipeline_paused,
                onboarded_at, created_at
         from crm.clients
         where id = %s
@@ -3448,6 +3528,8 @@ from datetime import timedelta
 
 import json as _json
 import os as _os
+import threading as _threading
+import time as _time
 
 SETTINGS_DEFAULTS: dict = {
     'profile': {
@@ -3660,8 +3742,6 @@ def _build_signature() -> str:
 # (env_name, friendly label, hostname/short identifier, prefix retained)
 _INTEGRATION_KEYS = [
     ('ANTHROPIC_API_KEY',       'Anthropic Claude',       'api.anthropic.com',                     'sk-ant-'),
-    ('GOOGLE_PLACES_API_KEY',   'Google Places',          'maps.googleapis.com',                   'AIza'),
-    ('APOLLO_API_KEY',          'Apollo (decision-makers)', 'api.apollo.io',                       ''),
     ('COMPANIES_HOUSE_API_KEY', 'Companies House API',    'api.company-information.service.gov.uk',''),
     ('DATABASE_URL',            'Supabase Postgres',      'pooler.supabase.co',                    ''),
     ('RESEND_API_KEY',          'Resend (transactional)', 'api.resend.com',                        're_'),
@@ -3670,37 +3750,86 @@ _INTEGRATION_KEYS = [
 
 # Keys whose absence blocks real pipeline runs. Surface these as 'missing'
 # (red) instead of 'idle' (grey) so an operator can't ship without them.
+# Google Places is no longer here — discovery now runs via the free
+# scraper (scraper/google_places_free.py), no key required.
+# Apollo also no longer here — replaced by CH officers + email pattern
+# detection (pipeline/sources/decision_maker.py), free.
 _REQUIRED_FOR_PIPELINE = {
     'ANTHROPIC_API_KEY',
-    'GOOGLE_PLACES_API_KEY',
-    'APOLLO_API_KEY',
+    'COMPANIES_HOUSE_API_KEY',
 }
 
-# Plausible mock suffixes shown when the env var isn't set (POC demo)
-_INTEGRATION_MOCKS = {
-    'ANTHROPIC_API_KEY':       '3f2a',
-    'GOOGLE_PLACES_API_KEY':   'b8d1',
-    'APOLLO_API_KEY':          'e4a7',
-    'RESEND_API_KEY':          'd29a',
-    'COMPANIES_HOUSE_API_KEY': '7c4b',
-    'SLACK_WEBHOOK_URL':       '#sammy-leads',
-    'DATABASE_URL':            'innovite.db',
-}
+# Worker env file location. Pipeline keys (Anthropic, Apollo, Google
+# Places, Companies House) live here — not in the web process's env —
+# because the worker is the one that actually calls those APIs. The
+# settings page reads both sources so the operator sees the unified
+# "is the pipeline ready?" answer rather than "what does the web
+# process happen to see?".
+_WORKER_ENV_PATH = '/etc/innovite/crm-worker.env'
+_WORKER_ENV_TTL_S = 60.0
+_worker_env_cache: tuple[float, dict[str, str]] = (0.0, {})
+_worker_env_lock = _threading.Lock()
+
+
+def _load_worker_env() -> dict[str, str]:
+    """Parse /etc/innovite/crm-worker.env for the settings panel.
+
+    Cached 60s — the file rarely changes and we don't want stat() per
+    integration row per render. Silently returns {} if the file isn't
+    readable; the web process runs as `deploy` and the file is
+    600 deploy:deploy, so unreadable means something is wrong with
+    deploy and the settings page should still render."""
+    global _worker_env_cache
+    now = _time.time()
+    cached_at, cached = _worker_env_cache
+    if now - cached_at < _WORKER_ENV_TTL_S:
+        return cached
+    with _worker_env_lock:
+        cached_at, cached = _worker_env_cache
+        if now - cached_at < _WORKER_ENV_TTL_S:
+            return cached
+        parsed: dict[str, str] = {}
+        try:
+            with open(_WORKER_ENV_PATH, 'r', encoding='utf-8') as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith('#') or '=' not in line:
+                        continue
+                    k, _, v = line.partition('=')
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k:
+                        parsed[k] = v
+        except (FileNotFoundError, PermissionError):
+            pass
+        except Exception:
+            pass  # never let this crash the settings page
+        _worker_env_cache = (now, parsed)
+        return parsed
+
+
+def _resolve_env(name: str) -> str:
+    """Resolve an env var by checking the web process's env first, then
+    the worker env file. Empty string if neither has it."""
+    return _os.environ.get(name) or _load_worker_env().get(name, '')
 
 
 def _mask_key(env_name: str, prefix: str) -> tuple[str, bool]:
-    """Return (masked_display, is_real). When the env var is set, show
-    `<prefix>•••••<last4>`; otherwise show a plausible mock with the
-    same shape so the demo doesn't render blanks."""
-    raw = _os.environ.get(env_name) or ''
+    """Return (display_value, is_real).
+
+    When the env var is set (in either web or worker env), show
+    `<prefix>•••••<last4>`. When missing, show a plain em-dash —
+    never a plausible-looking fake value. (Anti-pattern #10 in
+    CLAUDE.md: synthetic placeholder data must never present as real.)"""
+    raw = _resolve_env(env_name)
     if raw:
         last4 = raw[-4:] if len(raw) >= 4 else raw
         if env_name == 'SLACK_WEBHOOK_URL':
-            # Webhooks are URLs — show channel-like fragment
+            # Webhooks are URLs — show channel-like fragment, never the path token.
             tail = raw.rsplit('/', 1)[-1][-6:] or last4
             return f'…/{tail}', True
         if env_name == 'DATABASE_URL':
-            # Show host only, never any creds
+            # Show host only — never any creds.
             try:
                 from urllib.parse import urlparse
                 host = urlparse(raw).hostname or 'connected'
@@ -3708,12 +3837,7 @@ def _mask_key(env_name: str, prefix: str) -> tuple[str, bool]:
             except Exception:
                 return 'connected', True
         return f'{prefix}•••••{last4}', True
-    mock = _INTEGRATION_MOCKS.get(env_name, '0000')
-    if env_name == 'SLACK_WEBHOOK_URL':
-        return mock, False
-    if env_name == 'DATABASE_URL':
-        return mock, False
-    return f'{prefix}•••••{mock}', False
+    return '—', False
 
 
 def integration_keys() -> list[dict]:
@@ -3726,7 +3850,7 @@ def integration_keys() -> list[dict]:
         elif env_name in _REQUIRED_FOR_PIPELINE:
             state, detail = 'missing', 'Missing — pipeline will not run'
         else:
-            state, detail = 'idle', 'Not configured (using mock for demo)'
+            state, detail = 'idle', 'Not configured'
         out.append({
             'env_name': env_name,
             'label':    label,
@@ -3833,3 +3957,169 @@ def mailboxes_summary() -> dict:
         'total_capacity':   int(row.get('total_capacity') or 0),
         'total_sent_today': int(row.get('total_sent_today') or 0),
     }
+
+
+# ── Vidora Media ─────────────────────────────────────────────────────
+# Lead writes for Media Mode — Google Places discovery + IG snapshot +
+# Claude Vision content audit. Pipeline lives in crm/pipeline + crm/scraper
+# (instagram_snapshot, instagram_link, vidora_audit). See migration
+# 0034_vidora_bridge.sql for the schema additions (external_id,
+# vidora_data jsonb, source enum).
+
+_VIDORA_CLIENT_NAME = 'Vidora Media'
+
+
+def vidora_client_id() -> int:
+    """Resolve the Vidora Media client_id. Migration 0034 ensures the row
+    exists; we still SELECT each call rather than caching so a manual rename
+    in the dashboard doesn't strand the bridge."""
+    row = fetch_one(
+        "select id from crm.clients where name = %s",
+        (_VIDORA_CLIENT_NAME,),
+    )
+    if not row:
+        raise RuntimeError(
+            f"Vidora client ('{_VIDORA_CLIENT_NAME}') not found — apply migration 0034."
+        )
+    return int(row['id'])
+
+
+def _parse_posts_per_week(freq: str | None) -> float | None:
+    """Vidora stores posting_frequency as a string ('3.5/week', 'daily',
+    'rare'). Innovite's column is numeric. Best-effort coerce — anything
+    we can't parse stays in vidora_data."""
+    if not freq:
+        return None
+    s = str(freq).strip().lower()
+    if s in ('daily', 'every day'):
+        return 7.0
+    if 'rare' in s or 'inactive' in s or 'dead' in s:
+        return 0.0
+    # Pull the first numeric token.
+    import re
+    m = re.search(r'(\d+\.?\d*)', s)
+    return float(m.group(1)) if m else None
+
+
+def _empty_to_none(v):
+    """Vidora often emits '' for missing scalar fields. Postgres rejects
+    empty strings for date/numeric columns, so coerce '' → None before
+    insert. Pass-through for everything else."""
+    if isinstance(v, str) and v.strip() == "":
+        return None
+    return v
+
+
+def _to_int(v):
+    """Coerce to int or None. Tolerates strings, floats, '' and None."""
+    if v is None or v == "":
+        return None
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float(v):
+    """Coerce to float or None. Tolerates strings, '' and None."""
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def upsert_vidora_lead(payload: dict, pdf_path: str | None) -> int:
+    """Insert or update a lead from a Vidora pipeline result.
+
+    Idempotent on (source='vidora_instagram', external_id=<username>).
+    Returns the Innovite leads.id.
+    """
+    client_id = vidora_client_id()
+    username = (payload.get('username') or '').strip()
+    if not username:
+        raise ValueError("vidora lead missing 'username'")
+
+    competitors = payload.get('competitors') or []
+    def _comp(i: int, k: str):
+        return competitors[i].get(k) if i < len(competitors) and isinstance(competitors[i], dict) else None
+
+    row = {
+        'client_id':                  client_id,
+        'external_id':                username,
+        'source':                     'vidora_instagram',
+        'business_name':              payload.get('business_name') or username,
+        'address':                    payload.get('maps_address'),
+        'phone':                      payload.get('maps_phone'),
+        'website':                    payload.get('maps_website'),
+        'email':                      payload.get('email'),
+        'google_rating':              _to_float(payload.get('maps_rating')),
+        'google_review_count':        _to_int(payload.get('maps_review_count')),
+        'google_maps_url':            payload.get('maps_url'),
+        'instagram_handle':           username,
+        'instagram_followers':        _to_int(payload.get('followers')),
+        'instagram_engagement_rate':  _to_float(payload.get('engagement_rate')),
+        'instagram_posts_per_week':   _parse_posts_per_week(payload.get('posting_frequency')),
+        'instagram_avg_likes':        _to_int(payload.get('avg_likes')),
+        'instagram_last_post_date':   _empty_to_none(payload.get('last_post_date')),
+        'website_score':              _to_int((payload.get('website_analysis') or {}).get('score')),
+        'grade':                      _empty_to_none(payload.get('lead_grade')),
+        'overall_score':              _to_int(payload.get('overall_score')),
+        'weakness_profile':           json.dumps(payload.get('top_weaknesses') or payload.get('weaknesses') or []),
+        'competitor_1_name':          _comp(0, 'name'),
+        'competitor_1_reviews':       _to_int(_comp(0, 'review_count') or _comp(0, 'reviews')),
+        'competitor_1_score':         _to_int(_comp(0, 'score')),
+        'competitor_2_name':          _comp(1, 'name'),
+        'competitor_2_reviews':       _to_int(_comp(1, 'review_count') or _comp(1, 'reviews')),
+        'competitor_2_score':         _to_int(_comp(1, 'score')),
+        'competitor_3_name':          _comp(2, 'name'),
+        'competitor_3_reviews':       _to_int(_comp(2, 'review_count') or _comp(2, 'reviews')),
+        'competitor_3_score':         _to_int(_comp(2, 'score')),
+        'email_subject':              payload.get('email_subject'),
+        'email_body_day1':            payload.get('email_body'),
+        'pdf_path':                   pdf_path,
+        'vidora_data':                json.dumps({
+            'scores':                       payload.get('scores'),
+            'sales_notes':                  payload.get('sales_notes'),
+            'personalised_pitch':           payload.get('personalised_pitch'),
+            'business_intent_score':        payload.get('business_intent_score'),
+            'business_type':                payload.get('business_type'),
+            'location_match':               payload.get('location_match'),
+            'location_signals':             payload.get('location_signals'),
+            'selling_signals':              payload.get('selling_signals'),
+            'priority_flag':                payload.get('priority_flag'),
+            'upgrade_potential':            payload.get('upgrade_potential'),
+            'estimated_audience_size':      payload.get('estimated_audience_size'),
+            'competitor_avg_score':         payload.get('competitor_avg_score'),
+            'competitor_benchmark':         payload.get('competitor_benchmark'),
+            'has_link_in_bio':              payload.get('has_link_in_bio'),
+            'bio_text':                     payload.get('bio_text'),
+            'bio_website':                  payload.get('bio_website'),
+            'avg_comments':                 payload.get('avg_comments'),
+            'post_count':                   payload.get('post_count'),
+            'story_highlight_categories':   payload.get('story_highlight_categories'),
+            'trend':                        payload.get('trend'),
+            'analysed_at':                  payload.get('analysed_at'),
+        }),
+        'mode':                       'media',
+        'audit_version':              payload.get('audit_version'),
+    }
+
+    cols = list(row.keys())
+    placeholders = ','.join(['%s'] * len(cols))
+    # Update everything except client_id (immutable) and external_id (the key).
+    update_cols = [c for c in cols if c not in ('client_id', 'external_id', 'source')]
+    update_clause = ','.join(f"{c} = excluded.{c}" for c in update_cols)
+    sql = (
+        f"insert into crm.leads ({','.join(cols)}) values ({placeholders}) "
+        f"on conflict (source, external_id) where external_id is not null "
+        f"do update set {update_clause} "
+        f"returning id"
+    )
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, [row[c] for c in cols])
+            lead_id = cur.fetchone()[0]
+        conn.commit()
+    return int(lead_id)

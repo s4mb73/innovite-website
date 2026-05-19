@@ -37,6 +37,7 @@
         <span class="sb-badge">{{ approvals_pending_count }}</span>
       {% endif %}
     </a>
+    <a class="sb-item {% if active=='search'   %}is-active{% endif %}" href="{{ url_for('search_page') }}">Search</a>
     <a class="sb-item {% if active=='leads'    %}is-active{% endif %}" href="{{ url_for('leads') }}">Leads</a>
     <a class="sb-item {% if active=='clients'  %}is-active{% endif %}" href="{{ url_for('clients') }}">Clients</a>
     <a class="sb-item {% if active=='reports'  %}is-active{% endif %}" href="{{ url_for('reports') }}">Reports</a>

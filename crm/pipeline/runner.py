@@ -44,8 +44,14 @@ from psycopg.types.json import Jsonb
 # so 'pipeline' and 'db' resolve from sys.path directly.
 import db
 from pipeline import scoring, drafter
-from pipeline.sources import google_places, companies_house, apollo
+from pipeline.sources import google_places, companies_house, decision_maker
+from scraper import dns_signals
 from scraper import enricher as website_scraper
+from scraper import gazette as gazette_scraper
+from scraper import google_places_free
+from scraper import jobs as jobs_scraper
+from scraper import linkedin as linkedin_scraper
+from scraper import website_discovery
 
 logger = logging.getLogger("crm.pipeline.runner")
 
@@ -131,6 +137,170 @@ def _is_excluded(business: dict, exclusions: set[str]) -> bool:
     return False
 
 
+def _stage1_filter_reason(business: dict) -> str | None:
+    """Apply the Stage-1 (Companies House) qualification filter.
+    Returns a short reason if the lead should be dropped before any
+    further enrichment runs, or None to continue through Stages 2-6.
+
+    Conservative for now — only drops definitively-dead companies.
+    Status values that warrant staying in the pipeline:
+      - 'active'                — normal
+      - 'liquidation' / 'administration' / 'receivership'
+        — distressed but potentially gold for turnaround / insolvency
+          specialist clients; Gazette stage will flag them louder.
+      - None (no CH match)
+        — could be a sole trader; existing PECR logic skips drafting
+          but keeps the lead.
+
+    Only an explicit 'dissolved' status means there's no business to
+    sell to and no decision-maker to email. Drop those before
+    spending Apollo / LinkedIn / Reed / Gazette quota on them."""
+    status = (business.get("companies_house_status") or "").strip().lower()
+    if status == "dissolved":
+        return "dissolved at Companies House"
+    return None
+
+
+# ── Enrichment chain (shared by discovery + assignment paths) ──────
+# Extracted from the run() inner loop so a single lead can be
+# (re-)enriched without needing a full discovery pass. Each enricher
+# is independently try/except'd — a failure on one source attaches
+# to biz['source_errors'] and the chain continues.
+
+def _enrich_chain(biz: dict) -> dict:
+    """Run every enrichment source in the documented Stage 1-6 order.
+    Returns the same biz dict mutated in-place (also returned for
+    chaining ergonomics). Never raises — per-source failures are
+    captured in biz['source_errors'].
+    """
+    # Stage 1 — Companies House (qualification + identity)
+    try:
+        biz = companies_house.enrich(biz)
+    except Exception as e:
+        logger.exception("CH enrich failed")
+        biz.setdefault("source_errors", {})["companies_house"] = str(e)
+
+    # Stage 2a — Website discovery from the CH name (no-op if website set)
+    try:
+        biz = website_discovery.enrich(biz)
+    except Exception as e:
+        logger.exception("Website discovery failed")
+        biz.setdefault("source_errors", {})["website_discovery"] = str(e)
+
+    # Stage 2b — DNS signals (email provider, hosting, SPF/DMARC)
+    try:
+        biz = dns_signals.enrich(biz)
+    except Exception as e:
+        logger.exception("DNS signals enrich failed")
+        biz.setdefault("source_errors", {})["dns_signals"] = str(e)
+
+    # Stage 3a — Free Google Maps rating backfill (no-op if rating set)
+    try:
+        biz = google_places_free.enrich(biz)
+    except Exception as e:
+        logger.exception("Free Places enrich failed")
+        biz.setdefault("source_errors", {})["google_places_free"] = str(e)
+
+    # Stage 3b — Decision-maker: CH officers + email pattern detection.
+    # Replaces the old Apollo call. Free, no API key, runs against the
+    # officer list CH already attached to biz earlier in the chain.
+    try:
+        biz = decision_maker.enrich(biz)
+    except Exception as e:
+        logger.exception("decision_maker enrich failed")
+        biz.setdefault("source_errors", {})["decision_maker"] = str(e)
+
+    # Stage 4 — LinkedIn profile parse (skipped silently without linkedin_url)
+    try:
+        biz = linkedin_scraper.enrich(biz)
+    except Exception as e:
+        logger.exception("LinkedIn enrich failed")
+        biz.setdefault("source_errors", {})["linkedin"] = str(e)
+
+    # Stage 4b — Website scrape + Haiku extraction
+    try:
+        biz = website_scraper.enrich(biz)
+    except Exception as e:
+        logger.exception("Website scrape enrich failed")
+        biz.setdefault("source_errors", {})["website_scraper"] = str(e)
+
+    # Stage 5 — Reed open-jobs signal
+    try:
+        biz = jobs_scraper.enrich(biz)
+    except Exception as e:
+        logger.exception("Jobs enrich failed")
+        biz.setdefault("source_errors", {})["jobs"] = str(e)
+
+    # Stage 6 — Gazette distress flag
+    try:
+        biz = gazette_scraper.enrich(biz)
+    except Exception as e:
+        logger.exception("Gazette enrich failed")
+        biz.setdefault("source_errors", {})["gazette"] = str(e)
+
+    return biz
+
+
+def _score_with_errors(biz: dict) -> dict:
+    """Grade + tack source_errors onto the weakness_profile for the
+    operator-facing 'why this score' panel."""
+    score = scoring.grade(biz)
+    src_errors = biz.get("source_errors")
+    if src_errors:
+        score["weakness_profile"]["source_errors"] = dict(src_errors)
+    return score
+
+
+import re as _re
+_UK_POSTCODE_RE = _re.compile(
+    r"\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b",
+    _re.IGNORECASE,
+)
+
+
+def _lead_row_to_biz(row: dict) -> dict:
+    """Convert a DB lead row into the biz-dict shape the enrichers
+    expect. The lead row uses the same column names as the biz dict
+    for most fields, so this is mostly a copy with a couple of
+    aliases (decision_maker_email is stored as 'email' in some places).
+
+    Postcode is not its own column on crm.leads — we regex it out of
+    the formatted address string so CH fuzzy matching has the
+    disambiguator it needs.
+    """
+    biz: dict = {}
+    for k in (
+        "business_name", "address", "city", "phone", "website",
+        "google_rating", "google_review_count", "google_maps_url",
+        "companies_house_number", "companies_house_sic_code",
+        "companies_house_revenue_band", "companies_house_year_end_month",
+        "companies_house_months_to_year_end", "companies_house_company_age_days",
+        "companies_house_recent_director_change",
+        "companies_house_director_appointed_days_ago",
+        "companies_house_accounts_overdue", "companies_house_confirmation_overdue",
+        "companies_house_status", "companies_house_match_source",
+        "decision_maker_name", "decision_maker_title",
+        "linkedin_url", "linkedin_company_url",
+        "email_verification_status", "email_verification_confidence",
+        "email_verification_source", "email_verification_checked_at",
+    ):
+        v = row.get(k)
+        if v is not None:
+            biz[k] = v
+    if row.get("email"):
+        biz["decision_maker_email"] = row["email"]
+
+    # Postcode extraction from the formatted address. Without it, the
+    # CH fuzzy match short-circuits with "missing name or postcode"
+    # and the whole enrichment chain downstream stops.
+    addr = (row.get("address") or "").strip()
+    if addr:
+        m = _UK_POSTCODE_RE.search(addr)
+        if m:
+            biz["postcode"] = m.group(1).upper().strip()
+    return biz
+
+
 def _calculate_pain_score(business: dict, score: dict) -> int:
     """Derived 0-100 pain rollup so the Leads page can sort without parsing
     JSONB. Capped at 100. Booleans wrapped in int() so the arithmetic is
@@ -168,9 +338,24 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
             companies_house_recent_director_change,
             companies_house_director_appointed_days_ago,
             companies_house_accounts_overdue, companies_house_confirmation_overdue,
+            companies_house_status, companies_house_match_source,
             decision_maker_name, decision_maker_title, email, linkedin_url,
+            linkedin_company_url,
             grade, overall_score, pain_score, hook_type, weakness_profile,
             website_signals, website_scraped_at, website_scrape_status,
+            gazette_status, gazette_notice_count,
+            gazette_last_notice_date, gazette_last_notice_url,
+            jobs_signal, jobs_open_count,
+            jobs_last_checked_at, jobs_source_url,
+            linkedin_status, linkedin_current_title,
+            linkedin_headline, linkedin_last_checked_at,
+            linkedin_current_company, linkedin_location,
+            linkedin_previous_companies, linkedin_follower_count,
+            linkedin_profile_image_url,
+            linkedin_recent_post_at, linkedin_recent_post_title,
+            email_provider, website_host, dmarc_present, spf_present,
+            email_verification_status, email_verification_confidence,
+            email_verification_source, email_verification_checked_at,
             status, source
         )
         values (%s, %s, %s, %s, %s, %s,
@@ -182,9 +367,20 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
                 %s,
                 %s,
                 %s, %s,
+                %s, %s,
                 %s, %s, %s, %s,
+                %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s,
+                %s, %s,
+                %s,
+                %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s, %s,
                 'new', 'outbound')
         returning id
     """
@@ -212,10 +408,13 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         business.get("companies_house_director_appointed_days_ago") or None,
         business.get("companies_house_accounts_overdue") or None,
         business.get("companies_house_confirmation_overdue") or None,
+        business.get("companies_house_status") or None,
+        business.get("companies_house_match_source") or None,
         business.get("decision_maker_name") or None,
         business.get("decision_maker_title") or None,
         business.get("decision_maker_email") or None,
         business.get("linkedin_url") or None,
+        business.get("linkedin_company_url") or None,
         score["grade"],
         score["overall_score"],
         pain,
@@ -224,8 +423,241 @@ def _insert_lead(client_id: int, business: dict, score: dict) -> int | None:
         Jsonb(web_signals) if web_signals else None,
         business.get("website_scraped_at") or None,
         business.get("website_scrape_status") or None,
+        business.get("gazette_status") or None,
+        business.get("gazette_notice_count") if business.get("gazette_notice_count") is not None else None,
+        business.get("gazette_last_notice_date") or None,
+        business.get("gazette_last_notice_url") or None,
+        business.get("jobs_signal") or None,
+        business.get("jobs_open_count") if business.get("jobs_open_count") is not None else None,
+        business.get("jobs_last_checked_at") or None,
+        business.get("jobs_source_url") or None,
+        business.get("linkedin_status") or None,
+        business.get("linkedin_current_title") or None,
+        business.get("linkedin_headline") or None,
+        business.get("linkedin_last_checked_at") or None,
+        business.get("linkedin_current_company") or None,
+        business.get("linkedin_location") or None,
+        business.get("linkedin_previous_companies") or None,
+        business.get("linkedin_follower_count") if business.get("linkedin_follower_count") is not None else None,
+        business.get("linkedin_profile_image_url") or None,
+        business.get("linkedin_recent_post_at") or None,
+        business.get("linkedin_recent_post_title") or None,
+        business.get("email_provider") or None,
+        business.get("website_host") or None,
+        business.get("dmarc_present") if business.get("dmarc_present") is not None else None,
+        business.get("spf_present") if business.get("spf_present") is not None else None,
+        business.get("email_verification_status") or None,
+        business.get("email_verification_confidence") or None,
+        business.get("email_verification_source") or None,
+        business.get("email_verification_checked_at") or None,
     ))
     return row["id"] if row else None
+
+
+def _update_lead(lead_id: int, business: dict, score: dict) -> None:
+    """Write enrichment + scoring fields back to an existing lead row.
+    Mirror of _insert_lead's column list but as UPDATE. Only used by
+    the enrich_existing_lead path — discovery still uses _insert_lead.
+    """
+    sql = """
+        update crm.leads set
+            address                                    = coalesce(%s, address),
+            city                                       = coalesce(%s, city),
+            phone                                      = coalesce(%s, phone),
+            website                                    = coalesce(%s, website),
+            google_rating                              = coalesce(%s, google_rating),
+            google_review_count                        = coalesce(%s, google_review_count),
+            google_maps_url                            = coalesce(%s, google_maps_url),
+            companies_house_number                     = coalesce(%s, companies_house_number),
+            companies_house_sic_code                   = coalesce(%s, companies_house_sic_code),
+            companies_house_incorporated               = coalesce(%s, companies_house_incorporated),
+            companies_house_revenue_band               = coalesce(%s, companies_house_revenue_band),
+            companies_house_year_end_month             = coalesce(%s, companies_house_year_end_month),
+            companies_house_months_to_year_end         = coalesce(%s, companies_house_months_to_year_end),
+            companies_house_company_age_days           = coalesce(%s, companies_house_company_age_days),
+            companies_house_recent_director_change     = coalesce(%s, companies_house_recent_director_change),
+            companies_house_director_appointed_days_ago = coalesce(%s, companies_house_director_appointed_days_ago),
+            companies_house_accounts_overdue           = coalesce(%s, companies_house_accounts_overdue),
+            companies_house_confirmation_overdue       = coalesce(%s, companies_house_confirmation_overdue),
+            companies_house_status                     = coalesce(%s, companies_house_status),
+            companies_house_match_source               = coalesce(%s, companies_house_match_source),
+            decision_maker_name                        = coalesce(%s, decision_maker_name),
+            decision_maker_title                       = coalesce(%s, decision_maker_title),
+            email                                      = coalesce(%s, email),
+            linkedin_url                               = coalesce(%s, linkedin_url),
+            linkedin_company_url                       = coalesce(%s, linkedin_company_url),
+            grade                                      = %s,
+            overall_score                              = %s,
+            pain_score                                 = %s,
+            hook_type                                  = %s,
+            weakness_profile                           = %s,
+            website_signals                            = coalesce(%s, website_signals),
+            website_scraped_at                         = coalesce(%s, website_scraped_at),
+            website_scrape_status                      = coalesce(%s, website_scrape_status),
+            gazette_status                             = coalesce(%s, gazette_status),
+            gazette_notice_count                       = coalesce(%s, gazette_notice_count),
+            gazette_last_notice_date                   = coalesce(%s, gazette_last_notice_date),
+            gazette_last_notice_url                    = coalesce(%s, gazette_last_notice_url),
+            jobs_signal                                = coalesce(%s, jobs_signal),
+            jobs_open_count                            = coalesce(%s, jobs_open_count),
+            jobs_last_checked_at                       = coalesce(%s, jobs_last_checked_at),
+            jobs_source_url                            = coalesce(%s, jobs_source_url),
+            linkedin_status                            = coalesce(%s, linkedin_status),
+            linkedin_current_title                     = coalesce(%s, linkedin_current_title),
+            linkedin_headline                          = coalesce(%s, linkedin_headline),
+            linkedin_last_checked_at                   = coalesce(%s, linkedin_last_checked_at),
+            linkedin_current_company                   = coalesce(%s, linkedin_current_company),
+            linkedin_location                          = coalesce(%s, linkedin_location),
+            linkedin_previous_companies                = coalesce(%s, linkedin_previous_companies),
+            linkedin_follower_count                    = coalesce(%s, linkedin_follower_count),
+            linkedin_profile_image_url                 = coalesce(%s, linkedin_profile_image_url),
+            linkedin_recent_post_at                    = coalesce(%s, linkedin_recent_post_at),
+            linkedin_recent_post_title                 = coalesce(%s, linkedin_recent_post_title),
+            email_provider                             = coalesce(%s, email_provider),
+            website_host                               = coalesce(%s, website_host),
+            dmarc_present                              = coalesce(%s, dmarc_present),
+            spf_present                                = coalesce(%s, spf_present),
+            email_verification_status                  = coalesce(%s, email_verification_status),
+            email_verification_confidence              = coalesce(%s, email_verification_confidence),
+            email_verification_source                  = coalesce(%s, email_verification_source),
+            email_verification_checked_at              = coalesce(%s, email_verification_checked_at)
+        where id = %s
+    """
+    incorp = business.get("companies_house_incorporated") or None
+    pain   = _calculate_pain_score(business, score)
+    web_signals = business.get("website_signals")
+    db.execute(sql, (
+        business.get("address", "")[:1024] if business.get("address") else None,
+        business.get("city") or None,
+        business.get("phone") or None,
+        business.get("website") or None,
+        business.get("google_rating") or None,
+        business.get("google_review_count") or None,
+        business.get("google_maps_url") or None,
+        business.get("companies_house_number") or None,
+        business.get("companies_house_sic_code") or None,
+        incorp if incorp else None,
+        business.get("companies_house_revenue_band") or None,
+        business.get("companies_house_year_end_month") or None,
+        business.get("companies_house_months_to_year_end") if business.get("companies_house_months_to_year_end") is not None else None,
+        business.get("companies_house_company_age_days") or None,
+        business.get("companies_house_recent_director_change") or None,
+        business.get("companies_house_director_appointed_days_ago") or None,
+        business.get("companies_house_accounts_overdue") or None,
+        business.get("companies_house_confirmation_overdue") or None,
+        business.get("companies_house_status") or None,
+        business.get("companies_house_match_source") or None,
+        business.get("decision_maker_name") or None,
+        business.get("decision_maker_title") or None,
+        business.get("decision_maker_email") or None,
+        business.get("linkedin_url") or None,
+        business.get("linkedin_company_url") or None,
+        score["grade"],
+        score["overall_score"],
+        pain,
+        score["hook_type"],
+        Jsonb(score["weakness_profile"]),
+        Jsonb(web_signals) if web_signals else None,
+        business.get("website_scraped_at") or None,
+        business.get("website_scrape_status") or None,
+        business.get("gazette_status") or None,
+        business.get("gazette_notice_count") if business.get("gazette_notice_count") is not None else None,
+        business.get("gazette_last_notice_date") or None,
+        business.get("gazette_last_notice_url") or None,
+        business.get("jobs_signal") or None,
+        business.get("jobs_open_count") if business.get("jobs_open_count") is not None else None,
+        business.get("jobs_last_checked_at") or None,
+        business.get("jobs_source_url") or None,
+        business.get("linkedin_status") or None,
+        business.get("linkedin_current_title") or None,
+        business.get("linkedin_headline") or None,
+        business.get("linkedin_last_checked_at") or None,
+        business.get("linkedin_current_company") or None,
+        business.get("linkedin_location") or None,
+        business.get("linkedin_previous_companies") or None,
+        business.get("linkedin_follower_count") if business.get("linkedin_follower_count") is not None else None,
+        business.get("linkedin_profile_image_url") or None,
+        business.get("linkedin_recent_post_at") or None,
+        business.get("linkedin_recent_post_title") or None,
+        business.get("email_provider") or None,
+        business.get("website_host") or None,
+        business.get("dmarc_present") if business.get("dmarc_present") is not None else None,
+        business.get("spf_present") if business.get("spf_present") is not None else None,
+        business.get("email_verification_status") or None,
+        business.get("email_verification_confidence") or None,
+        business.get("email_verification_source") or None,
+        business.get("email_verification_checked_at") or None,
+        lead_id,
+    ))
+
+
+def enrich_existing_lead(lead_id: int) -> dict:
+    """Run the full enrichment chain against a lead already in crm.leads.
+
+    Used by the Search → Assign flow: discovery inserts a lightweight
+    row with only name + address + website + rating; this function
+    backfills CH + DNS + Apollo + LinkedIn + website scrape + jobs +
+    Gazette, scores it, and drafts a Day-1 email if the result grades
+    A/B/C and the lead is corporate.
+
+    Returns a small summary dict: {lead_id, grade, score, drafted}.
+    """
+    row = db.fetch_one(
+        """select id, client_id, business_name, address, city, phone, website,
+                  google_rating, google_review_count, google_maps_url,
+                  companies_house_number, companies_house_sic_code,
+                  companies_house_revenue_band, companies_house_year_end_month,
+                  companies_house_months_to_year_end, companies_house_company_age_days,
+                  companies_house_recent_director_change,
+                  companies_house_director_appointed_days_ago,
+                  companies_house_accounts_overdue, companies_house_confirmation_overdue,
+                  companies_house_status, companies_house_match_source,
+                  decision_maker_name, decision_maker_title, email,
+                  linkedin_url, linkedin_company_url,
+                  email_verification_status, email_verification_confidence,
+                  email_verification_source, email_verification_checked_at
+           from crm.leads where id = %s""",
+        (lead_id,),
+    )
+    if not row:
+        raise ValueError(f"lead {lead_id} not found")
+
+    client_id = row["client_id"]
+    biz = _lead_row_to_biz(row)
+
+    biz = _enrich_chain(biz)
+    score = _score_with_errors(biz)
+    _update_lead(lead_id, biz, score)
+
+    drafted = False
+    is_corporate = bool(biz.get("companies_house_number"))
+    # Verification gate. If the verifier has positively determined the
+    # email is dead (no_mx / invalid / disposable / syntax_invalid),
+    # don't waste a draft we'd never send. Lead stays scored + queued
+    # for manual research. Confidence='low' (catch-all, Reoon errored)
+    # still drafts — those are worth a manual sender's judgement.
+    email_dead = (biz.get("email_verification_confidence") == "none")
+    if score["grade"] in ("A", "B", "C") and is_corporate and not email_dead:
+        try:
+            campaign_id = db.find_or_create_campaign(client_id, score["hook_type"])
+            template_hint = db.best_template(campaign_id, step=1)
+            draft = drafter.draft_day1(biz, score["hook_type"], template_hint=template_hint)
+            _queue_day1_email(
+                lead_id, client_id, biz, draft,
+                campaign_id=campaign_id,
+                template_id=(template_hint or {}).get("id"),
+            )
+            drafted = True
+        except Exception:
+            logger.exception("Draft/queue failed for lead %s", lead_id)
+
+    return {
+        "lead_id":      lead_id,
+        "grade":        score["grade"],
+        "score":        score["overall_score"],
+        "drafted":      drafted,
+        "skipped_dead_email": email_dead,
+    }
 
 
 def _queue_day1_email(lead_id: int, client_id: int, business: dict, draft: dict,
@@ -267,6 +699,92 @@ def _queue_day1_email(lead_id: int, client_id: int, business: dict, draft: dict,
         )
 
 
+def _run_enrich_assigned(run_id: int, run_row: dict) -> dict:
+    """Handle a pipeline_runs row with mode='enrich_assigned'. Walks
+    progress.lead_ids, runs enrich_existing_lead per lead, updates
+    per-lead progress so the UI can poll a live counter.
+    """
+    progress = run_row.get("progress") or {}
+    if isinstance(progress, str):
+        try:
+            progress = json.loads(progress)
+        except Exception:
+            progress = {}
+    lead_ids = list(progress.get("lead_ids") or [])
+    total = len(lead_ids)
+
+    counts = {"added": 0, "skipped": 0, "errored": 0}
+    progress.update({
+        "phase": "enriching",
+        "total": total,
+        "done": 0,
+        "drafted": 0,
+        "per_lead": [],
+    })
+    _set_status(run_id, progress=progress)
+
+    for i, lid in enumerate(lead_ids, 1):
+        try:
+            result = enrich_existing_lead(int(lid))
+            progress["done"] = i
+            if result.get("drafted"):
+                progress["drafted"] = progress.get("drafted", 0) + 1
+            counts["added"] += 1
+            progress["per_lead"].append({
+                "lead_id": result["lead_id"],
+                "grade":   result["grade"],
+                "score":   result["score"],
+                "drafted": result["drafted"],
+            })
+        except Exception as e:
+            logger.exception("enrich lead %s failed", lid)
+            counts["errored"] += 1
+            progress.setdefault("errors", []).append(f"lead {lid}: {str(e)[:120]}")
+        # Heartbeat after every lead — small batch, every step matters.
+        _set_status(
+            run_id,
+            leads_added=counts["added"],
+            leads_errored=counts["errored"],
+            progress=progress,
+        )
+
+    finished = datetime.now(timezone.utc)
+    final_status = "partial" if counts["errored"] else "succeeded"
+    if counts["added"] == 0 and not counts["errored"]:
+        final_status = "succeeded"  # empty list isn't an error
+    _set_status(
+        run_id,
+        status=final_status,
+        leads_added=counts["added"],
+        leads_skipped=counts["skipped"],
+        leads_errored=counts["errored"],
+        progress=progress,
+        finished_at=finished,
+    )
+
+    # Activity-log entry mirrors the discovery-path one so the
+    # operator's run history shows enrichment runs alongside discoveries.
+    client_id = run_row.get("client_id")
+    if client_id:
+        try:
+            _log_activity(client_id, "pipeline_run", {
+                "run_id": run_id,
+                "status": final_status,
+                "mode":   "enrich_assigned",
+                "leads_added": counts["added"],
+                "leads_errored": counts["errored"],
+                "drafted": progress.get("drafted", 0),
+            })
+        except Exception:
+            logger.exception("activity_log write failed for run %s", run_id)
+
+    return {
+        "leads_added":   counts["added"],
+        "leads_skipped": counts["skipped"],
+        "leads_errored": counts["errored"],
+    }
+
+
 # ── Main entry point ─────────────────────────────────────────────────
 def run(run_id: int) -> dict:
     """Process one pipeline_runs row. Returns the final counts dict.
@@ -275,11 +793,29 @@ def run(run_id: int) -> dict:
     onto the lead and the run continues.
     """
     started = datetime.now(timezone.utc)
-    _set_status(run_id, status="running", started_at=started, progress={"phase": "loading_client"})
 
-    run_row = db.fetch_one("select client_id from crm.pipeline_runs where id = %s", (run_id,))
+    # Read mode + progress BEFORE any _set_status call — otherwise the
+    # default "loading_client" progress overwrites the lead_ids that
+    # the Search → Assign API endpoint stashed in progress for the
+    # enrich_assigned path.
+    run_row = db.fetch_one(
+        "select client_id, mode, progress from crm.pipeline_runs where id = %s",
+        (run_id,),
+    )
     if not run_row:
         raise ValueError(f"pipeline run {run_id} not found")
+
+    # ── enrich_assigned: enrich a specific list of existing leads ──
+    # The Search → Assign UI inserts lightweight rows then enqueues a
+    # run with this mode and lead_ids in progress JSONB. No discovery,
+    # no targeting required — we just walk the list.
+    if run_row.get("mode") == "enrich_assigned":
+        _set_status(run_id, status="running", started_at=started)
+        return _run_enrich_assigned(run_id, run_row)
+
+    # Discovery path — safe to overwrite progress now.
+    _set_status(run_id, status="running", started_at=started,
+                progress={"phase": "loading_client"})
 
     client_id = run_row["client_id"]
     client = _load_client(client_id)
@@ -352,37 +888,31 @@ def run(run_id: int) -> dict:
                     counts["skipped"] += 1
                     continue
 
-                # Enrich. Each enricher catches its own errors.
+                # Stage 1 runs as part of _enrich_chain, but we need
+                # the CH result BEFORE the rest of the chain so we can
+                # drop dissolved companies and save the downstream
+                # proxy/scraper budget. So we call CH directly first,
+                # apply the stage-1 filter, then run the remaining chain.
                 try:
                     biz = companies_house.enrich(biz)
                 except Exception as e:
                     logger.exception("CH enrich failed")
                     biz.setdefault("source_errors", {})["companies_house"] = str(e)
 
-                try:
-                    biz = apollo.enrich(biz)
-                except Exception as e:
-                    logger.exception("Apollo enrich failed")
-                    biz.setdefault("source_errors", {})["apollo"] = str(e)
+                filter_reason = _stage1_filter_reason(biz)
+                if filter_reason:
+                    counts.setdefault("filtered_stage1", 0)
+                    counts["filtered_stage1"] += 1
+                    logger.info("stage1 filter dropped %r — %s",
+                                biz.get("business_name", "")[:60], filter_reason)
+                    continue
 
-                # Website scraping — fourth enrichment source. Adds the
-                # "what this business actually does" context to the
-                # business dict via wreq + UK ISP proxies + Haiku
-                # extraction. Skipped gracefully if scraper is disabled.
-                try:
-                    biz = website_scraper.enrich(biz)
-                except Exception as e:
-                    logger.exception("Website scrape enrich failed")
-                    biz.setdefault("source_errors", {})["website_scraper"] = str(e)
-
-                # Score.
-                score = scoring.grade(biz)
-
-                # Preserve per-source error trail on the lead so the operator
-                # can see why a particular enrichment was skipped (US-046).
-                src_errors = biz.get("source_errors")
-                if src_errors:
-                    score["weakness_profile"]["source_errors"] = dict(src_errors)
+                # CH already ran; _enrich_chain is idempotent thanks to
+                # per-enricher skip-if-set guards, so re-calling it is
+                # safe and the duplication-vs-deduplication trade-off
+                # comes out cleaner this way (one chain definition).
+                biz = _enrich_chain(biz)
+                score = _score_with_errors(biz)
 
                 # Persist lead.
                 try:
@@ -414,8 +944,13 @@ def run(run_id: int) -> dict:
                 is_corporate = bool(biz.get("companies_house_number"))
 
                 # Draft Day-1 only for grades worth contacting AND
-                # verified-corporate subscribers.
-                if score["grade"] in ("A", "B", "C") and is_corporate:
+                # verified-corporate subscribers AND with a deliverable
+                # email. Verifier-confidence 'none' covers no_mx /
+                # invalid / disposable / syntax_invalid — drafts to
+                # these would bounce, so we save the Anthropic spend
+                # and surface the skip in run progress for the operator.
+                email_dead = (biz.get("email_verification_confidence") == "none")
+                if score["grade"] in ("A", "B", "C") and is_corporate and not email_dead:
                     try:
                         # Resolve the campaign first — every email is
                         # owned by exactly one campaign for (client,
@@ -443,6 +978,10 @@ def run(run_id: int) -> dict:
                     # Audit the compliance-gated skip — surfaces in the
                     # run progress for the operator.
                     progress["compliance_gated"] = progress.get("compliance_gated", 0) + 1
+                elif score["grade"] in ("A", "B", "C") and email_dead:
+                    # Audit dead-email skip separately from compliance —
+                    # operator may want to research these manually.
+                    progress["email_dead_skipped"] = progress.get("email_dead_skipped", 0) + 1
 
                 counts["added"] += 1
 

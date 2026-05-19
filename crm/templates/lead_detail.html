@@ -81,21 +81,78 @@
 <div class="lead-grid">
   {# Left column: Business + Decision-maker + Google + Companies House #}
   <div class="lead-col">
+    {# Verification badge next to the email. The verifier two-stages
+       a free local pre-check + a Reoon paid call, so the four
+       confidence bands collapse to a single operator-readable pill.
+       Suppress entirely when we never ran the verifier (legacy leads). #}
+    {% set vpill = {
+        'high':   ('green', 'Verified ✓'),
+        'medium': ('amber', 'Catch-all ⚠' if lead.email_verification_status == 'catch_all' else 'Likely ✓'),
+        'low':    ('amber', 'Unverified'),
+        'none':   ('red',   'Invalid'),
+    }.get(lead.email_verification_confidence) %}
     <div class="card">
       <div class="card-title">Business</div>
       <ul class="kv">
         <li><span class="kv-icon">📞</span> {{ lead.phone or '—' }}</li>
-        <li><span class="kv-icon">✉</span>  {% if lead.email %}<a href="mailto:{{ lead.email }}">{{ lead.email }}</a>{% else %}—{% endif %}</li>
+        <li>
+          <span class="kv-icon">✉</span>
+          {% if lead.email %}<a href="mailto:{{ lead.email }}">{{ lead.email }}</a>{% else %}—{% endif %}
+          {% if vpill %}<span class="pill pill-{{ vpill[0] }} pill-sm">{{ vpill[1] }}</span>{% endif %}
+        </li>
         <li><span class="kv-icon">🌐</span> {% if lead.website %}<a href="{{ lead.website if '://' in lead.website else 'https://' ~ lead.website }}" target="_blank" rel="noopener">{{ lead.website }}</a>{% else %}—{% endif %}</li>
         <li><span class="kv-icon">📍</span> {% if lead.address %}{{ lead.address }}{% else %}—{% endif %}{% if lead.google_maps_url %} · <a href="{{ lead.google_maps_url }}" target="_blank" rel="noopener">Maps ↗</a>{% endif %}</li>
       </ul>
     </div>
 
+    {# Decision-maker — Apollo's name + title, refreshed by LinkedIn
+       when we have a /in/<slug> URL. LinkedIn's current_title is
+       preferred over Apollo's because Apollo's data ages — people
+       change jobs and Apollo lags weeks to months. LinkedIn status
+       pill is shown only when we actually attempted a fetch (no_url
+       is the silent common case). #}
+    {% set li_pill = {
+        'verified':         ('green', 'LinkedIn verified'),
+        'verified_company': ('green', 'LinkedIn (company)'),
+        'blocked':          ('amber', 'LinkedIn blocked'),
+        'not_found':        ('grey',  'LinkedIn not found'),
+    }.get(lead.linkedin_status) %}
+    {% set effective_title = lead.linkedin_current_title or lead.decision_maker_title %}
     <div class="card">
-      <div class="card-title">Decision-maker</div>
+      <div class="card-head">
+        <div class="card-title">Decision-maker</div>
+        {% if li_pill %}<span class="pill pill-{{ li_pill[0] }}">{{ li_pill[1] }}</span>{% endif %}
+      </div>
       {% if lead.decision_maker_name %}
         <div class="dm-name">{{ lead.decision_maker_name }}</div>
-        <div class="dm-title">{{ lead.decision_maker_title or '—' }}</div>
+        <div class="dm-title">
+          {{ effective_title or '—' }}
+          {% if lead.linkedin_current_company %} · {{ lead.linkedin_current_company }}{% endif %}
+        </div>
+        {% if lead.linkedin_location or lead.linkedin_follower_count %}
+          <div class="dm-meta">
+            {% if lead.linkedin_location %}<span>{{ lead.linkedin_location }}</span>{% endif %}
+            {% if lead.linkedin_location and lead.linkedin_follower_count %}<span class="dm-sep">·</span>{% endif %}
+            {% if lead.linkedin_follower_count %}<span>{{ '{:,}'.format(lead.linkedin_follower_count) }} followers</span>{% endif %}
+          </div>
+        {% endif %}
+        {% if lead.linkedin_headline and lead.linkedin_headline != effective_title %}
+          <blockquote class="intel-summary">{{ lead.linkedin_headline }}</blockquote>
+        {% endif %}
+        {% if lead.linkedin_recent_post_title %}
+          <div class="intel-block">
+            <div class="intel-label">Latest post · {{ lead.linkedin_recent_post_at|relative_time if lead.linkedin_recent_post_at else 'recent' }}</div>
+            <div class="intel-post">"{{ lead.linkedin_recent_post_title }}"</div>
+          </div>
+        {% endif %}
+        {% if lead.linkedin_previous_companies %}
+          <div class="intel-block">
+            <div class="intel-label">Previously at</div>
+            <div class="intel-chips intel-chips-muted">
+              {% for cp in lead.linkedin_previous_companies %}<span class="intel-chip">{{ cp }}</span>{% endfor %}
+            </div>
+          </div>
+        {% endif %}
         {% if lead.linkedin_url %}<a class="card-link" href="{{ lead.linkedin_url }}" target="_blank" rel="noopener">LinkedIn ↗</a>{% endif %}
       {% else %}
         <div class="empty empty-sm">No decision-maker identified yet.</div>
@@ -114,23 +171,253 @@
       {% endif %}
     </div>
 
+    {# Mode-gated: Companies House / Gazette / Tech stack / Open jobs are
+       accountancy-only enrichers. For media-mode leads they'd render as
+       "Not checked yet" forever — misleading. Branch the whole block. #}
+    {% if lead.mode != 'media' %}
+    {# Companies House — live status pill + match-provenance caption.
+       Status pill: green for 'active', red for terminal states (dissolved,
+       liquidation, receivership, administration), amber for in-flight
+       (voluntary-arrangement, converted-closed), grey otherwise. Match
+       source caption tells the operator whether the CH match came from
+       a high-trust footer scrape or fuzzy multi-signal heuristic. #}
+    {% set chpill = {
+        'active':                ('green', 'Active'),
+        'dissolved':             ('red',   'Dissolved'),
+        'liquidation':           ('red',   'Liquidation'),
+        'receivership':          ('red',   'Receivership'),
+        'administration':        ('red',   'Administration'),
+        'voluntary-arrangement': ('amber', 'CVA'),
+        'converted-closed':      ('amber', 'Converted/closed'),
+    }.get(lead.companies_house_status, None) %}
     <div class="card">
-      <div class="card-title">Companies House</div>
+      <div class="card-head">
+        <div class="card-title">Companies House</div>
+        {% if chpill %}<span class="pill pill-{{ chpill[0] }}">{{ chpill[1] }}</span>{% endif %}
+      </div>
       {% if lead.companies_house_number or lead.companies_house_revenue_band %}
         <ul class="kv">
           {% if lead.companies_house_revenue_band %}<li>Revenue · {{ lead.companies_house_revenue_band }}</li>{% endif %}
           {% if lead.companies_house_sic_code %}<li>SIC · {{ lead.companies_house_sic_code }}</li>{% endif %}
           {% if lead.companies_house_incorporated %}<li>Incorporated · {{ lead.companies_house_incorporated.strftime('%b %Y') }}</li>{% endif %}
           {% if lead.companies_house_number %}<li>No · {{ lead.companies_house_number }}</li>{% endif %}
+          {% if lead.companies_house_match_source %}<li>Matched via · {{ 'website footer' if lead.companies_house_match_source == 'footer' else 'fuzzy search' }}</li>{% endif %}
         </ul>
       {% else %}
         <div class="empty empty-sm">No Companies House data yet.</div>
       {% endif %}
     </div>
+
+    {# Gazette — distress signal (US-025). The actionable case is
+       'distressed': operator decides go-or-skip based on the client's
+       service mix (insolvency specialist vs general practice). #}
+    {% set gpill = {
+        'clear':      ('green', 'Clear'),
+        'distressed': ('red',   'Distressed'),
+        'unknown':    ('grey',  'Unknown'),
+    }.get(lead.gazette_status, ('grey', 'Not checked')) %}
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">The Gazette <span class="card-title-sub">insolvency register</span></div>
+        <span class="pill pill-{{ gpill[0] }}">{{ gpill[1] }}</span>
+      </div>
+      {% if lead.gazette_status == 'distressed' %}
+        <ul class="kv">
+          <li><strong>{{ lead.gazette_notice_count }}</strong> {{ 'notice' if lead.gazette_notice_count == 1 else 'notices' }} matched</li>
+          {% if lead.gazette_last_notice_date %}<li>Most recent · {{ lead.gazette_last_notice_date.strftime('%-d %b %Y') }}</li>{% endif %}
+          {% if lead.gazette_last_notice_url %}<li><a href="{{ lead.gazette_last_notice_url }}" target="_blank" rel="noopener">View notice ↗</a></li>{% endif %}
+        </ul>
+      {% elif lead.gazette_status == 'clear' %}
+        <div class="empty empty-sm">No insolvency notices on file.</div>
+      {% elif lead.gazette_status == 'unknown' %}
+        <div class="empty empty-sm">Name too short or ambiguous to query confidently.</div>
+      {% else %}
+        <div class="empty empty-sm">Not checked yet — next pipeline run will populate this.</div>
+      {% endif %}
+    </div>
+    {% endif %}{# /lead.mode != 'media' — Companies House + Gazette #}
   </div>
 
-  {# Right column: Instagram + Website + Competitors #}
+  {# Right column: Website intel + Instagram + Website audit + Competitors #}
   <div class="lead-col">
+    {# Website intel — Haiku-extracted signals (US-024).
+       The card shape changes based on website_scrape_status so the
+       operator can tell at a glance whether the lack of detail is
+       "we couldn't read it", "they have no site", or "scraper is
+       offline" — three very different operational answers. #}
+    {% set ws = lead.website_signals if lead.website_signals is mapping else {} %}
+    {% set wstatus = lead.website_scrape_status %}
+    {% set wpill = {
+        'ok':            ('green', 'Read'),
+        'blocked':       ('amber', 'Blocked'),
+        'timeout':       ('amber', 'Timeout'),
+        'parse_failed':  ('amber', 'Parse failed'),
+        'no_website':    ('grey',  'No website'),
+        'disabled':      ('red',   'Scraper offline'),
+    }.get(wstatus, ('grey', 'Not scraped')) %}
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">
+          Website intel
+          {% if lead.website_scraped_at %}
+            <span class="card-title-sub">scraped {{ lead.website_scraped_at|relative_time }}</span>
+          {% endif %}
+        </div>
+        <span class="pill pill-{{ wpill[0] }}">{{ wpill[1] }}</span>
+      </div>
+
+      {% if wstatus == 'ok' and ws %}
+        {% if ws.get('summary') %}
+          <blockquote class="intel-summary">{{ ws.summary }}</blockquote>
+        {% endif %}
+
+        {% if ws.get('services') %}
+          <div class="intel-block">
+            <div class="intel-label">Services</div>
+            <div class="intel-chips">
+              {% for svc in ws.services %}<span class="intel-chip">{{ svc }}</span>{% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        {% set hints = [] %}
+        {% if ws.get('team_size_hint') %}{% set _ = hints.append(('team', ws.team_size_hint ~ ' team')) %}{% endif %}
+        {% if ws.get('recency_hint') %}{% set _ = hints.append(('recency', ws.recency_hint)) %}{% endif %}
+        {% if ws.get('contact_form') is sameas true %}{% set _ = hints.append(('form', 'contact form')) %}{% endif %}
+        {% if ws.get('pricing_visible') is sameas true %}{% set _ = hints.append(('price', 'pricing visible')) %}{% endif %}
+        {% if hints %}
+          <div class="intel-block">
+            <div class="intel-label">Signals</div>
+            <div class="intel-hints">
+              {% for kind, label in hints %}<span class="intel-hint hint-{{ kind }}">{{ label }}</span>{% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        {% if ws.get('client_logos') %}
+          <div class="intel-block">
+            <div class="intel-label">Named clients</div>
+            <div class="intel-chips intel-chips-muted">
+              {% for cl in ws.client_logos %}<span class="intel-chip">{{ cl }}</span>{% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+      {% elif wstatus == 'no_website' %}
+        <div class="empty empty-sm">No website on file — nothing to scrape.</div>
+      {% elif wstatus == 'disabled' %}
+        <div class="empty empty-sm">
+          Scraper module is offline (wreq import or proxy pool). Check the worker logs —
+          this isn't a per-lead failure.
+        </div>
+      {% elif wstatus in ('blocked', 'timeout', 'parse_failed') %}
+        <div class="empty empty-sm">Couldn't read the website. Will retry on the next pipeline run.</div>
+      {% else %}
+        <div class="empty empty-sm">Not scraped yet — the next pipeline run will populate this.</div>
+      {% endif %}
+    </div>
+
+    {% if lead.mode != 'media' %}
+    {# Tech stack — DNS-derived signals. Email provider drives outreach
+       copy; hosting hints at digital maturity; DMARC absence is a
+       concrete pain point for any deliverability/compliance pitch. #}
+    {% set provider_labels = {
+        'microsoft_365':    ('blue',  'Microsoft 365'),
+        'google_workspace': ('blue',  'Google Workspace'),
+        'zoho':             ('grey',  'Zoho Mail'),
+        'fastmail':         ('grey',  'Fastmail'),
+        'protonmail':       ('grey',  'ProtonMail'),
+        'godaddy':          ('amber', 'GoDaddy email'),
+        'mailgun':          ('grey',  'Mailgun'),
+        'yahoo':            ('amber', 'Yahoo / AOL'),
+        'icloud':           ('grey',  'iCloud Mail'),
+        '123_reg':          ('amber', '123-reg'),
+        'heartinternet':    ('amber', 'Heart Internet'),
+        'other':            ('grey',  'Other / self-hosted'),
+    } %}
+    {% set host_labels = {
+        'cloudflare':    'Cloudflare',
+        'aws':           'AWS',
+        'wix':           'Wix',
+        'squarespace':   'Squarespace',
+        'shopify':       'Shopify',
+        'vercel':        'Vercel',
+        'netlify':       'Netlify',
+        'wordpress_com': 'WordPress.com',
+        'godaddy':       'GoDaddy',
+        'fastly':        'Fastly',
+        'azure':         'Azure',
+        'github_pages':  'GitHub Pages',
+        'heroku':        'Heroku',
+        '123_reg':       '123-reg',
+        'heartinternet': 'Heart Internet',
+        'ionos':         'IONOS',
+        'fasthosts':     'Fasthosts',
+        'other':         'Other',
+    } %}
+    {% set ep = provider_labels.get(lead.email_provider) %}
+    {% set hp = host_labels.get(lead.website_host) %}
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">Tech stack <span class="card-title-sub">DNS fingerprint</span></div>
+        {% if ep %}<span class="pill pill-{{ ep[0] }}">{{ ep[1] }}</span>{% endif %}
+      </div>
+      {% if lead.email_provider or lead.website_host or lead.dmarc_present is not none or lead.spf_present is not none %}
+        <ul class="kv">
+          {% if lead.email_provider %}<li>Email · {{ ep[1] if ep else lead.email_provider }}</li>{% endif %}
+          {% if lead.website_host %}<li>Hosting · {{ hp if hp else lead.website_host }}</li>{% endif %}
+          {% if lead.spf_present is not none %}
+            <li>SPF · {% if lead.spf_present %}<span class="pill pill-green pill-sm">configured</span>{% else %}<span class="pill pill-red pill-sm">missing</span>{% endif %}</li>
+          {% endif %}
+          {% if lead.dmarc_present is not none %}
+            <li>DMARC · {% if lead.dmarc_present %}<span class="pill pill-green pill-sm">configured</span>{% else %}<span class="pill pill-red pill-sm">missing</span>{% endif %}</li>
+          {% endif %}
+        </ul>
+        {% if lead.dmarc_present is sameas false and lead.spf_present is sameas false %}
+          <div class="intel-hints" style="margin-top:6px"><span class="intel-hint hint-recency">No email security records — concrete deliverability hook</span></div>
+        {% endif %}
+      {% else %}
+        <div class="empty empty-sm">Not checked yet — next pipeline run will populate this.</div>
+      {% endif %}
+    </div>
+
+    {# Open jobs — growth signal (US-026). 'scaling' (5+ roles) is the
+       strong-hook case for advisory pitches; 'hiring' is a soft hook;
+       'none' is the common case, no narrative to use. #}
+    {% set jpill = {
+        'scaling': ('green', 'Scaling'),
+        'hiring':  ('blue',  'Hiring'),
+        'none':    ('grey',  'Quiet'),
+        'unknown': ('grey',  'Not checked'),
+    }.get(lead.jobs_signal, ('grey', 'Not checked')) %}
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">
+          Open jobs
+          {% if lead.jobs_last_checked_at %}
+            <span class="card-title-sub">checked {{ lead.jobs_last_checked_at|relative_time }}</span>
+          {% endif %}
+        </div>
+        <span class="pill pill-{{ jpill[0] }}">{{ jpill[1] }}</span>
+      </div>
+      {% if lead.jobs_signal in ('hiring', 'scaling') %}
+        <div class="big-line">
+          <span class="big-num">{{ lead.jobs_open_count }}</span>
+          <span class="big-suffix">{{ 'role' if lead.jobs_open_count == 1 else 'roles' }} on Reed</span>
+        </div>
+        {% if lead.jobs_source_url %}
+          <a class="card-link" href="{{ lead.jobs_source_url }}" target="_blank" rel="noopener">View on Reed ↗</a>
+        {% endif %}
+      {% elif lead.jobs_signal == 'none' %}
+        <div class="empty empty-sm">No open roles on Reed.</div>
+      {% elif lead.jobs_signal == 'unknown' %}
+        <div class="empty empty-sm">Couldn't check — name too short or fetch failed.</div>
+      {% else %}
+        <div class="empty empty-sm">Not checked yet — next pipeline run will populate this.</div>
+      {% endif %}
+    </div>
+    {% endif %}{# /lead.mode != 'media' — Tech stack + Open jobs #}
+
     <div class="card">
       <div class="card-title">Instagram</div>
       {% if lead.instagram_handle or lead.instagram_followers %}

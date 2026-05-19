@@ -42,9 +42,11 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 import db
 from pipeline import runner
+from pipeline.modes import registry as mode_registry
 from outreach import engine as outreach_engine
 from reply import engine as reply_engine
 
@@ -93,6 +95,58 @@ def _claim_next_run() -> int | None:
     """
     row = db.fetch_one(sql)
     return row["id"] if row else None
+
+
+def _claim_next_search() -> int | None:
+    """Atomically claim one pending crm.searches row. Returns search_id or None.
+
+    Parallel to _claim_next_run, but for the user-triggered search queue
+    (mode='accountancy'|'media'). Disjoint from crm.pipeline_runs — that
+    queue still serves scheduled / onboarding / enrich_assigned triggers.
+    """
+    sql = """
+        update crm.searches
+        set status = 'running', started_at = now()
+        where id = (
+            select id
+            from crm.searches
+            where status = 'pending'
+            order by created_at
+            for update skip locked
+            limit 1
+        )
+        returning id, mode
+    """
+    row = db.fetch_one(sql)
+    return row if row else None
+
+
+def _complete_search(search_id: int, result: dict) -> None:
+    """Write a finished mode.run() result back to crm.searches.
+
+    Skip-reason counters and any other per-mode fields live under
+    params.result so the leads_found column stays a pure count.
+    """
+    db.execute(
+        """update crm.searches
+              set status       = 'complete',
+                  leads_found  = %s,
+                  completed_at = now(),
+                  params       = params || %s
+            where id = %s""",
+        (int(result.get("leads_found") or 0),
+         Jsonb({"result": result}),
+         search_id),
+    )
+
+
+def _fail_search(search_id: int, err: str) -> None:
+    db.execute(
+        """update crm.searches
+              set status = 'failed', error = %s, completed_at = now()
+            where id = %s""",
+        (err[:600], search_id),
+    )
 
 
 def _maybe_reset_sent_today(state: dict) -> None:
@@ -375,7 +429,40 @@ def main() -> int:
             continue
 
         if run_id is None:
-            time.sleep(POLL_INTERVAL_S)
+            # No pipeline_run waiting — check the searches queue before
+            # sleeping. Same poll interval, but each tick checks both
+            # surfaces so a media-mode search doesn't wait on an empty
+            # accountancy queue.
+            try:
+                search = _claim_next_search()
+            except psycopg.OperationalError as e:
+                logger.error("DB error claiming search: %s — sleeping 10s", e)
+                time.sleep(10)
+                continue
+            except Exception:
+                logger.exception("Unexpected error claiming search — sleeping 10s")
+                time.sleep(10)
+                continue
+
+            if search is None:
+                time.sleep(POLL_INTERVAL_S)
+                continue
+
+            search_id = search["id"]
+            mode_name = search["mode"]
+            logger.info("Claimed search %s (mode=%s)", search_id, mode_name)
+            started = datetime.now(timezone.utc)
+            try:
+                mode = mode_registry.get(mode_name)
+                result = mode.run(search_id)
+                _complete_search(search_id, result)
+                logger.info("search %s done: %s in %.1fs",
+                            search_id, result,
+                            (datetime.now(timezone.utc) - started).total_seconds())
+            except Exception as e:
+                tb = traceback.format_exc()
+                logger.error("search %s failed: %s\n%s", search_id, e, tb)
+                _fail_search(search_id, str(e))
             continue
 
         logger.info("Claimed pipeline_run %s", run_id)

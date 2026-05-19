@@ -6,6 +6,7 @@ HTTPS (nginx terminates TLS; ProxyFix trusts X-Forwarded-Proto).
 """
 import csv
 import io
+import json
 import os
 import time
 from hmac import compare_digest
@@ -29,6 +30,16 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # nginx sends X-Forwarded-Proto=https; ProxyFix makes url_for / request.is_secure honour it.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+@app.template_filter('relative_time')
+def _jinja_relative_time(dt):
+    """`{{ ts|relative_time }}` → '4m ago' / '2h ago'. None/empty → '—'.
+    Wraps db.relative_time so templates can render timestamps without
+    the route having to pre-format each one."""
+    if not dt:
+        return '—'
+    return db.relative_time(dt)
 
 # Endpoint names (not URL paths) that don't require auth.
 # unsubscribe is public because Gmail/Yahoo fire RFC 8058 one-click POSTs
@@ -98,11 +109,13 @@ def overview():
     chart_values: list[int] = []
     activity: list[dict] = []
     finder_clients: list[dict] = []
+    scraper_health: dict = {'total': 0}
     try:
         metrics = db.dashboard_metrics()
         chart_labels, chart_values = db.leads_per_day(7)
         activity = db.recent_activity(20)
         finder_clients = db.clients_for_finder()
+        scraper_health = db.scraper_health_summary(200)
     except Exception as e:
         # Don't 500 the page on a DB blip — render the empty state with a banner.
         db_error = str(e).splitlines()[0][:240]
@@ -114,6 +127,7 @@ def overview():
         chart_values=chart_values,
         activity=activity,
         finder_clients=finder_clients,
+        scraper_health=scraper_health,
         db_error=db_error,
     )
 
@@ -197,6 +211,21 @@ def client_new():
             form=form_in,
             errors=errors,
         ), 500
+
+    # The wizard's step 3 has two submit buttons:
+    #   'save_and_run' (primary, default) — queue the first pipeline run
+    #   'save_only'                       — land on client detail, no run
+    # Legacy callers that don't post a save_action default to save_and_run
+    # so the existing redirect-to-approvals UX is preserved.
+    save_action = (request.form.get('save_action') or 'save_and_run').strip()
+
+    if save_action == 'save_only':
+        flash(
+            f"{form_in['name']} added. Click Find new leads when you're ready "
+            f"to start the first pipeline run.",
+            'success',
+        )
+        return redirect(url_for('client_detail', client_id=new_id))
 
     # Save & run: enqueue the first pipeline run immediately so the
     # operator lands on /approvals already populating instead of having
@@ -447,11 +476,13 @@ def leads():
     clients_min: list[dict]   = []
     client_tabs: list[dict]   = []
     active_client: dict | None = None
+    scraper_offline = False
     f = _lead_filters_from_request()
 
     try:
         clients_min = db.all_clients_min()
         client_tabs = db.leads_count_per_client(status=f['status'], search=f['search'])
+        scraper_offline = db.scraper_offline_now()
 
         # Default to first active client if none specified — the page is
         # always scoped to one client (no "all clients" view).
@@ -479,6 +510,7 @@ def leads():
         active_client=active_client,
         f=f,
         active_status=request.args.get('status', 'all'),
+        scraper_offline=scraper_offline,
         db_error=db_error,
     )
 
@@ -1263,6 +1295,259 @@ def api_search():
         return jsonify(db.quick_search(q))
     except Exception as e:
         return jsonify({'error': str(e)[:200]}), 500
+
+
+# ── Search-first lead discovery (US — agent-driven brief) ────────────
+# A single page where the operator types industry + location, gets
+# Google Maps results in seconds, then ticks the ones they want and
+# assigns them to a real client. No wizard, no pre-configured client
+# profile. Full enrichment runs in the background after assignment so
+# the search UI feels instant.
+
+@app.route('/search')
+def search_page():
+    """The Search → Results → Assign page."""
+    try:
+        clients = db.list_clients()
+    except Exception:
+        clients = []
+    return render_template('search.html', active='search', clients=clients)
+
+
+@app.post('/api/search/discover')
+def api_search_discover():
+    """Run a free Google Places discovery against the given (industries,
+    locations) combo. Returns up to ~60 results across pairs. Synchronous
+    — typically <5s for 20 results since we hit the free Maps endpoint
+    directly with no per-call sleep.
+
+    Body:
+      {industries: ["accountants", ...], locations: ["Cambridge", ...],
+       limit_per_pair: 20}
+    Returns:
+      {results: [{business_name, address, city, postcode, website,
+                   google_rating, google_place_id, google_maps_url}],
+       count, errors}
+    """
+    from pipeline.sources import google_places
+
+    payload = request.get_json(silent=True) or {}
+    industries = [s.strip() for s in (payload.get('industries') or []) if s and s.strip()]
+    locations  = [s.strip() for s in (payload.get('locations')  or []) if s and s.strip()]
+    try:
+        limit_per_pair = int(payload.get('limit_per_pair') or 20)
+    except (TypeError, ValueError):
+        limit_per_pair = 20
+    limit_per_pair = max(1, min(limit_per_pair, 40))
+
+    if not industries or not locations:
+        return jsonify({'error': 'industries and locations required'}), 400
+
+    out: list[dict] = []
+    errors: list[str] = []
+    seen_place_ids: set[str] = set()
+    for ind in industries:
+        for loc in locations:
+            try:
+                rows = google_places.discover(ind, loc, limit=limit_per_pair)
+            except Exception as e:
+                errors.append(f'{ind}/{loc}: {str(e)[:120]}')
+                continue
+            for r in rows:
+                if r.get('source_errors', {}).get('google_places'):
+                    errors.append(f"{ind}/{loc}: {r['source_errors']['google_places']}")
+                    continue
+                pid = r.get('google_place_id')
+                if pid and pid in seen_place_ids:
+                    continue
+                if pid:
+                    seen_place_ids.add(pid)
+                # Annotate which (industry, location) pair the result came from
+                # so the UI can render a tag.
+                r['matched_industry'] = ind
+                r['matched_location'] = loc
+                out.append(r)
+
+    # Cross-client already-assigned lookup. Single query joins all leads
+    # across all clients so the UI can flag rows the operator has
+    # already pitched (under any client). Name-based match is good
+    # enough for the UI hint; the assign endpoint dedupes more strictly
+    # per-client.
+    if out:
+        names_lower = list({(r['business_name'] or '').strip().lower()
+                            for r in out if r.get('business_name')})
+        if names_lower:
+            assigned_rows = db.fetch_all(
+                """select lower(l.business_name) as name_lower, c.name as client_name
+                   from crm.leads l
+                   join crm.clients c on c.id = l.client_id
+                   where lower(l.business_name) = any(%s)""",
+                (names_lower,),
+            )
+            assigned_map = {r['name_lower']: r['client_name'] for r in assigned_rows}
+            for r in out:
+                name_lower = (r.get('business_name') or '').strip().lower()
+                if name_lower in assigned_map:
+                    r['already_assigned'] = True
+                    r['assigned_to_client'] = assigned_map[name_lower]
+
+    return jsonify({'count': len(out), 'results': out, 'errors': errors})
+
+
+@app.post('/api/search/discover-media')
+def api_search_discover_media():
+    """Enqueue a Media-mode (Vidora) search.
+
+    Synchronously writes a crm.searches row and returns its id. The
+    worker picks it up via _claim_next_search, dispatches to
+    MediaMode.run, which then handles Google Places discovery +
+    instagram_link + instagram_snapshot + vidora_audit + upsert per
+    candidate. Async because each candidate can take 30-60s.
+
+    Body:
+      {industry: "aesthetic clinics", location: "Manchester", limit: 20}
+    Returns:
+      {search_id: int, status: "pending"}
+    """
+    payload = request.get_json(silent=True) or {}
+    industry = (payload.get('industry') or '').strip()
+    location = (payload.get('location') or '').strip()
+    try:
+        limit = int(payload.get('limit') or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    # Media discovery is async and per-candidate cost is real (one IG
+    # snapshot + one Sonnet vision audit per survivor). Cap at 500 to
+    # match the UI slider's ceiling. Beyond that, split into multiple
+    # searches so the operator can pause/resume between batches.
+    limit = max(1, min(limit, 500))
+
+    if not industry or not location:
+        return jsonify({'error': 'industry and location required'}), 400
+
+    # Vidora Media is the canonical media-mode client (seeded by 0034).
+    # Resolve by client_type so a rename in the UI doesn't strand the
+    # endpoint.
+    client = db.fetch_one(
+        "select id from crm.clients where client_type = 'media' "
+        "order by id limit 1"
+    )
+    if not client:
+        return jsonify({'error': "no media-mode client configured "
+                                 "(check crm.clients.client_type='media')"}), 400
+
+    row = db.fetch_one(
+        """insert into crm.searches (client_id, mode, params, status)
+           values (%s, 'media', %s, 'pending')
+           returning id""",
+        (client['id'], json.dumps({
+            'industry': industry,
+            'location': location,
+            'limit':    limit,
+        })),
+    )
+    return jsonify({'search_id': row['id'], 'status': 'pending'}), 201
+
+
+@app.post('/api/search/enrich-assign')
+def api_search_enrich_assign():
+    """Move selected search results into crm.leads under a chosen
+    client, then enqueue a pipeline_run with mode='enrich_assigned'
+    so the worker fills in the full enrichment (CH + DNS + Apollo +
+    LinkedIn + website + jobs + Gazette + scoring + drafted Day-1
+    email) in the background.
+
+    Body:
+      {client_id: int, results: [{google_place_id, business_name, ...}]}
+    Returns:
+      {inserted: N, skipped_dupes: N, lead_ids: [...], run_id: int|null}
+
+    run_id is null only when no leads were actually inserted (everything
+    was a dupe). UI polls /api/pipeline/run/<run_id> for progress.
+    """
+    payload = request.get_json(silent=True) or {}
+    try:
+        client_id = int(payload.get('client_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'client_id (int) required'}), 400
+    results = payload.get('results') or []
+    if not isinstance(results, list) or not results:
+        return jsonify({'error': 'results array required'}), 400
+
+    # Existing-lead dedupe by business_name (lower) per client.
+    existing = {
+        (r.get('business_name') or '').strip().lower()
+        for r in db.fetch_all(
+            'select business_name from crm.leads where client_id = %s',
+            (client_id,),
+        )
+    }
+
+    lead_ids: list[int] = []
+    skipped = 0
+    for r in results:
+        name = (r.get('business_name') or '').strip()
+        if not name:
+            skipped += 1
+            continue
+        if name.lower() in existing:
+            skipped += 1
+            continue
+        # source='outbound' is enforced by a CHECK constraint that only
+        # accepts ('outbound','inbound','referral'). Search-discovered
+        # leads are outbound (we found them and chose to contact them).
+        row = db.fetch_one(
+            """insert into crm.leads
+                 (client_id, business_name, address, city, website,
+                  google_rating, google_maps_url,
+                  status, source)
+               values (%s, %s, %s, %s, %s, %s, %s, 'new', 'outbound')
+               returning id""",
+            (
+                client_id,
+                name[:512],
+                (r.get('address') or '')[:1024] or None,
+                (r.get('city') or '') or None,
+                (r.get('website') or '') or None,
+                float(r['google_rating']) if r.get('google_rating') is not None else None,
+                (r.get('google_maps_url') or '') or None,
+            ),
+        )
+        if row:
+            lead_ids.append(row['id'])
+            existing.add(name.lower())
+
+    run_id = None
+    if lead_ids:
+        try:
+            row = db.fetch_one(
+                """insert into crm.pipeline_runs
+                     (client_id, status, mode, triggered_by, progress)
+                   values (%s, 'pending', 'enrich_assigned', 'operator', %s)
+                   returning id""",
+                (client_id, json.dumps({'phase': 'queued', 'lead_ids': lead_ids})),
+            )
+            if row:
+                run_id = row['id']
+        except Exception as e:
+            # Lead rows already inserted — surface the enqueue failure
+            # but don't roll back the inserts; the operator can manually
+            # trigger enrichment from the lead list if needed.
+            app.logger.exception('enqueue enrich_assigned run failed')
+            return jsonify({
+                'inserted': len(lead_ids),
+                'skipped_dupes': skipped,
+                'lead_ids': lead_ids,
+                'run_id': None,
+                'enqueue_error': str(e)[:200],
+            }), 201
+
+    return jsonify({
+        'inserted': len(lead_ids),
+        'skipped_dupes': skipped,
+        'lead_ids': lead_ids,
+        'run_id': run_id,
+    }), 201
 
 
 # ── List-Unsubscribe (RFC 8058 one-click) ───────────────────────────
