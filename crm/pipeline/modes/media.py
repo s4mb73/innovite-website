@@ -377,10 +377,13 @@ def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
 
     # Verifier approved. Mark found + write recipient regardless of grade
     # so the operator has the contact even on D/F leads.
+    # Column is `email` on crm.leads (decision_maker_email is the
+    # in-memory business-dict key the enrichers use; on disk it lands
+    # in the `email` column — see pipeline/runner.py:415).
     db.execute(
         """update crm.leads
-              set decision_maker_email = %s,
-                  email_status         = 'found'
+              set email        = %s,
+                  email_status = 'found'
             where id = %s""",
         (candidate_email, lead_id),
     )
