@@ -71,6 +71,52 @@
   </div>
 </div>
 
+{# ── Scraper health (US-024) ─────────────────────────────── #}
+{# Aggregate of last 200 attempted scrapes. Goal: spot pool
+   degradation before it costs a campaign. Empty pipeline → an
+   informational empty state rather than an alarming "0% ok". #}
+{% set sh = scraper_health %}
+<div class="card scrape-health-card">
+  <div class="card-head">
+    <div class="card-title">
+      Scraper health
+      <span class="card-title-sub">
+        {% if sh.total %}last {{ sh.total }} attempts{% if sh.last_relative %} · {{ sh.last_relative }}{% endif %}
+        {% else %}no attempts yet{% endif %}
+      </span>
+    </div>
+    {% if sh.disabled_pct >= 20 %}
+      <span class="pill pill-red">Scraper offline</span>
+    {% elif sh.blocked_pct >= 25 %}
+      <span class="pill pill-amber">Pool degrading</span>
+    {% elif sh.total %}
+      <span class="pill pill-green">Healthy</span>
+    {% endif %}
+  </div>
+  {% if sh.total %}
+    <div class="scrape-health-bar" role="img"
+         aria-label="{{ sh.ok_pct }}% ok, {{ sh.blocked_pct }}% blocked, {{ sh.no_website_pct }}% no website, {{ sh.disabled_pct }}% disabled">
+      <span class="seg seg-ok"        style="width: {{ sh.ok_pct }}%"></span>
+      <span class="seg seg-blocked"   style="width: {{ sh.blocked_pct }}%"></span>
+      <span class="seg seg-nowebsite" style="width: {{ sh.no_website_pct }}%"></span>
+      <span class="seg seg-disabled"  style="width: {{ sh.disabled_pct }}%"></span>
+    </div>
+    <ul class="scrape-health-legend">
+      <li><span class="dot dot-ok"></span> {{ sh.ok_pct }}% ok <span class="legend-n">({{ sh.by_status.ok }})</span></li>
+      <li><span class="dot dot-blocked"></span> {{ sh.blocked_pct }}% blocked
+        <span class="legend-n">({{ sh.by_status.blocked + sh.by_status.timeout + sh.by_status.parse_failed }})</span></li>
+      <li><span class="dot dot-nowebsite"></span> {{ sh.no_website_pct }}% no website
+        <span class="legend-n">({{ sh.by_status.no_website }})</span></li>
+      {% if sh.by_status.disabled %}
+        <li><span class="dot dot-disabled"></span> {{ sh.disabled_pct }}% disabled
+          <span class="legend-n">({{ sh.by_status.disabled }})</span></li>
+      {% endif %}
+    </ul>
+  {% else %}
+    <div class="empty empty-sm">No scrape attempts on file yet — run the pipeline to populate this.</div>
+  {% endif %}
+</div>
+
 {# ── Chart ──────────────────────────────────────────────── #}
 <div class="card chart-card">
   <div class="card-title">Leads per day · last 7 days</div>

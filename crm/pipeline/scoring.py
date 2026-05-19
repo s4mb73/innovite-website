@@ -1,17 +1,20 @@
 """Lead scoring — A/B/C/D/F grade + overall_score + weakness_profile.
 
-Rubric (weighted sum, max ~155):
-  - Companies House viability  0-65 pts  (base 0-30 + up to +35 from pain
-                                          signals: overdue, director change,
-                                          new incorporation. Capped at 65.)
-  - Google reputation          0-20 pts  (rating x review-count buckets)
-  - Decision-maker present     0-30 pts  (Apollo lookup landed)
-  - Website quality            0-20 pts  (has site, has SSL — upgrades when
-                                          source 2 / PageSpeed lands)
-  - Year-end timing            0-20 pts  (proximity to next filing year-end)
+Rubric (weighted sum, max ~189):
+  - Companies House viability  0-65 pts
+  - Google reputation          0-20 pts
+  - Decision-maker present     0-30 pts
+  - Website quality            0-20 pts
+  - Year-end timing            0-20 pts
+  - Gazette distress flag      0-10 pts
+  - Jobs growth signal         0-12 pts
+  - DNS email-security gaps    0-4  pts
+  - LinkedIn authority         0-8  pts
 
-Grade thresholds (intentionally generous against the 155 ceiling so a
-typical "good lead" with no pain signals still grades B+):
+Grade thresholds (unchanged from the 155-ceiling rubric — the new
+positive signals slightly inflate scores by design; a lead with a
+recent LinkedIn post AND active hiring SHOULD score higher than one
+without):
   A: 96+   |  B: 72-95  |  C: 48-71  |  D: 24-47  |  F: <24
 
 The weakness_profile is not just for scoring — it is the **hook source**
@@ -165,6 +168,82 @@ def _score_year_end_timing(b: Business) -> tuple[int, list[str]]:
     return 0, []
 
 
+def _score_gazette(b: Business) -> tuple[int, list[str]]:
+    """0-10 pts. Distress is ambiguous as a score driver — it's gold for
+    turnaround-specialist clients and poison for general-practice ones.
+    We score it modestly (+8) so it nudges the grade but doesn't dominate,
+    and emit the 'gazette_distressed' hook so the operator can filter or
+    prioritise depending on the client's service mix."""
+    status = (b.get("gazette_status") or "").lower()
+    if status == "distressed":
+        return 8, ["gazette_distressed"]
+    return 0, []
+
+
+def _score_jobs(b: Business) -> tuple[int, list[str]]:
+    """0-12 pts. Active hiring = budget + growth = good buying window
+    for any advisory service. 'scaling' (5+ open roles) is a stronger
+    signal than 'hiring' (1-4)."""
+    signal = (b.get("jobs_signal") or "").lower()
+    if signal == "scaling":
+        return 12, ["growth_scaling"]
+    if signal == "hiring":
+        return 6, ["growth_hiring"]
+    return 0, []
+
+
+def _score_dns_signals(b: Business) -> tuple[int, list[str]]:
+    """0-4 pts. Missing email security is a small but concrete pain
+    point. The hook value matters more than the score — even a +3 nudge
+    is enough to surface 'deliverability_gap' as a candidate opener
+    for leads where it's the only thing we've got."""
+    spf = b.get("spf_present")
+    dmarc = b.get("dmarc_present")
+    weaknesses: list[str] = []
+    pts = 0
+    # Only flag when we actually queried (both must be non-None — None
+    # means DNS lookup failed and we can't claim anything).
+    if dmarc is False:
+        weaknesses.append("dmarc_missing")
+        pts += 2
+    if spf is False:
+        weaknesses.append("spf_missing")
+        pts += 2
+    # The combined absence is the strongest version of this hook — the
+    # operator-facing label collapses both into one 'deliverability_gap'.
+    if dmarc is False and spf is False:
+        weaknesses.append("deliverability_gap")
+    return min(4, pts), weaknesses
+
+
+def _score_linkedin_authority(b: Business) -> tuple[int, list[str]]:
+    """0-8 pts. Two signals:
+      - Recent Pulse post (within ~30 days) → 'linkedin_recent_post'
+        hook. This is the single best cold-email opener in B2B — quoting
+        their own recent content gets the highest reply rates.
+      - Follower count thresholds → influence signal."""
+    weaknesses: list[str] = []
+    pts = 0
+
+    from datetime import date, timedelta
+    post_at = b.get("linkedin_recent_post_at")
+    if post_at and isinstance(post_at, (date,)):
+        age_days = (date.today() - post_at).days
+        if 0 <= age_days <= 30:
+            pts += 5
+            weaknesses.append("linkedin_recent_post")
+
+    followers = b.get("linkedin_follower_count")
+    if isinstance(followers, int):
+        if followers >= 10_000:
+            pts += 3
+            weaknesses.append("linkedin_high_influence")
+        elif followers >= 2_000:
+            pts += 2
+
+    return min(8, pts), weaknesses
+
+
 def _grade_from_score(score: int) -> str:
     """Thresholds scaled for the ~155-pt ceiling. A is 96+ — a clean lead
     with no pain signals (CH 30 + Google 14 + DM 30 + Web 20 + YE 12 ≈ 106)
@@ -190,16 +269,24 @@ def _pick_hook_type(weaknesses: list[str]) -> str:
     already be closing.
     """
     priority = [
-        "accounts_overdue",          # Items 4 — direct pain, urgent
+        "linkedin_recent_post",      # Best opener that exists — quote them
+        "accounts_overdue",          # Item 4 — direct pain, urgent
+        "gazette_distressed",        # New — turnaround clients only, but unmissable when present
         "year_end_imminent",         # Item 1 — live decision window
+        "growth_scaling",            # New — 5+ open roles → budget + buying window
         "director_change_recent",    # Item 3 — supplier-review trigger
         "new_incorporation",         # Item 2 — needs an accountant urgently
+        "growth_hiring",             # New — 1-4 open roles, softer growth hook
         "early_stage",               # Item 2 — first-year supplier choice
         "year_end_soon",             # Item 1 — softer timing prompt
         "confirmation_overdue",      # Item 4 — minor compliance nudge
+        "deliverability_gap",        # New — missing both SPF + DMARC
+        "linkedin_high_influence",   # New — 10k+ followers, no recent post
         "low_rating_with_volume",
         "rating_under_4",
         "few_reviews",
+        "dmarc_missing",
+        "spf_missing",
         "no_ssl",
         "no_website",
         "no_decision_maker",
@@ -216,14 +303,18 @@ def grade(business: Business) -> dict:
 
     Returns keys: grade, overall_score, weakness_profile, hook_type.
     """
-    ch_pts, ch_w = _score_companies_house(business)
+    ch_pts, ch_w  = _score_companies_house(business)
     rep_pts, rep_w = _score_google_reputation(business)
-    dm_pts, dm_w = _score_decision_maker(business)
+    dm_pts, dm_w  = _score_decision_maker(business)
     web_pts, web_w = _score_website(business)
-    ye_pts, ye_w = _score_year_end_timing(business)
+    ye_pts, ye_w  = _score_year_end_timing(business)
+    gz_pts, gz_w  = _score_gazette(business)
+    jb_pts, jb_w  = _score_jobs(business)
+    dns_pts, dns_w = _score_dns_signals(business)
+    li_pts, li_w  = _score_linkedin_authority(business)
 
-    total = ch_pts + rep_pts + dm_pts + web_pts + ye_pts
-    weaknesses = ch_w + rep_w + dm_w + web_w + ye_w
+    total = ch_pts + rep_pts + dm_pts + web_pts + ye_pts + gz_pts + jb_pts + dns_pts + li_pts
+    weaknesses = ch_w + rep_w + dm_w + web_w + ye_w + gz_w + jb_w + dns_w + li_w
 
     return {
         "grade":             _grade_from_score(total),
@@ -236,6 +327,10 @@ def grade(business: Business) -> dict:
                 "decision_maker":  dm_pts,
                 "website":         web_pts,
                 "year_end":        ye_pts,
+                "gazette":         gz_pts,
+                "jobs":            jb_pts,
+                "dns_signals":     dns_pts,
+                "linkedin":        li_pts,
             },
         },
         "hook_type":  _pick_hook_type(weaknesses),
