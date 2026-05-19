@@ -1,16 +1,32 @@
 """Media mode — Vidora pipeline.
 
-End-to-end orchestration of the Linux-native Vidora flow:
+End-to-end orchestration of the Linux-native Vidora flow. Designed for
+cost-and-time efficiency on a per-candidate basis — every step that
+costs money or seconds runs only when prior cheap signals say it's
+worth it.
+
+Per-candidate flow:
 
     google_places.discover(industry, location)
        -> for each candidate:
             instagram_link.find_for_website(candidate.website)
+                returns handle + cached homepage HTML for later reuse
             instagram_snapshot.snapshot(handle)
-            vidora_audit.audit(snapshot)
-            db.upsert_vidora_lead(payload, pdf_path=None)
+            _low_signal_reason(snapshot)
+                cheap pre-filter: private, low followers, dormant, or
+                <12 posts. Skip the audit (and storage) on definite-fail.
+            _resolve_recipient(snapshot, business, homepage_body)
+                IG business_email -> JSON-LD/mailto on cached homepage
+                -> last-resort website scrape via email_patterns.detect.
+                If nothing: store the lead with email_status='not_found'
+                and skip the audit (saves the most expensive step on a
+                lead we can't contact anyway).
+            vidora_audit.audit(snapshot)            <- ~$0.10 per call
+            db.upsert_vidora_lead(payload)
+            _draft_and_queue_day1                   <- A/B/C only
 
-Skips that don't produce a lead (no website, no IG handle, no snapshot,
-no audit) are counted and logged; they're not errors.
+Skips that don't produce a lead are counted by reason so the operator
+can see exactly where the funnel is leaking on each search.
 
 Unlike accountancy, this mode does not use crm.pipeline_runs — it writes
 directly via db.upsert_vidora_lead (which already handles idempotent
@@ -19,6 +35,7 @@ upsert on (source='vidora_instagram', external_id=<username>)).
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 import db
@@ -32,6 +49,41 @@ from scraper import (
 )
 
 logger = logging.getLogger("crm.pipeline.modes.media")
+
+
+# ── Pre-filter thresholds ─────────────────────────────────────────────
+# Each one gates the expensive Sonnet 4.6 vision call. Tuned for the
+# "media-shy SMB" prospect Vidora targets — clinics, salons, fitness
+# studios. Adjust as we learn what predicts a paying customer.
+_MIN_FOLLOWERS      = 500
+_MIN_POSTS          = 12     # audit guard refuses to score <9; below 12 the grid is too thin to grade meaningfully
+_MAX_DAYS_INACTIVE  = 60     # last post older than 60 days = dormant
+
+
+def _low_signal_reason(snap: dict) -> str | None:
+    """Return a skip reason if the snapshot doesn't justify the audit cost.
+
+    Cheap — purely arithmetic on fields already in the snapshot dict.
+    Returns None when the profile is worth grading.
+    """
+    if snap.get("is_private"):
+        return "private"
+    followers = snap.get("follower_count") or 0
+    if followers < _MIN_FOLLOWERS:
+        return f"followers<{_MIN_FOLLOWERS}"
+    post_count = snap.get("post_count") or 0
+    if post_count < _MIN_POSTS:
+        return f"posts<{_MIN_POSTS}"
+    last_post_iso = snap.get("last_post_at")
+    if last_post_iso:
+        try:
+            last = datetime.fromisoformat(last_post_iso.replace("Z", "+00:00"))
+            age_days = (datetime.now(timezone.utc) - last).days
+            if age_days > _MAX_DAYS_INACTIVE:
+                return f"inactive>{_MAX_DAYS_INACTIVE}d"
+        except (ValueError, TypeError):
+            pass  # malformed timestamp — let the audit decide
+    return None
 
 
 class MediaMode:
@@ -59,8 +111,17 @@ class MediaMode:
 
         candidates = google_places.discover(industry, location, limit=limit)
 
-        counts = {"found": 0, "skipped_no_website": 0, "skipped_no_handle": 0,
-                  "skipped_no_snapshot": 0, "skipped_no_audit": 0, "errored": 0}
+        counts = {
+            "found":                0,
+            "skipped_no_website":   0,
+            "skipped_no_handle":    0,
+            "skipped_no_snapshot":  0,
+            "skipped_low_signal":   0,
+            "stored_no_recipient":  0,  # stored as not_found, audit skipped
+            "skipped_no_audit":     0,  # snapshot passed filters + recipient found, audit refused
+            "errored":              0,
+        }
+        skipped_low_signal_reasons: dict[str, int] = {}
 
         for biz in candidates:
             website = (biz.get("website") or "").strip()
@@ -79,6 +140,52 @@ class MediaMode:
                 counts["skipped_no_snapshot"] += 1
                 continue
 
+            # Cheap pre-filter — kills the most-likely-Grade-F audits
+            # before they cost us $0.10 + 30s. Saved candidates aren't
+            # stored: an account with <500 followers / dormant / private
+            # isn't a Vidora prospect at all.
+            reason = _low_signal_reason(snap)
+            if reason:
+                counts["skipped_low_signal"] += 1
+                skipped_low_signal_reasons[reason] = (
+                    skipped_low_signal_reasons.get(reason, 0) + 1
+                )
+                logger.info(
+                    "vidora low-signal skip: @%s (%s)", handle, reason
+                )
+                continue
+
+            # Resolve recipient BEFORE the audit. A lead we can't contact
+            # is worth storing (operator can manually research) but the
+            # audit grade adds no immediate value — skip the expensive
+            # vision call and mark it not_found.
+            homepage_body = link.get("homepage_body")
+            candidate_email = _resolve_recipient(
+                snap, biz, homepage_body=homepage_body,
+            )
+            if not candidate_email:
+                payload = _build_payload(biz, snap, audit=None)
+                try:
+                    lead_id = db.upsert_vidora_lead(payload, pdf_path=None)
+                    db.execute(
+                        "update crm.leads set email_status = 'not_found' "
+                        "where id = %s",
+                        (lead_id,),
+                    )
+                    counts["stored_no_recipient"] += 1
+                    logger.info(
+                        "vidora lead %s: stored without audit — no recipient",
+                        lead_id,
+                    )
+                except Exception:
+                    logger.exception(
+                        "upsert_vidora_lead (no-recipient path) failed for %s",
+                        handle,
+                    )
+                    counts["errored"] += 1
+                continue
+
+            # Recipient candidate exists. Now the audit is justified.
             audit = vidora_audit.audit(snap)
             if not audit:
                 counts["skipped_no_audit"] += 1
@@ -91,50 +198,47 @@ class MediaMode:
             except Exception:
                 logger.exception("upsert_vidora_lead failed for %s", handle)
                 counts["errored"] += 1
-                # Continue — one bad row shouldn't kill the search.
                 continue
 
-            # Draft Day-1 only for grades worth contacting. D/F grades
-            # skip the Anthropic call — same gating policy as the
-            # accountancy drafter (runner.py:418).
-            grade = (audit.get("grade") or "").upper()
-            if grade in ("A", "B", "C"):
-                try:
-                    _draft_and_queue_day1(
-                        lead_id=lead_id,
-                        client_id=search["client_id"],
-                        audit=audit,
-                        snapshot=snap,
-                        business=biz,
-                    )
-                except Exception:
-                    logger.exception("vidora draft/queue failed for lead %s", lead_id)
-                    # Lead already exists — surface the draft failure
-                    # in counters but don't drop the row.
-                    counts["errored"] += 1
+            try:
+                _draft_and_queue_day1(
+                    lead_id=lead_id,
+                    client_id=search["client_id"],
+                    audit=audit,
+                    snapshot=snap,
+                    business=biz,
+                    candidate_email=candidate_email,
+                )
+            except Exception:
+                logger.exception("vidora draft/queue failed for lead %s", lead_id)
+                counts["errored"] += 1
 
         return {
-            "leads_found": counts["found"],
-            "leads_errored": counts["errored"],
-            "skipped_no_website": counts["skipped_no_website"],
-            "skipped_no_handle": counts["skipped_no_handle"],
-            "skipped_no_snapshot": counts["skipped_no_snapshot"],
-            "skipped_no_audit": counts["skipped_no_audit"],
-            "candidates_seen": len(candidates),
+            "leads_found":               counts["found"],
+            "leads_errored":             counts["errored"],
+            "skipped_no_website":        counts["skipped_no_website"],
+            "skipped_no_handle":         counts["skipped_no_handle"],
+            "skipped_no_snapshot":       counts["skipped_no_snapshot"],
+            "skipped_low_signal":        counts["skipped_low_signal"],
+            "skipped_low_signal_reasons": skipped_low_signal_reasons,
+            "stored_no_recipient":       counts["stored_no_recipient"],
+            "skipped_no_audit":          counts["skipped_no_audit"],
+            "candidates_seen":           len(candidates),
         }
 
 
-def _resolve_recipient(snapshot: dict, business: dict) -> str | None:
+def _resolve_recipient(
+    snapshot: dict, business: dict, *, homepage_body: str | None = None,
+) -> str | None:
     """Find a candidate email for the lead.
 
-    Two-step lookup:
+    Three-step lookup, cheapest first:
       1. snapshot.business_email (or public_email fallback) — set by the
          IG account holder via Professional Dashboard. Most reliable.
-      2. Website scrape via scraper.email_patterns.detect() — fetches
-         homepage + common contact paths through the proxy pool and
-         pulls mailto: + JSON-LD addresses. We prefer personal_emails
-         over role_emails (info@/hello@) since the former are more
-         likely to reach a decision maker.
+      2. If homepage_body was already fetched by instagram_link, scan it
+         in-memory via email_patterns.extract_from_html — free, no I/O.
+      3. Full website scrape via email_patterns.detect() as last resort —
+         fetches contact paths through the proxy pool. Most expensive.
 
     Returns the first candidate or None. Does NOT verify — caller
     must run email_verifier.verify() before persisting.
@@ -147,15 +251,29 @@ def _resolve_recipient(snapshot: dict, business: dict) -> str | None:
     if not website:
         return None
 
+    # Step 2: free scan of the homepage we already have in memory.
+    if homepage_body:
+        try:
+            hits = email_patterns.extract_from_html(homepage_body, website)
+        except Exception:
+            logger.exception(
+                "email_patterns.extract_from_html failed for %s", website[:80]
+            )
+            hits = None
+        if hits:
+            candidates = (list(hits.get("personal_emails") or [])
+                          + list(hits.get("role_emails") or []))
+            if candidates:
+                return candidates[0]
+
+    # Step 3: fall through to a full proxy-pool fetch of contact paths.
     try:
         det = email_patterns.detect(website, officers=None)
     except Exception:
         logger.exception("email_patterns.detect failed for %s", website[:80])
         return None
-
-    # Personal first (jane@…), role second (info@/hello@). Both lower-cased
-    # already by the extractor.
-    candidates = list(det.get("personal_emails") or []) + list(det.get("role_emails") or [])
+    candidates = (list(det.get("personal_emails") or [])
+                  + list(det.get("role_emails") or []))
     return candidates[0] if candidates else None
 
 
@@ -178,12 +296,12 @@ def _verifier_says_ship(v: dict) -> bool:
 
 
 def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
-                          snapshot: dict, business: dict) -> None:
-    """Generate the Day-1 cold email and queue it for outreach.
+                          snapshot: dict, business: dict,
+                          candidate_email: str) -> None:
+    """Verify the recipient, draft Day-1, queue if shippable.
 
-    Recipient resolution (IG business_email -> website mailto: scrape ->
-    verifier gate) decides whether crm.emails gets a row or the lead
-    is flagged email_status='not_found' for manual lookup.
+    candidate_email is already resolved by MediaMode.run — passed
+    through instead of re-resolved here.
     """
     draft = vidora_drafter.draft_day1(audit, snapshot, business)
     db.execute(
@@ -192,16 +310,7 @@ def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
         (draft["subject"], draft["body"], lead_id),
     )
 
-    candidate = _resolve_recipient(snapshot, business)
-    if not candidate:
-        db.execute(
-            "update crm.leads set email_status = 'not_found' where id = %s",
-            (lead_id,),
-        )
-        logger.info("vidora lead %s: no recipient candidate found", lead_id)
-        return
-
-    v = email_verifier.verify(candidate)
+    v = email_verifier.verify(candidate_email)
 
     # Persist verification verdict even when we reject — gives the
     # operator the same diagnostic surface accountancy leads have.
@@ -216,6 +325,7 @@ def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
          v.get("checked_at"), lead_id),
     )
 
+    grade = (audit.get("grade") or "").upper()
     if not _verifier_says_ship(v):
         db.execute(
             "update crm.leads set email_status = 'not_found' where id = %s",
@@ -223,33 +333,45 @@ def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
         )
         logger.info(
             "vidora lead %s: recipient %s rejected (status=%s conf=%s)",
-            lead_id, candidate, v.get("status"), v.get("confidence"),
+            lead_id, candidate_email, v.get("status"), v.get("confidence"),
         )
         return
 
-    # Ship it. Write the recipient onto the lead before queueing so
-    # outreach.engine._pick_mailbox + _ready_emails see a consistent row.
+    # Verifier approved. Mark found + write recipient regardless of grade
+    # so the operator has the contact even on D/F leads.
     db.execute(
         """update crm.leads
               set decision_maker_email = %s,
                   email_status         = 'found'
             where id = %s""",
-        (candidate, lead_id),
+        (candidate_email, lead_id),
     )
+
+    # Auto-queue Day-1 only for grades worth contacting. D/F grades land
+    # with a contact + cached draft but no scheduled email; operator
+    # decides whether to pitch manually.
+    if grade not in ("A", "B", "C"):
+        logger.info(
+            "vidora lead %s: contact found, grade %s — manual pitch",
+            lead_id, grade or "?",
+        )
+        return
+
     db.execute(
         """insert into crm.emails
              (lead_id, client_id, email_number, subject, body,
               to_address, status, scheduled_at)
            values (%s, %s, 1, %s, %s, %s, 'scheduled', null)""",
-        (lead_id, client_id, draft["subject"], draft["body"], candidate),
+        (lead_id, client_id, draft["subject"], draft["body"], candidate_email),
     )
 
 
-def _build_payload(biz: dict, snap: dict, audit: dict) -> dict:
+def _build_payload(biz: dict, snap: dict, audit: dict | None) -> dict:
     """Shape the upsert_vidora_lead payload from the three sources.
 
-    Keys mirror the legacy Windows-runner bridge so the existing upsert
-    function (db.upsert_vidora_lead) accepts both inputs unchanged.
+    audit is optional — the no-recipient path stores a lead without
+    grading to save the audit cost. Grade/score/weaknesses fields end
+    up null on those rows (schema allows it).
     """
     return {
         "username":          snap.get("handle"),
@@ -265,11 +387,11 @@ def _build_payload(biz: dict, snap: dict, audit: dict) -> dict:
         "posting_frequency": None,
         "avg_likes":         None,
         "last_post_date":    (snap.get("last_post_at") or "")[:10] or None,
-        "lead_grade":        audit.get("grade"),
-        "overall_score":     audit.get("overall_score"),
-        "top_weaknesses":    audit.get("weaknesses") or [],
-        "scores":            audit.get("scores") or {},
-        "sales_notes":       audit.get("summary"),
-        "personalised_pitch": audit.get("sales_hook"),
-        "audit_version":     audit.get("model"),
+        "lead_grade":        (audit or {}).get("grade"),
+        "overall_score":     (audit or {}).get("overall_score"),
+        "top_weaknesses":    (audit or {}).get("weaknesses") or [],
+        "scores":            (audit or {}).get("scores") or {},
+        "sales_notes":       (audit or {}).get("summary"),
+        "personalised_pitch": (audit or {}).get("sales_hook"),
+        "audit_version":     (audit or {}).get("model"),
     }

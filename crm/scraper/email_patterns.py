@@ -333,6 +333,30 @@ def match_linkedin_to_officer(linkedin_urls: list[str], officer_name: str) -> st
     return None
 
 
+def extract_from_html(body: str, website: str | None) -> dict:
+    """Extract emails from a pre-fetched page body.
+
+    Public wrapper around _extract_emails + _extract_emails_from_jsonld +
+    _classify_emails so callers that already have HTML in hand
+    (instagram_link.find_for_website returns the homepage body) don't
+    have to round-trip back through proxy_pool just to scan emails.
+
+    Returns the same {personal_emails, role_emails, domain} subset of
+    detect()'s shape — pattern inference is skipped (this is the cheap
+    path; callers wanting that should call detect()).
+    """
+    domain = _domain_of(website)
+    if not domain or not body:
+        return {"domain": domain, "personal_emails": [], "role_emails": []}
+    visible: set[str] = set()
+    for e in _extract_emails(body, domain):
+        visible.add(e)
+    for e in _extract_emails_from_jsonld(body, domain):
+        visible.add(e)
+    personal, role = _classify_emails(sorted(visible))
+    return {"domain": domain, "personal_emails": personal, "role_emails": role}
+
+
 def _extract_emails(body: str, domain: str) -> list[str]:
     """Pull every email on the company's own domain from a page body."""
     if not body or not domain:

@@ -77,12 +77,25 @@ def find_for_website(website_url: str) -> dict:
 
     Returns:
       {
-        "handle": str | None,
-        "found_on": str | None,        # which URL the link was on
-        "pages_tried": [url, ...],
+        "handle":        str | None,
+        "found_on":      str | None,        # which URL the link was on
+        "pages_tried":   [url, ...],
+        "homepage_body": str | None,        # raw HTML of the homepage when fetched
+        "found_on_body": str | None,        # raw HTML of the page where the handle was found
       }
+
+    homepage_body + found_on_body are surfaced so downstream callers
+    (e.g. MediaMode email scrape) can reuse them instead of re-fetching
+    the same pages. They're optional fields — callers that don't care
+    can ignore them.
     """
-    result: dict = {"handle": None, "found_on": None, "pages_tried": []}
+    result: dict = {
+        "handle":        None,
+        "found_on":      None,
+        "pages_tried":   [],
+        "homepage_body": None,
+        "found_on_body": None,
+    }
 
     if not website_url or not client.is_available():
         return result
@@ -105,15 +118,19 @@ def find_for_website(website_url: str) -> dict:
     if urlparse(website_url).path in ("", "/"):
         pages += [urljoin(origin + "/", p.lstrip("/")) for p in _FALLBACK_PATHS]
 
-    for url in pages:
+    for i, url in enumerate(pages):
         result["pages_tried"].append(url)
         body = client.fetch(url)
         if not body:
             continue
+        # First fetched page is always the homepage in this flow.
+        if i == 0 and result["homepage_body"] is None:
+            result["homepage_body"] = body
         handle = extract_from_html(body)
         if handle:
-            result["handle"]   = handle
-            result["found_on"] = url
+            result["handle"]        = handle
+            result["found_on"]      = url
+            result["found_on_body"] = body
             return result
 
     return result
