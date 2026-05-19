@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import os
 import random
 import threading
 import time
@@ -38,6 +39,7 @@ from datetime import timedelta
 from urllib.parse import urlparse
 
 from scraper.proxy_pool import get_pool, Proxy
+from scraper import linkedin_session
 
 logger = logging.getLogger("crm.scraper.client")
 
@@ -120,7 +122,7 @@ MAX_RETRIES = 2
 RETRY_BACKOFF = (4, 12)  # seconds between retries
 
 
-def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
+def fetch(url: str, *, max_bytes: int = 250_000, headers: dict | None = None) -> str | None:
     """Fetch a URL via the proxy pool with TLS fingerprint impersonation.
 
     Returns the response body as text, or None on any failure. Bodies
@@ -143,6 +145,13 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
     if not host:
         logger.warning("fetch called with malformed URL: %s", url[:80])
         return None
+
+    # LinkedIn requests are routed through a different path: per-account
+    # cookie, sticky proxy pinned to that account, halt-on-challenge.
+    # The cookie-based session lives or dies as one unit, so we never
+    # fall back to the generic round-robin path for these hosts.
+    if _is_linkedin_host(host):
+        return _fetch_linkedin(url, host, max_bytes=max_bytes)
 
     _wait_for_host_slot(host)
 
@@ -181,7 +190,7 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
             # Each call gets its own event loop (asyncio.run); cost is
             # negligible relative to the HTTP request itself (~1ms vs
             # ~1-3s on the wire).
-            resp, body = asyncio.run(_async_get(client, url, max_bytes))
+            resp, body = asyncio.run(_async_get(client, url, max_bytes, headers=headers))
             status = getattr(resp, "status", None) or getattr(resp, "status_code", None)
 
             # 2xx → success. 3xx → with the limited redirect policy set
@@ -237,7 +246,7 @@ def fetch(url: str, *, max_bytes: int = 250_000) -> str | None:
     return None
 
 
-async def _async_get(client, url: str, max_bytes: int):
+async def _async_get(client, url: str, max_bytes: int, headers: dict | None = None):
     """Await `client.get(url)` and the response body in one shot.
 
     wreq's Response.text() is also async in current versions but older
@@ -245,7 +254,7 @@ async def _async_get(client, url: str, max_bytes: int):
     `inspect.isawaitable` so this stays robust across the version
     range without a hard version pin.
     """
-    resp = await client.get(url)
+    resp = await (client.get(url, headers=headers) if headers else client.get(url))
 
     text_attr = getattr(resp, "text", None)
     if callable(text_attr):
@@ -278,3 +287,204 @@ _CHALLENGE_MARKERS = (
 def _looks_like_challenge(body: str) -> bool:
     head = body[:4000].lower()
     return any(marker.lower() in head for marker in _CHALLENGE_MARKERS)
+
+
+# ── LinkedIn path ──────────────────────────────────────────────────
+# Cookie-based, single-account, pinned-proxy. Halts on 999 /
+# login-redirect / "verify you're not a bot" — at the first sign of a
+# challenge the account is parked in cooldown for 24h via
+# linkedin_session.record_challenge().
+
+_LINKEDIN_HOSTS = ("linkedin.com", "www.linkedin.com")
+_LINKEDIN_TIMEOUT_S = 15
+# Stricter per-host rate-limiting on LinkedIn — typical real-user
+# profile-view interval at the API layer is well above this. Adds
+# jitter on top in _fetch_linkedin so we don't look metronomic.
+_LINKEDIN_MIN_INTERVAL_S = 30.0
+_LINKEDIN_LAST_HIT_LOCK = threading.Lock()
+_LINKEDIN_LAST_HIT: float = 0.0
+
+
+def _is_linkedin_host(host: str) -> bool:
+    h = (host or "").lower()
+    return h in _LINKEDIN_HOSTS or h.endswith(".linkedin.com")
+
+
+def _linkedin_enabled() -> bool:
+    """Feature flag — set LINKEDIN_ENRICH_ENABLED=true in worker env
+    to flip on. Until then every LinkedIn fetch short-circuits to None
+    and linkedin.enrich() reports status='disabled'."""
+    val = (os.environ.get("LINKEDIN_ENRICH_ENABLED") or "").strip().lower()
+    return val in ("1", "true", "yes", "on")
+
+
+def _wait_for_linkedin_slot() -> None:
+    """Single-token bucket spanning ALL LinkedIn traffic, plus jitter.
+    Even with one account we never want to look like a metronome."""
+    global _LINKEDIN_LAST_HIT
+    with _LINKEDIN_LAST_HIT_LOCK:
+        now = time.monotonic()
+        wait = (_LINKEDIN_LAST_HIT + _LINKEDIN_MIN_INTERVAL_S) - now
+        _LINKEDIN_LAST_HIT = now + max(wait, 0)
+    jitter = random.uniform(0.0, 20.0)  # 0-20s on top of the floor
+    total = max(wait, 0) + jitter
+    if total > 0:
+        time.sleep(total)
+
+
+def _find_proxy_by_id(public_id: str) -> Proxy | None:
+    """Find the proxy whose public_id() matches; None if not in the pool."""
+    for p in get_pool().proxies:
+        if p.public_id() == public_id:
+            return p
+    return None
+
+
+_LINKEDIN_CHALLENGE_MARKERS = (
+    "authwall",
+    "checkpoint/challenge",
+    "uas/login",
+    "/login?",
+    "please verify you're not a bot",
+)
+
+
+def _linkedin_looks_challenged(body: str) -> bool:
+    head = body[:8000].lower()
+    return any(m in head for m in _LINKEDIN_CHALLENGE_MARKERS)
+
+
+def _fetch_linkedin(url: str, host: str, *, max_bytes: int) -> str | None:
+    """LinkedIn-specific fetch path.
+
+    1. Check the feature flag — if off, return None silently.
+    2. Pick an eligible account from the jar (cap, cooldown, status).
+    3. Resolve / pin a proxy to that account.
+    4. Attach Cookie: li_at=... and request as a logged-in browser.
+    5. Detect 999 / login-redirect → record_challenge + 24h cooldown.
+    6. Other failures → record_failure (short cooldown after a streak).
+    7. Success → record_success (bumps daily counter + last_used_at).
+    """
+    if not _linkedin_enabled():
+        logger.debug("LinkedIn fetch attempted but LINKEDIN_ENRICH_ENABLED is off")
+        return None
+    if not _WREQ_AVAILABLE:
+        return None
+
+    acct = linkedin_session.pick_account()
+    if acct is None:
+        logger.info("LinkedIn fetch %s skipped — no eligible account in jar", host)
+        return None
+
+    # Resolve the pinned proxy. If unset (first request), pin to the
+    # next healthy proxy and persist. If the previously-pinned proxy
+    # is no longer in the pool, the account goes into a short cooldown
+    # rather than rotating IP under an established cookie.
+    pool = get_pool()
+    proxy: Proxy | None = None
+    if acct.pinned_proxy_id:
+        proxy = _find_proxy_by_id(acct.pinned_proxy_id)
+        if proxy is None:
+            logger.error(
+                "LinkedIn account '%s' pinned to %s but proxy is gone from pool — "
+                "cooling down (manual repin required)",
+                acct.label, acct.pinned_proxy_id,
+            )
+            linkedin_session.record_failure(
+                acct.label, f"pinned proxy {acct.pinned_proxy_id} not in pool",
+                hours=4,
+            )
+            return None
+    else:
+        proxy = pool.next_proxy()
+        if proxy is None:
+            return None
+        linkedin_session.pin_proxy(acct.label, proxy.public_id())
+
+    _wait_for_linkedin_slot()
+
+    try:
+        client_kwargs: dict = {
+            "proxies": [wreq.Proxy.all(proxy.as_url())],
+            "timeout": timedelta(seconds=_LINKEDIN_TIMEOUT_S),
+            "redirect": wreq.redirect.Policy.limited(5),
+        }
+        # Force a Firefox-on-Windows emulation that matches the
+        # registration-time fingerprint (Pixelscan: Firefox 146 / Win64).
+        ff_profile = (
+            getattr(wreq.Emulation, "Firefox149", None)
+            or getattr(wreq.Emulation, "Firefox148", None)
+        )
+        if ff_profile is not None:
+            client_kwargs["emulation"] = ff_profile
+
+        client = wreq.Client(**client_kwargs)  # type: ignore[union-attr]
+        headers = {
+            "Cookie":          f"li_at={acct.li_at}",
+            "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-GB,en;q=0.5",
+            "DNT":             "1",
+            "Sec-GPC":         "1",
+            "Upgrade-Insecure-Requests": "1",
+        }
+        resp, body = asyncio.run(_async_get_with_headers(client, url, headers, max_bytes))
+        status = getattr(resp, "status", None) or getattr(resp, "status_code", None)
+
+        # LinkedIn's bot-block returns HTTP 999 — non-standard, but the
+        # de-facto signal that anti-bot intercepted the request.
+        if status == 999:
+            linkedin_session.record_challenge(acct.label, f"HTTP 999 from {host}")
+            return None
+        # Auth-wall / login redirect → final URL contains /authwall
+        # or /uas/login. wreq.redirect.Policy.limited follows the
+        # redirect, so we end up with a 200 + a login HTML body. The
+        # body sniffer covers that.
+        if status and 200 <= status < 300:
+            if body and _linkedin_looks_challenged(body):
+                linkedin_session.record_challenge(
+                    acct.label, f"challenge body served by {host}"
+                )
+                return None
+            linkedin_session.record_success(acct.label)
+            return body
+        if status in (401, 403):
+            linkedin_session.record_challenge(acct.label, f"HTTP {status} from {host}")
+            return None
+        if status == 429:
+            linkedin_session.record_failure(
+                acct.label, f"HTTP 429 from {host}", hours=2,
+            )
+            return None
+        if status and 500 <= status < 600:
+            # Server-side problem, not a session-trust signal — short cooldown
+            linkedin_session.record_failure(
+                acct.label, f"HTTP {status} from {host}", hours=0.25,
+            )
+            return None
+        # 404 etc → URL miss, no account-level penalty
+        logger.info("LinkedIn HTTP %s on %s (target answered no) — giving up", status, host)
+        return None
+    except Exception as e:
+        logger.warning("LinkedIn fetch error %s via %s: %s: %s",
+                       host, proxy.public_id() if proxy else "?",
+                       type(e).__name__, str(e)[:200])
+        linkedin_session.record_failure(
+            acct.label, f"{type(e).__name__}: {str(e)[:120]}",
+        )
+        return None
+
+
+async def _async_get_with_headers(client, url: str, headers: dict, max_bytes: int):
+    """Same shape as _async_get but with explicit headers (cookies)."""
+    resp = await client.get(url, headers=headers)
+    text_attr = getattr(resp, "text", None)
+    if callable(text_attr):
+        text_call = text_attr()
+        text = await text_call if inspect.isawaitable(text_call) else text_call
+    else:
+        text = text_attr
+    if text is None:
+        return resp, None
+    if len(text) > max_bytes:
+        return resp, text[:max_bytes]
+    return resp, text
