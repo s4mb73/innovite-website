@@ -7,3 +7,7 @@ python-dotenv==1.0.1
 # Used by crm/scraper/* — degrades gracefully if not installed.
 wreq>=0.11.0
 beautifulsoup4>=4.12
+# DNS lookups for the dns_signals enricher — MX-based email provider
+# detection, PTR-based hosting detection, SPF/DMARC presence. Pure Python,
+# no native deps; pip-installable into the venv.
+dnspython>=2.6

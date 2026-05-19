@@ -53,7 +53,7 @@ def find_email_for_inbound(headers: dict, from_address: str | None) -> dict | No
     msgids = _parse_msgids(in_reply_to)
     if msgids:
         rows = db.fetch_all(
-            "select id, lead_id, client_id from crm.emails "
+            "select id as email_id, lead_id, client_id from crm.emails "
             "where message_id = any(%s) order by id desc limit 1",
             (msgids,),
         )
@@ -66,7 +66,7 @@ def find_email_for_inbound(headers: dict, from_address: str | None) -> dict | No
     refs = _parse_msgids(h.get("references"))
     if refs:
         rows = db.fetch_all(
-            "select id, lead_id, client_id from crm.emails "
+            "select id as email_id, lead_id, client_id from crm.emails "
             "where message_id = any(%s) order by id desc limit 1",
             (refs,),
         )
@@ -75,14 +75,17 @@ def find_email_for_inbound(headers: dict, from_address: str | None) -> dict | No
             r["match_kind"] = "references"
             return r
 
-    # 3. Heuristic: from_address ↔ decision_maker_email with a recent send.
+    # 3. Heuristic: from_address ↔ lead.email with a recent send.
+    # (Schema uses `l.email` for the contact address — there is no
+    # `decision_maker_email` column on crm.leads. The biz dict has
+    # both fields, but persistence collapses them onto `email`.)
     if from_address:
         rows = db.fetch_all(
             """
-            select e.id, e.lead_id, e.client_id
+            select e.id as email_id, e.lead_id, e.client_id
             from crm.emails e
             join crm.leads l on l.id = e.lead_id
-            where lower(l.decision_maker_email) = lower(%s)
+            where lower(l.email) = lower(%s)
               and e.sent_at is not null
               and e.sent_at >= now() - interval '30 days'
             order by e.sent_at desc

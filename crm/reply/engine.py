@@ -185,10 +185,10 @@ def _persist_reply(matched: dict, msg: EmailMessage, body: str, sentiment_tag: s
     if sentiment_tag == "negative":
         try:
             row = db.fetch_one(
-                "select decision_maker_email from crm.leads where id = %s",
+                "select email from crm.leads where id = %s",
                 (matched["lead_id"],),
             )
-            email_addr = row.get("decision_maker_email") if row else None
+            email_addr = row.get("email") if row else None
             if email_addr:
                 db.suppress_address(email_addr, reason="unsubscribe",
                                     added_by="system",
@@ -201,10 +201,10 @@ def _persist_reply(matched: dict, msg: EmailMessage, body: str, sentiment_tag: s
     if sentiment_tag == "wrong_person":
         try:
             row = db.fetch_one(
-                "select decision_maker_email from crm.leads where id = %s",
+                "select email from crm.leads where id = %s",
                 (matched["lead_id"],),
             )
-            email_addr = row.get("decision_maker_email") if row else None
+            email_addr = row.get("email") if row else None
             if email_addr:
                 db.suppress_address(email_addr, reason="manual",
                                     added_by="system",
@@ -257,15 +257,15 @@ def _process_message(mailbox_id: int, msg: EmailMessage) -> str:
     body = _body_text(msg)
 
     if not matched:
-        # Unmatched — write to replies with lead_id=null so it surfaces
-        # in Inbox > Needs you for manual triage.
-        sentiment_tag = sentiment.classify(body, msg.get("Subject"))
-        db.execute(
-            """insert into crm.replies
-                 (lead_id, email_id, from_address, subject, body, sentiment, detected_at)
-               values (null, null, %s, %s, %s, %s, now())""",
-            (from_addr, (msg.get("Subject") or "")[:500], body[:8000], sentiment_tag),
-        )
+        # Unmatched — count and skip. We don't persist orphans yet
+        # because crm.replies.lead_id is NOT NULL; the prior intent
+        # was to surface them in Inbox→"Needs you" for manual triage,
+        # but that needs a schema migration to relax the constraint.
+        # Until that ships, dropping the insert avoids the NotNull
+        # crash AND saves the Anthropic sentiment call on backlog
+        # noise (Zoho welcome mail, list confirmations, etc.).
+        # TODO: migration to make replies.lead_id nullable, then
+        # restore the insert + add an /inbox?bucket=orphan view.
         return "orphan"
 
     sentiment_tag = sentiment.classify(body, msg.get("Subject"))
