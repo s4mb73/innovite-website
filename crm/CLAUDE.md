@@ -54,27 +54,41 @@ crm/
   README.md
 ```
 
-## Design system — aligned to the marketing site at innovite.io
+## Design system
 
-**Read these tokens from `static/style.css` `:root` — do not invent new ones.**
+The CRM is a **light theme** in the main content area with a **dark sidebar** —
+two contexts in one app. Tokens cascade via CSS custom properties. The
+sidebar re-pins the dark palette via a scoped block in
+`static/style.css`. Read tokens from `:root` for main, from `.sidebar`
+for sidebar. Do not invent new tokens.
 
-### Colours
+(Pre-2026-05-19 the CRM was uniform dark — diverged from the marketing
+site at https://innovite.io which is still dark. Accept the split.)
+
+### Colours — main content (`:root`)
+- `--bg: #ffffff`
+- `--s1: #f7f7f8` / `--s2: #eef0f3` / `--s3: #e4e6eb`
+- `--border: rgba(11,12,17,.08)` / `--b2: rgba(11,12,17,.14)`
+- `--t1: #14151d` (near-black) / `--t2: #5a5d68` / `--t3: #9a9da8`
+- `--accent: #3d7cf5` (saturated blue — primary on white)
+- `--accent-h: #5a94ff`
+- `--accent-bg: rgba(61,124,245,.08)` / `--accent-bg2: rgba(61,124,245,.04)`
+- `--accent-deep: #2563eb` (darker still — focus rings, large headings)
+- `--green: #1f9d62` / `--green-bg: rgba(31,157,98,.10)`
+- `--amber: #b97a14` / `--amber-bg: rgba(185,122,20,.10)`
+- `--red: #d33b3b`
+
+### Colours — sidebar (`.sidebar` scope override)
 - `--bg: #0b0c11`
 - `--s1: #14151d` / `--s2: #1a1c25` / `--s3: #242732`
 - `--border: rgba(255,255,255,.05)` / `--b2: rgba(255,255,255,.09)`
 - `--t1: #ecedf3` / `--t2: #9a9da8` / `--t3: #5e6069`
-- `--accent: #8FB7FF` (light periwinkle — primary)
-- `--accent-h: #a8c8ff`
-- `--accent-bg: rgba(143,183,255,.10)` / `--accent-bg2: rgba(143,183,255,.05)`
-- `--accent-deep: #3d7cf5` (saturated — **only** for charts / full-bleed, NEVER for buttons)
-- `--green: #3ecf8e` / `--green-bg: rgba(62,207,142,.08)`
-- `--amber: #e8a43a` / `--amber-bg: rgba(232,164,58,.08)`
-- `--red: #ef4444`
+- `--accent: #8FB7FF` (light periwinkle reads on dark)
 
 ### Type
 - **Switzer** (variable axis, ITF / Fontshare) for UI — neo-grotesque, less ubiquitous than Outfit. CRM has diverged here from the marketing site (which still uses Outfit) — accept this until the marketing site is refreshed.
 - **Newsreader** (Google Fonts, 400 / 500 + italic) for page titles + metric numbers ONLY. Do not spread the serif to card titles, badges, tab labels, or anything < 17px — it loses meaning when over-applied.
-- **Body baseline**: Switzer 14px / weight 350 / line-height 1.6 / letter-spacing 0.005em. The 350 weight + extra tracking is dark-mode compensation (light text on dark reads heavier than the same weight on light).
+- **Body baseline**: Switzer 14px / weight 350 / line-height 1.6 / letter-spacing 0.005em. (Weight + tracking originally tuned for dark-mode; left as-is post-light-flip — text is now `--t1: #14151d` near-black on white, still reads clean. Revisit if it looks thin on light bg.)
 - **Type scale (6 sizes only)**: `11.5 / 13 / 14 / 17 / 22 / 28`. Never invent intermediate sizes. The cluster between 10 and 14 (10 / 10.5 / 11 / 12 / 12.5 / 13.5) is the classic "AI-slop" fuzzy-hierarchy tell — pick 11.5 or 13.
 - **Tabular figures** (`font-variant-numeric: tabular-nums`) on every metric, every table column.
 - Min font size 11.5px. **Never** Inter, Arial, system-default. Never Outfit-look-alikes (DM Sans, Plus Jakarta, Manrope) — the whole point of Switzer is escaping that tier.
@@ -96,8 +110,8 @@ crm/
 5. Inter / Arial / system fonts
 6. Body text below 12px
 7. Generic dingbats as icons (use inline SVG)
-8. **Saturated `--accent-deep` (#3d7cf5) on buttons** — that's the marketing site's full-bleed-only colour. Buttons use `--accent` (`#8FB7FF`) with dark text.
-9. White text on the accent button — light periwinkle + white = poor contrast. Use `var(--bg)` for button text.
+8. Hard-coded colour literals in component CSS — always reference tokens. The light/dark split relies on selectors composing against `var(--…)`, not on baked-in hex codes.
+9. Light text on light backgrounds — primary button text must be `#ffffff` on the saturated `--accent`. In the sidebar (dark context) buttons use `var(--bg)` instead — that's the dark-context `#0b0c11`, NOT white.
 10. Synthetic placeholder data presented as real — always label demo data (see migration 0002 header comment for the wipe pattern).
 11. Editable enrichment fields via the UI — pipeline writes enrichment, humans don't manually fix from the UI. Status + notes are the only editable lead fields.
 12. PostgREST keyword args after `**` expansion in Jinja — `url_for('x', **qs, page=N)` is valid Python but Jinja's parser rejects it. Use `qs.copy() + .update({'page': N})`.

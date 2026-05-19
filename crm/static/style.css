@@ -1,28 +1,55 @@
-/* ── Tokens (aligned to the marketing site at innovite.io) ── */
+/* ── Tokens — light theme on main area, dark on sidebar ──
+   Main content runs on white. The sidebar keeps the original dark
+   palette via a scoped override below — same component code, two
+   theme contexts. CSS custom properties cascade, so flipping :root
+   propagates everywhere the cards / chips / inputs reference these
+   tokens without touching individual selectors.
+*/
 :root {
+  --bg: #ffffff;
+  --s1: #f7f7f8;                              /* card surface 1 — barely-tinted */
+  --s2: #eef0f3;                              /* hover / secondary surface */
+  --s3: #e4e6eb;                              /* input bg */
+  --border: rgba(11,12,17,.08);
+  --b2:     rgba(11,12,17,.14);
+  --t1: #14151d;                              /* near-black for primary text */
+  --t2: #5a5d68;                              /* mid-grey for secondary */
+  --t3: #9a9da8;                              /* tertiary / captions */
+  --accent:      #3d7cf5;                     /* saturated blue for primary on white */
+  --accent-h:    #5a94ff;
+  --accent-bg:   rgba(61,124,245,.08);
+  --accent-bg2:  rgba(61,124,245,.04);
+  --accent-deep: #2563eb;                     /* even deeper for headings / focus rings */
+  --green:    #1f9d62;
+  --green-bg: rgba(31,157,98,.10);
+  --amber:    #b97a14;
+  --amber-bg: rgba(185,122,20,.10);
+  --red:      #d33b3b;
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 24px;
+  --ease: cubic-bezier(.2,.6,.2,1);
+}
+
+/* Scoped override: sidebar keeps the original dark palette.
+   The sidebar's children reference the same tokens (--s1 for its bg,
+   --t1 for nav text, --border for separators) so re-pinning the
+   tokens inside .sidebar restores the dark look without rewriting
+   any sidebar component CSS. */
+.sidebar {
   --bg: #0b0c11;
   --s1: #14151d;
   --s2: #1a1c25;
   --s3: #242732;
   --border: rgba(255,255,255,.05);
-  --b2: rgba(255,255,255,.09);
+  --b2:     rgba(255,255,255,.09);
   --t1: #ecedf3;
   --t2: #9a9da8;
   --t3: #5e6069;
-  --accent:      #8FB7FF;                    /* primary accent: light periwinkle */
+  --accent:      #8FB7FF;                     /* light periwinkle reads on dark */
   --accent-h:    #a8c8ff;
   --accent-bg:   rgba(143,183,255,.10);
   --accent-bg2:  rgba(143,183,255,.05);
-  --accent-deep: #3d7cf5;                    /* saturated variant for charts / full-bleed only */
-  --green:    #3ecf8e;
-  --green-bg: rgba(62,207,142,.08);
-  --amber:    #e8a43a;
-  --amber-bg: rgba(232,164,58,.08);
-  --red:      #ef4444;
-  --r-sm: 10px;
-  --r-md: 16px;
-  --r-lg: 24px;
-  --ease: cubic-bezier(.2,.6,.2,1);
 }
 
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -239,13 +266,13 @@ a { color:inherit; text-decoration:none; }
 .btn-primary {
   background:var(--accent);
   border-color:var(--accent);
-  color:var(--bg);                  /* dark text on light accent — matches marketing .btn-a */
+  color:#ffffff;                    /* white text on saturated blue — light-theme contrast */
   font-weight:600;
 }
 .btn-primary:hover {
   background:var(--accent-h);
   border-color:var(--accent-h);
-  box-shadow:0 2px 12px rgba(143,183,255,.30);
+  box-shadow:0 2px 12px rgba(61,124,245,.30);
 }
 .btn-primary:disabled:hover { box-shadow:none; }
 
