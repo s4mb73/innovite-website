@@ -12,6 +12,14 @@
 {# ── Search bar (top, full width) ─────────────────────────── #}
 <section class="search-bar card">
   <div class="search-row">
+    <div class="search-field search-field-mode">
+      <label for="searchMode">Mode</label>
+      <select id="searchMode" class="filter-select">
+        <option value="accountancy" selected>Accountancy (ROCA)</option>
+        <option value="media">Media (Vidora — IG audit)</option>
+      </select>
+    </div>
+
     <div class="search-field">
       <label for="searchIndustries">Industries</label>
       <div class="chip-input" data-chip-input data-initial="">
@@ -302,7 +310,37 @@
     document.getElementById('searchLoading').hidden = false;
     document.getElementById('searchRunBtn').disabled = true;
 
+    const mode = (document.getElementById('searchMode') || {}).value || 'accountancy';
+
     try {
+      if (mode === 'media') {
+        // Media mode is async — the worker runs discover+snapshot+audit
+        // per candidate, which takes longer than HTTP request time. Enqueue
+        // a crm.searches row, surface the id, refresh the leads page to
+        // watch them land as the run completes.
+        const resp = await fetch('/api/search/discover-media', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            industry: industries[0],
+            location: locations[0],
+            limit:    20,
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          showError(data.error || 'Media search failed.');
+          return;
+        }
+        const okEl = document.getElementById('searchSuccess');
+        if (okEl) {
+          okEl.textContent = `Vidora search ${data.search_id} queued — leads will appear in /leads as the worker processes them.`;
+          okEl.hidden = false;
+        }
+        lastResults = [];
+        return;
+      }
+
       const resp = await fetch('/api/search/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

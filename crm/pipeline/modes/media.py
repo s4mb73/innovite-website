@@ -22,7 +22,7 @@ import logging
 from typing import Any
 
 import db
-from pipeline import vidora_audit
+from pipeline import vidora_audit, vidora_drafter
 from pipeline.sources import google_places
 from scraper import instagram_link, instagram_snapshot
 
@@ -81,12 +81,32 @@ class MediaMode:
 
             payload = _build_payload(biz, snap, audit)
             try:
-                db.upsert_vidora_lead(payload, pdf_path=None)
+                lead_id = db.upsert_vidora_lead(payload, pdf_path=None)
                 counts["found"] += 1
             except Exception:
                 logger.exception("upsert_vidora_lead failed for %s", handle)
                 counts["errored"] += 1
                 # Continue — one bad row shouldn't kill the search.
+                continue
+
+            # Draft Day-1 only for grades worth contacting. D/F grades
+            # skip the Anthropic call — same gating policy as the
+            # accountancy drafter (runner.py:418).
+            grade = (audit.get("grade") or "").upper()
+            if grade in ("A", "B", "C"):
+                try:
+                    _draft_and_queue_day1(
+                        lead_id=lead_id,
+                        client_id=search["client_id"],
+                        audit=audit,
+                        snapshot=snap,
+                        business=biz,
+                    )
+                except Exception:
+                    logger.exception("vidora draft/queue failed for lead %s", lead_id)
+                    # Lead already exists — surface the draft failure
+                    # in counters but don't drop the row.
+                    counts["errored"] += 1
 
         return {
             "leads_found": counts["found"],
@@ -97,6 +117,44 @@ class MediaMode:
             "skipped_no_audit": counts["skipped_no_audit"],
             "candidates_seen": len(candidates),
         }
+
+
+def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
+                          snapshot: dict, business: dict) -> None:
+    """Generate the Day-1 cold email and queue it for outreach.
+
+    Mirrors runner._queue_day1_email's split contract: when we have a
+    deliverable to-address, insert a scheduled row in crm.emails;
+    when we don't, still cache the draft on the lead so the operator
+    can review (and manually paste in a recipient).
+    """
+    draft = vidora_drafter.draft_day1(audit, snapshot, business)
+    db.execute(
+        "update crm.leads set email_subject = %s, email_body_day1 = %s "
+        "where id = %s",
+        (draft["subject"], draft["body"], lead_id),
+    )
+
+    # The Vidora pipeline doesn't currently produce a verified
+    # decision_maker_email — IG snapshot doesn't expose business_email,
+    # and the audit only generates copy. If a future enricher lands
+    # one on the lead row, _ready_emails picks it up automatically.
+    # For now, cache-only when no to_address is known.
+    to_row = db.fetch_one(
+        "select decision_maker_email from crm.leads where id = %s",
+        (lead_id,),
+    )
+    to_addr = (to_row or {}).get("decision_maker_email") or ""
+    if not to_addr:
+        return
+
+    db.execute(
+        """insert into crm.emails
+             (lead_id, client_id, email_number, subject, body,
+              to_address, status, scheduled_at)
+           values (%s, %s, 1, %s, %s, %s, 'scheduled', null)""",
+        (lead_id, client_id, draft["subject"], draft["body"], to_addr),
+    )
 
 
 def _build_payload(biz: dict, snap: dict, audit: dict) -> dict:

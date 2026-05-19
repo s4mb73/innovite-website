@@ -1394,6 +1394,57 @@ def api_search_discover():
     return jsonify({'count': len(out), 'results': out, 'errors': errors})
 
 
+@app.post('/api/search/discover-media')
+def api_search_discover_media():
+    """Enqueue a Media-mode (Vidora) search.
+
+    Synchronously writes a crm.searches row and returns its id. The
+    worker picks it up via _claim_next_search, dispatches to
+    MediaMode.run, which then handles Google Places discovery +
+    instagram_link + instagram_snapshot + vidora_audit + upsert per
+    candidate. Async because each candidate can take 30-60s.
+
+    Body:
+      {industry: "aesthetic clinics", location: "Manchester", limit: 20}
+    Returns:
+      {search_id: int, status: "pending"}
+    """
+    payload = request.get_json(silent=True) or {}
+    industry = (payload.get('industry') or '').strip()
+    location = (payload.get('location') or '').strip()
+    try:
+        limit = int(payload.get('limit') or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 40))
+
+    if not industry or not location:
+        return jsonify({'error': 'industry and location required'}), 400
+
+    # Vidora Media is the canonical media-mode client (seeded by 0034).
+    # Resolve by client_type so a rename in the UI doesn't strand the
+    # endpoint.
+    client = db.fetch_one(
+        "select id from crm.clients where client_type = 'media' "
+        "order by id limit 1"
+    )
+    if not client:
+        return jsonify({'error': "no media-mode client configured "
+                                 "(check crm.clients.client_type='media')"}), 400
+
+    row = db.fetch_one(
+        """insert into crm.searches (client_id, mode, params, status)
+           values (%s, 'media', %s, 'pending')
+           returning id""",
+        (client['id'], json.dumps({
+            'industry': industry,
+            'location': location,
+            'limit':    limit,
+        })),
+    )
+    return jsonify({'search_id': row['id'], 'status': 'pending'}), 201
+
+
 @app.post('/api/search/enrich-assign')
 def api_search_enrich_assign():
     """Move selected search results into crm.leads under a chosen
