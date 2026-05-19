@@ -97,6 +97,15 @@ def _shape(handle: str, user: dict) -> dict:
 
     last_post_at = posts[0]["taken_at"] if posts else None
 
+    # Business accounts expose a contact address in two parallel fields
+    # depending on which IG flow set it:
+    #   - business_email: set by the Professional dashboard ("contact options")
+    #   - public_email:   legacy, set by some Creator/Brand profiles
+    # We surface both; the caller picks business_email first and falls
+    # back to public_email. Either can be empty for non-business accounts.
+    business_email = (user.get("business_email") or "").strip() or None
+    public_email   = (user.get("public_email")   or "").strip() or None
+
     return {
         "handle":              handle,
         "user_id":             user.get("id"),
@@ -107,6 +116,8 @@ def _shape(handle: str, user: dict) -> dict:
         "is_business_account": bool(user.get("is_business_account")),
         "business_category":   user.get("business_category_name") or user.get("category_name"),
         "external_url":        user.get("external_url"),
+        "business_email":      business_email,
+        "public_email":        public_email,
         "profile_pic_url":     user.get("profile_pic_url_hd") or user.get("profile_pic_url"),
         "follower_count":      (user.get("edge_followed_by") or {}).get("count"),
         "following_count":     (user.get("edge_follow") or {}).get("count"),

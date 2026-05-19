@@ -24,7 +24,12 @@ from typing import Any
 import db
 from pipeline import vidora_audit, vidora_drafter
 from pipeline.sources import google_places
-from scraper import instagram_link, instagram_snapshot
+from scraper import (
+    email_patterns,
+    email_verifier,
+    instagram_link,
+    instagram_snapshot,
+)
 
 logger = logging.getLogger("crm.pipeline.modes.media")
 
@@ -119,14 +124,66 @@ class MediaMode:
         }
 
 
+def _resolve_recipient(snapshot: dict, business: dict) -> str | None:
+    """Find a candidate email for the lead.
+
+    Two-step lookup:
+      1. snapshot.business_email (or public_email fallback) — set by the
+         IG account holder via Professional Dashboard. Most reliable.
+      2. Website scrape via scraper.email_patterns.detect() — fetches
+         homepage + common contact paths through the proxy pool and
+         pulls mailto: + JSON-LD addresses. We prefer personal_emails
+         over role_emails (info@/hello@) since the former are more
+         likely to reach a decision maker.
+
+    Returns the first candidate or None. Does NOT verify — caller
+    must run email_verifier.verify() before persisting.
+    """
+    ig_email = snapshot.get("business_email") or snapshot.get("public_email")
+    if ig_email:
+        return ig_email.strip().lower()
+
+    website = (business.get("website") or "").strip()
+    if not website:
+        return None
+
+    try:
+        det = email_patterns.detect(website, officers=None)
+    except Exception:
+        logger.exception("email_patterns.detect failed for %s", website[:80])
+        return None
+
+    # Personal first (jane@…), role second (info@/hello@). Both lower-cased
+    # already by the extractor.
+    candidates = list(det.get("personal_emails") or []) + list(det.get("role_emails") or [])
+    return candidates[0] if candidates else None
+
+
+# Acceptance gate. 'valid' from Reoon is the gold path. 'catch_all'
+# means the domain accepts everything (can't distinguish real mailbox
+# from invalid) — only ship when the verifier's confidence is 'high'.
+# 'plausible' / 'risky' / 'unknown' all get rejected: cold outreach to
+# a maybe-real address burns sender reputation faster than the missed
+# lead costs us.
+_ACCEPTABLE_STATUSES = {"valid", "catch_all"}
+
+
+def _verifier_says_ship(v: dict) -> bool:
+    status = v.get("status")
+    if status == "valid":
+        return True
+    if status == "catch_all" and v.get("confidence") == "high":
+        return True
+    return False
+
+
 def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
                           snapshot: dict, business: dict) -> None:
     """Generate the Day-1 cold email and queue it for outreach.
 
-    Mirrors runner._queue_day1_email's split contract: when we have a
-    deliverable to-address, insert a scheduled row in crm.emails;
-    when we don't, still cache the draft on the lead so the operator
-    can review (and manually paste in a recipient).
+    Recipient resolution (IG business_email -> website mailto: scrape ->
+    verifier gate) decides whether crm.emails gets a row or the lead
+    is flagged email_status='not_found' for manual lookup.
     """
     draft = vidora_drafter.draft_day1(audit, snapshot, business)
     db.execute(
@@ -135,25 +192,56 @@ def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
         (draft["subject"], draft["body"], lead_id),
     )
 
-    # The Vidora pipeline doesn't currently produce a verified
-    # decision_maker_email — IG snapshot doesn't expose business_email,
-    # and the audit only generates copy. If a future enricher lands
-    # one on the lead row, _ready_emails picks it up automatically.
-    # For now, cache-only when no to_address is known.
-    to_row = db.fetch_one(
-        "select decision_maker_email from crm.leads where id = %s",
-        (lead_id,),
-    )
-    to_addr = (to_row or {}).get("decision_maker_email") or ""
-    if not to_addr:
+    candidate = _resolve_recipient(snapshot, business)
+    if not candidate:
+        db.execute(
+            "update crm.leads set email_status = 'not_found' where id = %s",
+            (lead_id,),
+        )
+        logger.info("vidora lead %s: no recipient candidate found", lead_id)
         return
 
+    v = email_verifier.verify(candidate)
+
+    # Persist verification verdict even when we reject — gives the
+    # operator the same diagnostic surface accountancy leads have.
+    db.execute(
+        """update crm.leads set
+               email_verification_status     = %s,
+               email_verification_confidence = %s,
+               email_verification_source     = %s,
+               email_verification_checked_at = %s
+             where id = %s""",
+        (v.get("status"), v.get("confidence"), v.get("source"),
+         v.get("checked_at"), lead_id),
+    )
+
+    if not _verifier_says_ship(v):
+        db.execute(
+            "update crm.leads set email_status = 'not_found' where id = %s",
+            (lead_id,),
+        )
+        logger.info(
+            "vidora lead %s: recipient %s rejected (status=%s conf=%s)",
+            lead_id, candidate, v.get("status"), v.get("confidence"),
+        )
+        return
+
+    # Ship it. Write the recipient onto the lead before queueing so
+    # outreach.engine._pick_mailbox + _ready_emails see a consistent row.
+    db.execute(
+        """update crm.leads
+              set decision_maker_email = %s,
+                  email_status         = 'found'
+            where id = %s""",
+        (candidate, lead_id),
+    )
     db.execute(
         """insert into crm.emails
              (lead_id, client_id, email_number, subject, body,
               to_address, status, scheduled_at)
            values (%s, %s, 1, %s, %s, %s, 'scheduled', null)""",
-        (lead_id, client_id, draft["subject"], draft["body"], to_addr),
+        (lead_id, client_id, draft["subject"], draft["body"], candidate),
     )
 
 
