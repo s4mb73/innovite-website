@@ -21,6 +21,11 @@ Per-candidate flow:
                 If nothing: store the lead with email_status='not_found'
                 and skip the audit (saves the most expensive step on a
                 lead we can't contact anyway).
+            _media_recipient_gate(candidate_email)
+                Local-only: syntax + MX + disposable check via
+                email_verifier_local.precheck. No Reoon call — Vidora
+                targets small-biz domains where role addresses dominate
+                and catch-all detection isn't worth the paid step.
             vidora_audit.audit(snapshot)            <- ~$0.10 per call
             db.upsert_vidora_lead(payload)
             _draft_and_queue_day1                   <- A/B/C only
@@ -44,7 +49,7 @@ from pipeline.vidora_drafter import TemplatedFallbackError
 from pipeline.sources import google_places
 from scraper import (
     email_patterns,
-    email_verifier,
+    email_verifier_local,
     instagram_link,
     instagram_snapshot,
 )
@@ -255,8 +260,8 @@ def _resolve_recipient(
       3. Full website scrape via email_patterns.detect() as last resort —
          fetches contact paths through the proxy pool. Most expensive.
 
-    Returns the first candidate or None. Does NOT verify — caller
-    must run email_verifier.verify() before persisting.
+    Returns the first candidate or None. Does NOT gate — caller
+    must run _media_recipient_gate() before persisting.
     """
     ig_email = snapshot.get("business_email") or snapshot.get("public_email")
     if ig_email:
@@ -292,22 +297,40 @@ def _resolve_recipient(
     return candidates[0] if candidates else None
 
 
-# Acceptance gate. 'valid' from Reoon is the gold path. 'catch_all'
-# means the domain accepts everything (can't distinguish real mailbox
-# from invalid) — only ship when the verifier's confidence is 'high'.
-# 'plausible' / 'risky' / 'unknown' all get rejected: cold outreach to
-# a maybe-real address burns sender reputation faster than the missed
-# lead costs us.
-_ACCEPTABLE_STATUSES = {"valid", "catch_all"}
+# Local-only acceptance gate for Vidora.
+#
+# Accountancy targets named decision-makers (jane.doe@firm.co.uk) where
+# Reoon's catch-all detection is worth paying for — sending a guessed
+# first.last to a catch-all domain looks spammy. Vidora targets clinics
+# / salons / restaurants where the available addresses are nearly always
+# role accounts (hello@, info@, bookings@) on small business domains.
+# Those domains rarely run catch-all-with-quarantine SaaS suites; an
+# MX-confirmed role address bounces or it doesn't, and Reoon doesn't
+# help us distinguish the two. So we drop the paid call on this path
+# entirely.
+#
+# Accepted iff:
+#   - syntactically valid
+#   - domain has MX records (mail infrastructure exists)
+#   - domain is not on the disposable-provider list
+# i.e. email_verifier_local.precheck returns status == 'plausible'.
 
+def _media_recipient_gate(email: str) -> dict:
+    """Run the local-only Vidora gate. Returns the precheck verdict
+    augmented with `passes: bool` and the persistable column values
+    (status, confidence, source) the lead row expects.
 
-def _verifier_says_ship(v: dict) -> bool:
-    status = v.get("status")
-    if status == "valid":
-        return True
-    if status == "catch_all" and v.get("confidence") == "high":
-        return True
-    return False
+    No paid Reoon call. No REOON_API_KEY required on this path.
+    """
+    v = email_verifier_local.precheck(email)
+    passes = v.get("status") == "plausible"
+    return {
+        "passes":      passes,
+        "status":      v.get("status"),
+        "confidence":  "medium" if passes else "none",
+        "source":      "local_only",
+        "reason":      v.get("reason"),
+    }
 
 
 def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
@@ -325,30 +348,30 @@ def _draft_and_queue_day1(*, lead_id: int, client_id: int, audit: dict,
         (draft["subject"], draft["body"], lead_id),
     )
 
-    v = email_verifier.verify(candidate_email)
+    gate = _media_recipient_gate(candidate_email)
 
-    # Persist verification verdict even when we reject — gives the
-    # operator the same diagnostic surface accountancy leads have.
+    # Persist gate verdict even when we reject — same diagnostic surface
+    # accountancy leads have. checked_at written in DB-now for parity
+    # with the Reoon path's datetime field.
     db.execute(
         """update crm.leads set
                email_verification_status     = %s,
                email_verification_confidence = %s,
                email_verification_source     = %s,
-               email_verification_checked_at = %s
+               email_verification_checked_at = now()
              where id = %s""",
-        (v.get("status"), v.get("confidence"), v.get("source"),
-         v.get("checked_at"), lead_id),
+        (gate["status"], gate["confidence"], gate["source"], lead_id),
     )
 
     grade = (audit.get("grade") or "").upper()
-    if not _verifier_says_ship(v):
+    if not gate["passes"]:
         db.execute(
             "update crm.leads set email_status = 'not_found' where id = %s",
             (lead_id,),
         )
         logger.info(
-            "vidora lead %s: recipient %s rejected (status=%s conf=%s)",
-            lead_id, candidate_email, v.get("status"), v.get("confidence"),
+            "vidora lead %s: recipient %s rejected (%s — %s)",
+            lead_id, candidate_email, gate["status"], gate["reason"],
         )
         return
 
